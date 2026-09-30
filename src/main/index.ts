@@ -5,6 +5,7 @@ import { registerHandlers } from './ipc/registerHandlers';
 import { AppUpdateService } from './services/appUpdateService';
 import { BinaryResolver } from './services/binaryResolver';
 import { getElectronUpdater } from './services/electronUpdater';
+import { ignoreStdioErrors } from './services/stdioGuard';
 import { HistoryStore } from './services/historyStore';
 import { QueueManager } from './services/queueManager';
 import { SettingsStore } from './services/settingsStore';
@@ -13,6 +14,8 @@ import { runYtdlp } from './services/ytdlpRunner';
 const STARTUP_UPDATE_CHECK_DELAY_MS = 5000;
 const PRODUCTION_CSP =
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'";
+
+ignoreStdioErrors();
 
 let mainWindow: BrowserWindow | null = null;
 
