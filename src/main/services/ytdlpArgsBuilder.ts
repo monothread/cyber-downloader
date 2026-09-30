@@ -9,6 +9,10 @@ export interface RequestExtras {
     userAgent?: string;
     cookie?: string;
     title?: string;
+    // Force the IP family the address is bound to.
+    ipFamily?: 4 | 6;
+    // The page the stream was found on; used to look for a fresh address, never passed to yt-dlp.
+    pageUrl?: string;
 }
 
 export function splitArguments(input: string): string[] {
@@ -55,6 +59,9 @@ function buildRequestArgs(extras: RequestExtras): string[] {
     }
     if (extras.cookie) {
         args.push('--add-header', `Cookie:${extras.cookie}`);
+    }
+    if (extras.ipFamily) {
+        args.push(extras.ipFamily === 6 ? '--force-ipv6' : '--force-ipv4');
     }
     return args;
 }

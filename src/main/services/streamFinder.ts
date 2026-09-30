@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { StreamCandidate, StreamFindResult, StreamFindStage, StreamKind, StreamSource } from '@shared/types';
 import type { SniffResult } from './browserSniffer';
-import { STREAM_KIND_ORDER, hostOf } from './mediaKinds';
+import { STREAM_KIND_ORDER, boundIpFamily, hostOf } from './mediaKinds';
 import { groupSimilarStreams, type StreamGroup } from './streamGrouping';
 import { STREAM_USER_AGENT, type ScanResult } from './pageScanner';
 
@@ -23,6 +23,8 @@ export interface StoredStream extends StreamCandidate {
     referer: string;
     userAgent: string;
     cookie: string | null;
+    ipFamily: 4 | 6 | null;
+    pageUrl: string;
 }
 
 interface RawStream {
@@ -84,7 +86,7 @@ export class StreamFinder {
                 return { ok: false, candidates: [], message: CANCELLED_MESSAGE, usedBrowser };
             }
             const refined = await this.refine(Array.from(raw.values()));
-            const candidates = this.store(jobId, groupSimilarStreams(refined), title);
+            const candidates = this.store(jobId, pageUrl, groupSimilarStreams(refined), title);
             return { ok: candidates.length > 0, candidates, message: candidates.length > 0 ? null : this.emptyMessage(scan.error, browserError), usedBrowser };
         } catch (error) {
             return { ok: false, candidates: [], message: error instanceof Error ? error.message : 'The search failed.', usedBrowser };
@@ -118,7 +120,7 @@ export class StreamFinder {
         this.idsByJob.delete(jobId);
     }
 
-    private store(jobId: string, groups: Array<StreamGroup<RawStream & { source: StreamSource }>>, title: string | null): StreamCandidate[] {
+    private store(jobId: string, pageUrl: string, groups: Array<StreamGroup<RawStream & { source: StreamSource }>>, title: string | null): StreamCandidate[] {
         const ordered = [...groups].sort((first, second) => {
             return STREAM_KIND_ORDER.indexOf(first.stream.kind) - STREAM_KIND_ORDER.indexOf(second.stream.kind);
         });
@@ -126,7 +128,14 @@ export class StreamFinder {
         const candidates = ordered.map(({ stream, duplicates }) => {
             const id = this.generateId();
             const candidate: StreamCandidate = { id, url: stream.url, kind: stream.kind, source: stream.source, host: hostOf(stream.url), title, duplicates };
-            this.stored.set(id, { ...candidate, referer: stream.referer, userAgent: STREAM_USER_AGENT, cookie: stream.cookie });
+            this.stored.set(id, {
+                ...candidate,
+                referer: stream.referer,
+                userAgent: STREAM_USER_AGENT,
+                cookie: stream.cookie,
+                ipFamily: boundIpFamily(stream.url),
+                pageUrl
+            });
             ids.push(id);
             return candidate;
         });

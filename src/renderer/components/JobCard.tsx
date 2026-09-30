@@ -51,12 +51,13 @@ export function JobCard({ job, onCancel, onRetry, onRemove, onShowFile }: JobCar
                         onRetry(job.id);
                     }}
                     onFindStream={
-                        canFindStream(job.error) && !searchOpen
+                        canFindStream(job.error, job.pageUrl) && !searchOpen
                             ? () => {
                                   void findStreams(job.id, false);
                               }
                             : undefined
                     }
+                    findStreamLabel={job.pageUrl !== null ? 'FIND A FRESH LINK' : 'FIND STREAM'}
                 />
             )}
             <StreamFinder jobId={job.id} />

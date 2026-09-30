@@ -97,3 +97,26 @@ export function hostOf(url: string): string {
 }
 
 export const STREAM_KIND_ORDER: readonly StreamKind[] = ['hls', 'dash', 'mp4', 'webm', 'other'];
+
+const BOUND_IP_PARAMETERS = ['ip', 'clientip', 'client_ip', 'cip'];
+const IPV4_PATTERN = /^\d{1,3}(\.\d{1,3}){3}$/;
+
+// Temporary addresses often carry the IP of whoever asked for them and are refused to any other one. With both
+// IPv4 and IPv6 available, the download has to leave through the same family as the page did.
+export function boundIpFamily(url: string): 4 | 6 | null {
+    try {
+        const params = new URL(url).searchParams;
+        for (const name of BOUND_IP_PARAMETERS) {
+            const value = params.get(name)?.trim() ?? '';
+            if (IPV4_PATTERN.test(value)) {
+                return 4;
+            }
+            if (value.includes(':') && /^[0-9a-f:.]+$/i.test(value)) {
+                return 6;
+            }
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}

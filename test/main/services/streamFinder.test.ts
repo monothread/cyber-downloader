@@ -179,6 +179,36 @@ describe('StreamFinder refine step', () => {
     });
 });
 
+describe('StreamFinder request details kept for the download', () => {
+    const bound = (ip: string) => {
+        return { url: `https://cdn.test/videoplayback?id=1&ip=${ip}`, kind: 'mp4' as const, referer: PAGE, cookie: null };
+    };
+
+    it.each([
+        ['203.0.113.9', 4],
+        ['2001:db8::1', 6]
+    ] as const)('remembers the IP family (%s) an address is bound to', async (ip, family) => {
+        const { find, finder } = setup(scanResult({ candidates: [bound(ip)] }));
+        const [candidate] = (await find()).candidates;
+        expect(finder.getCandidate(candidate?.id ?? '')?.ipFamily).toBe(family);
+        expect(candidate).not.toHaveProperty('ipFamily');
+    });
+
+    it('has no IP family for addresses without a bound IP', async () => {
+        const { find, finder } = setup(scanResult({ candidates: [PAGE_MP4] }));
+        const [candidate] = (await find()).candidates;
+        expect(finder.getCandidate(candidate?.id ?? '')?.ipFamily).toBeNull();
+    });
+
+    it('remembers the page the search ran on, so a fresh address can be searched there again', async () => {
+        const { finder } = setup(scanResult({ candidates: [PAGE_MP4] }));
+        const result = await finder.find('job-1', 'https://origin.test/ep-9', false, () => {
+            return undefined;
+        });
+        expect(finder.getCandidate(result.candidates[0]?.id ?? '')?.pageUrl).toBe('https://origin.test/ep-9');
+    });
+});
+
 describe('StreamFinder grouping of near-identical addresses', () => {
     const variant = (host: string, marker: string) => {
         const query = new URLSearchParams({ expire: '1999999999', id: 'abc123', itag: '18', mime: 'video/mp4', sig: 'Sig', cpn: 'sess', extra: marker });
@@ -227,7 +257,9 @@ describe('StreamFinder candidates', () => {
             duplicates: 0,
             referer: 'https://player.test/embed',
             userAgent: STREAM_USER_AGENT,
-            cookie: null
+            cookie: null,
+            ipFamily: null,
+            pageUrl: PAGE
         });
     });
 

@@ -7,6 +7,7 @@ import { useAppStore } from '@renderer/store/appStore';
 import { installMockApi, makeJob, type MockApiHandle } from '../../helpers/mockApi';
 
 const ERROR: DownloadError = { code: 'UNAVAILABLE', title: 'Video unavailable', hint: 'Maybe private.', raw: 'ERROR: gone' };
+const FORBIDDEN: DownloadError = { code: 'FORBIDDEN', title: 'Access refused by the server', hint: 'Expired?', raw: 'HTTP Error 403: Forbidden' };
 const UNSUPPORTED: DownloadError = { code: 'OUTDATED', title: 'yt-dlp may be outdated', hint: 'Update.', raw: 'ERROR: Unsupported URL' };
 
 let mock: MockApiHandle;
@@ -118,6 +119,18 @@ describe('JobCard', () => {
             renderCard(makeJob({ status: 'error', error: UNSUPPORTED }));
             expect(screen.queryByRole('button', { name: 'FIND STREAM' })).not.toBeInTheDocument();
             expect(screen.getByRole('region', { name: 'Stream finder' })).toBeInTheDocument();
+        });
+
+        it('offers a fresh link for a refused stream and searches its page again', async () => {
+            renderCard(makeJob({ id: 'stream-job', status: 'error', error: FORBIDDEN, pageUrl: 'https://site.test/ep-1' }));
+            expect(screen.queryByRole('button', { name: 'FIND STREAM' })).not.toBeInTheDocument();
+            await userEvent.setup().click(screen.getByRole('button', { name: 'FIND A FRESH LINK' }));
+            expect(mock.api.findStreams).toHaveBeenCalledWith('stream-job', false);
+        });
+
+        it('does not offer a fresh link for a refused link the user pasted', () => {
+            renderCard(makeJob({ status: 'error', error: FORBIDDEN, pageUrl: null }));
+            expect(screen.queryByRole('button', { name: /FIND/ })).not.toBeInTheDocument();
         });
 
         it('shows no panel for jobs without a search', () => {

@@ -164,6 +164,7 @@ export function makeJob(overrides: Partial<DownloadJob> = {}): DownloadJob {
         filePath: null,
         error: null,
         createdAt: 1,
+        pageUrl: null,
         ...overrides
     };
 }

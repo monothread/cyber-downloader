@@ -1,4 +1,5 @@
 import {
+    boundIpFamily,
     hostOf,
     isHttpUrl,
     isPrivateHost,
@@ -104,3 +105,36 @@ describe('STREAM_KIND_ORDER', () => {
         expect(STREAM_KIND_ORDER).toEqual(['hls', 'dash', 'mp4', 'webm', 'other']);
     });
 });
+
+describe('boundIpFamily', () => {
+    it.each([
+        ['https://cdn.test/v?ip=203.0.113.9&id=1', 4],
+        ['https://cdn.test/v?clientip=198.51.100.7', 4],
+        ['https://cdn.test/v?client_ip=192.0.2.1', 4],
+        ['https://cdn.test/v?cip=192.0.2.44', 4],
+        ['https://cdn.test/v?ip=2001:db8::1&id=1', 6],
+        ['https://cdn.test/v?ip=2001%3Adb8%3A0%3A0%3A0%3A0%3A0%3A2', 6],
+        ['https://cdn.test/v?ip=::ffff:192.0.2.1', 6],
+        ['https://cdn.test/v?ip=FE80::1', 6]
+    ])('reads the IP family bound into %s', (url, family) => {
+        expect(boundIpFamily(url)).toBe(family);
+    });
+
+    it.each([
+        'https://cdn.test/v?id=1&itag=18',
+        'https://cdn.test/v?ip=',
+        'https://cdn.test/v?ip=not-an-ip',
+        'https://cdn.test/v?ip=abc:def:xyz',
+        'https://cdn.test/v?ipbits=0',
+        'https://cdn.test/v',
+        'not a url',
+        ''
+    ])('returns null when %s carries no usable IP', (url) => {
+        expect(boundIpFamily(url)).toBeNull();
+    });
+
+    it('prefers the first parameter that has a usable value', () => {
+        expect(boundIpFamily('https://cdn.test/v?ip=nope&clientip=2001:db8::5')).toBe(6);
+    });
+});
+

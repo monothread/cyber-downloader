@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 const JOB: DownloadJob = {
-    id: 'j1', url: 'https://x.com/a', status: 'queued', title: null, percent: 0, speed: '', eta: '', filePath: null, error: null, createdAt: 1
+    id: 'j1', url: 'https://x.com/a', status: 'queued', title: null, percent: 0, speed: '', eta: '', filePath: null, error: null, createdAt: 1, pageUrl: null
 };
 
 function setup() {
@@ -163,6 +163,13 @@ describe('registerHandlers', () => {
             expect(streamFinder.find).toHaveBeenCalledWith('j1', TARGET.url, false, expect.any(Function));
         });
 
+        it('searches again on the page a stream came from when the job has one', async () => {
+            const { call, queue, streamFinder } = setup();
+            queue.getJob.mockReturnValue({ id: 'j9', url: 'https://cdn.test/videoplayback?sig=old', pageUrl: 'https://site.test/ep-1' });
+            await call(IPC.streamFind, 'j9', false);
+            expect(streamFinder.find).toHaveBeenCalledWith('j9', 'https://site.test/ep-1', false, expect.any(Function));
+        });
+
         it('refuses to search for a job that does not exist', () => {
             const { call, queue, streamFinder } = setup();
             queue.getJob.mockReturnValue(undefined);
@@ -179,17 +186,17 @@ describe('registerHandlers', () => {
 
         it('downloads the chosen stream with the referer, user agent, cookie and title the finder kept', () => {
             const { call, queue, streamFinder } = setup();
-            streamFinder.getCandidate.mockReturnValue({ url: 'https://cdn.test/a.m3u8', referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: 'sid=1', title: 'Episode 1' });
+            streamFinder.getCandidate.mockReturnValue({ url: 'https://cdn.test/a.m3u8', referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: 'sid=1', title: 'Episode 1', ipFamily: null, pageUrl: 'https://site.test/ep-1' });
             expect(call(IPC.streamDownload, 'c1')).toEqual({ ok: true, job: JOB, message: null });
             expect(streamFinder.getCandidate).toHaveBeenCalledWith('c1');
-            expect(queue.add).toHaveBeenCalledWith('https://cdn.test/a.m3u8', { referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: 'sid=1', title: 'Episode 1' });
+            expect(queue.add).toHaveBeenCalledWith('https://cdn.test/a.m3u8', { referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: 'sid=1', title: 'Episode 1', ipFamily: undefined, pageUrl: 'https://site.test/ep-1' });
         });
 
         it('leaves the cookie and title out when the stream has none', () => {
             const { call, queue, streamFinder } = setup();
-            streamFinder.getCandidate.mockReturnValue({ url: 'https://cdn.test/a.mp4', referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: null, title: null });
+            streamFinder.getCandidate.mockReturnValue({ url: 'https://cdn.test/a.mp4', referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: null, title: null, ipFamily: 6, pageUrl: 'https://origin.test/p' });
             call(IPC.streamDownload, 'c2');
-            expect(queue.add).toHaveBeenCalledWith('https://cdn.test/a.mp4', { referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: undefined, title: undefined });
+            expect(queue.add).toHaveBeenCalledWith('https://cdn.test/a.mp4', { referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: undefined, title: undefined, ipFamily: 6, pageUrl: 'https://origin.test/p' });
         });
 
         it('explains when the stream is no longer known', () => {

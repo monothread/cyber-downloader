@@ -31,6 +31,7 @@ Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github
 | 11.1 | 11 | Close to system tray + quit confirmation + single instance (D-017) | 10.2 | src/main/index.ts, trayAvailability.ts, trayManager.ts, windowClose.ts, electronTray.ts, SettingsPanel.tsx | DONE | session-2026-09-30-a | Verified on Cinnamon (SNI item + Show/Quit menu). KDE/XFCE/GNOME rely on the same protocol but were not run here |
 | 12.1 | 12 | Windows build + Fedora (rpm) + Arch (pacman) packages (D-018) | 11.1 | scripts/fetch-binaries.mjs, scripts/check-linux-tools.mjs, electron-builder.yml, .github/workflows, binaryResolver.ts, updater.ts, trayAvailability.ts | DONE | session-2026-09-30-a | Code + config + workflows done. Windows/rpm/pacman packages were not built or run here (see D-018) |
 | 13.1 | 13 | Release 0.3.0 | 12.1 | .github/workflows, GitHub Release | DONE | session-2026-09-30-a | Release Linux and Release Windows workflows ran green and uploaded to one draft, which was then published. Tag `v0.3.0` = `0fd500a` |
+| 14.4 | 14 | Same IP family for IP-bound addresses and a fresh link after a 403 (D-023) | 14.3 | mediaKinds.ts, ytdlpArgsBuilder.ts, streamFinder.ts, JobCard | DONE | session-2026-09-30-a | Generic code; verified with local servers. Not verified against any real site |
 | 14.3 | 14 | Friendly HTTP 403 error and grouping of near-identical stream addresses (D-022) | 14.2 | errorMapper.ts, streamGrouping.ts, StreamFinder UI | DONE | session-2026-09-30-a | Anonymised fixtures; e2e 38/38 |
 | 14.2 | 14 | Hidden browser improvements for embedded players (D-021) + user-responsibility disclaimer (D-020) | 14.1 | src/main/services/browserSniffer.ts, DISCLAIMER.md | DONE | session-2026-09-30-a | Verified with local pages only (e2e 36/36) |
 | 14.1 | 14 | Stream finder: find and download the video stream of a page yt-dlp does not understand (D-019) | 13.1 | src/main/services/{mediaKinds,pageScanner,sniffRules,browserSniffer,playlistFilter,streamFinder}.ts, JobCard/StreamFinder UI | DONE | session-2026-09-30-a | On branch `feature/stream-sniffer` (not merged, not released). Verified with local pages (e2e) and a public hls.js/Mux test stream |
@@ -43,8 +44,8 @@ Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github
 ## Verification status (2026-09-30)
 - `npx tsc --noEmit --project tsconfig.json`: OK
 - `npx eslint src/ test/ --max-warnings=0`: OK
-- `npx vitest run`: 706 unit tests OK (44 files)
-- `npx playwright test` (after `npm run build`): 38 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
+- `npx vitest run`: 740 unit tests OK (44 files)
+- `npx playwright test` (after `npm run build`): 43 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
 - yt-dlp args validated manually against the real yt-dlp (short download of the test video `jNQXAC9IVRw`).
 
 ## Pending / follow-ups

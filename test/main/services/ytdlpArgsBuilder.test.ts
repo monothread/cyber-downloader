@@ -223,6 +223,26 @@ describe('buildYtdlpArgs with request extras (streams found on a page)', () => {
         expect(build({ title: '' })[build({ title: '' }).indexOf('-o') + 1]).toBe('%(title).80s [%(id)s].%(ext)s');
     });
 
+    it.each([
+        [4, '--force-ipv4', '--force-ipv6'],
+        [6, '--force-ipv6', '--force-ipv4']
+    ] as const)('forces the IP family %s the address is bound to', (family, expected, other) => {
+        const args = build({ ipFamily: family });
+        expect(args).toContain(expected);
+        expect(args).not.toContain(other);
+    });
+
+    it('places the IP family flag with the other request arguments, before the URL separator', () => {
+        const args = build({ referer: 'https://r.test/', ipFamily: 6 });
+        expect(args.slice(-5)).toEqual(['--referer', 'https://r.test/', '--force-ipv6', '--', URL]);
+    });
+
+    it('never passes the page address to yt-dlp', () => {
+        const args = build({ pageUrl: 'https://page.test/ep-1' });
+        expect(args).not.toContain('https://page.test/ep-1');
+        expect(args).toEqual(buildYtdlpArgs(URL, DEFAULT_SETTINGS, DEFAULT_DIR));
+    });
+
     it('adds nothing for empty extras', () => {
         expect(build({})).toEqual(buildYtdlpArgs(URL, DEFAULT_SETTINGS, DEFAULT_DIR));
         const args = build({ referer: '', userAgent: '', cookie: '' });

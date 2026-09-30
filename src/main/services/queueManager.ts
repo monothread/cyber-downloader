@@ -76,7 +76,8 @@ export class QueueManager {
             eta: '',
             filePath: null,
             error: null,
-            createdAt: this.now()
+            createdAt: this.now(),
+            pageUrl: options.pageUrl ?? null
         };
         this.jobs.push(job);
         this.extras.set(job.id, options);

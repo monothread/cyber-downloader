@@ -59,6 +59,7 @@ export interface DownloadJob {
     filePath: string | null;
     error: DownloadError | null;
     createdAt: number;
+    pageUrl: string | null;
 }
 
 export interface ProgressInfo {

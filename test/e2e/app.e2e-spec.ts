@@ -694,11 +694,37 @@ function variantsPage(port: number): string {
     </script></body></html>`;
 }
 
+// A page whose script asks for one video through the given addresses (what a player does once it starts).
+function mediaPage(title: string, sources: string[]): string {
+    return `<html><head><title>${title}</title></head><body><script>
+        window.addEventListener('load', function () {
+            ${JSON.stringify(sources)}.forEach(function (source) {
+                var video = document.createElement('video');
+                video.muted = true;
+                video.src = source;
+                document.body.appendChild(video);
+                video.play().catch(function () {});
+            });
+        });
+    </script></body></html>`;
+}
+
+const SIGNED = 'id=bound1&itag=18&mime=video%2Fmp4&sig=Sig&expire=1999999999&cpn=session';
+
 function startLocalSite(): Promise<{ server: Server; origin: string }> {
     return new Promise((resolvePromise) => {
         const server = createServer((request, response) => {
             const path = (request.url ?? '/').split('?')[0] ?? '/';
-            if (path === '/unsupported/variants.html') {
+            if (path === '/unsupported/bound-v4.html') {
+                response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+                response.end(mediaPage('Bound IPv4', [`/videoplayback?${SIGNED}&ip=203.0.113.9`]));
+            } else if (path === '/unsupported/bound-v6.html') {
+                response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+                response.end(mediaPage('Bound IPv6', [`/videoplayback?${SIGNED}&ip=2001%3Adb8%3A%3A1`]));
+            } else if (path === '/unsupported/stale.html') {
+                response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+                response.end(mediaPage('Stale Stream', [`/forbidden/videoplayback?${SIGNED}`]));
+            } else if (path === '/unsupported/variants.html') {
                 response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
                 response.end(variantsPage((server.address() as AddressInfo).port));
             } else if (path === '/unsupported/nested.html') {
@@ -707,7 +733,7 @@ function startLocalSite(): Promise<{ server: Server; origin: string }> {
             } else if (path === '/frame/player.html') {
                 response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
                 response.end(FRAME_PLAYER);
-            } else if (path === '/videoplayback') {
+            } else if (path.endsWith('/videoplayback')) {
                 response.writeHead(206, { 'content-type': 'video/mp4', 'content-length': 300000, 'content-range': 'bytes 0-299999/300000', 'accept-ranges': 'bytes' });
                 response.end(Buffer.alloc(300000));
             } else if (PAGES[path]) {
@@ -847,6 +873,59 @@ test.describe('find stream', () => {
         expect(args.at(-1)).toContain('/videoplayback?expire=1999999999&ip=203.0.113.9&id=7081&itag=18&mime=video%2Fmp4&sig=AbC123');
         expect(args[args.indexOf('--referer') + 1]).toMatch(/^http:\/\/localhost:\d+\//);
         expect(args[args.indexOf('-o') + 1]).toBe('Nested Player [%(id)s].%(ext)s');
+    });
+
+    test.describe('addresses bound to an IP', () => {
+        for (const [family, page, flag, other] of [
+            ['IPv4', '/unsupported/bound-v4.html', '--force-ipv4', '--force-ipv6'],
+            ['IPv6', '/unsupported/bound-v6.html', '--force-ipv6', '--force-ipv4']
+        ] as const) {
+            test(`downloads an address bound to an ${family} through the same IP family`, async () => {
+                test.setTimeout(60000);
+                const { page: app, logPath } = session;
+                await failOn(page);
+                await app.getByRole('button', { name: 'FIND STREAM' }).click();
+                await expect(panel().getByRole('listitem')).toHaveCount(1, { timeout: 40000 });
+                await panel().getByRole('button', { name: 'Download stream 1' }).click();
+                await expect(app.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+                const args = lastYtdlpCall(logPath, `${SIGNED}&ip=${family === 'IPv4' ? '203.0.113.9' : '2001%3Adb8%3A%3A1'}`);
+                expect(args).toContain(flag);
+                expect(args).not.toContain(other);
+                expect(args[args.indexOf('--referer') + 1]).toBe(`${site.origin}${page}`);
+            });
+        }
+
+        test('does not force an IP family for addresses that are not bound to one', async () => {
+            test.setTimeout(60000);
+            const { page, logPath } = session;
+            await failOn('/unsupported/static.html');
+            await page.getByRole('button', { name: 'FIND STREAM' }).click();
+            await expect(panel().getByRole('listitem')).toHaveCount(1);
+            await panel().getByRole('button', { name: 'Download stream 1' }).click();
+            await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+            const args = lastYtdlpCall(logPath, '/media/static-clip.mp4');
+            expect(args).not.toContain('--force-ipv4');
+            expect(args).not.toContain('--force-ipv6');
+        });
+    });
+
+    test('offers a fresh link for a refused stream and searches its page again', async () => {
+        test.setTimeout(90000);
+        const { page } = session;
+        await failOn('/unsupported/stale.html');
+        await page.getByRole('button', { name: 'FIND STREAM' }).click();
+        await expect(panel().getByRole('listitem')).toHaveCount(1, { timeout: 40000 });
+        await panel().getByRole('button', { name: 'Download stream 1' }).click();
+
+        const streamCard = page.getByTestId('job-card').nth(1);
+        await expect(streamCard.getByRole('alert').filter({ hasText: 'Access refused by the server' })).toBeVisible();
+        await expect(streamCard.getByRole('button', { name: 'FIND STREAM' })).toHaveCount(0);
+        await streamCard.getByRole('button', { name: 'FIND A FRESH LINK' }).click();
+
+        const freshPanel = streamCard.getByRole('region', { name: 'Stream finder' });
+        await expect(freshPanel.getByRole('listitem')).toHaveCount(1, { timeout: 40000 });
+        await expect(freshPanel.getByRole('listitem')).toContainText('/forbidden/videoplayback?id=bound1');
+        await expect(page.getByTestId('job-card').first().getByRole('region', { name: 'Stream finder' })).toHaveCount(0);
     });
 
     test('lists one video once when it is asked for through near-identical addresses', async () => {

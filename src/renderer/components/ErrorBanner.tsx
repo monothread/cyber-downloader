@@ -5,9 +5,10 @@ interface ErrorBannerProps {
     error: DownloadError;
     onRetry: () => void;
     onFindStream?: () => void;
+    findStreamLabel?: string;
 }
 
-export function ErrorBanner({ error, onRetry, onFindStream }: ErrorBannerProps) {
+export function ErrorBanner({ error, onRetry, onFindStream, findStreamLabel = 'FIND STREAM' }: ErrorBannerProps) {
     const [showDetails, setShowDetails] = useState(false);
     return (
         <div className="error-banner" role="alert">
@@ -33,7 +34,7 @@ export function ErrorBanner({ error, onRetry, onFindStream }: ErrorBannerProps) 
                 </button>
                 {onFindStream && (
                     <button type="button" className="btn btn--small btn--primary" onClick={onFindStream}>
-                        FIND STREAM
+                        {findStreamLabel}
                     </button>
                 )}
             </div>

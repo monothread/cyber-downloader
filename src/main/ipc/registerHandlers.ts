@@ -103,7 +103,8 @@ export function registerHandlers(deps: HandlerDependencies): void {
         if (!job) {
             return { ok: false, candidates: [], message: 'That download no longer exists.', usedBrowser: false };
         }
-        return deps.streamFinder.find(job.id, job.url, deep === true, (stage) => {
+        // A download that came from a stream search is searched again on the page it came from, for a fresh address.
+        return deps.streamFinder.find(job.id, job.pageUrl ?? job.url, deep === true, (stage) => {
             deps.sendStreamProgress({ jobId: job.id, stage });
         });
     });
@@ -119,7 +120,9 @@ export function registerHandlers(deps: HandlerDependencies): void {
             referer: candidate.referer,
             userAgent: candidate.userAgent,
             cookie: candidate.cookie ?? undefined,
-            title: candidate.title ?? undefined
+            title: candidate.title ?? undefined,
+            ipFamily: candidate.ipFamily ?? undefined,
+            pageUrl: candidate.pageUrl
         });
     });
     ipcMain.handle(IPC.dialogChooseDir, (): Promise<string | null> => {

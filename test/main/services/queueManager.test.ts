@@ -103,7 +103,8 @@ describe('QueueManager.add', () => {
             eta: '',
             filePath: null,
             error: null,
-            createdAt: 1001
+            createdAt: 1001,
+            pageUrl: null
         });
         expect(updates.map((job) => {
             return job.status;
@@ -430,6 +431,32 @@ describe('QueueManager request extras (streams found on a page)', () => {
         expect(runs[0]?.args).toContain('--referer');
         expect(runs[1]?.args).not.toContain('--referer');
         expect(runs[1]?.args).toContain('%(title).80s [%(id)s].%(ext)s');
+    });
+});
+
+describe('QueueManager page address and IP family extras', () => {
+    it('remembers the page a stream came from on the job and forces the bound IP family', () => {
+        const { queue, runs } = setup();
+        const result = queue.add('https://cdn.test/videoplayback?ip=2001:db8::1', { pageUrl: 'https://site.test/ep-1', ipFamily: 6 });
+        expect(result.job?.pageUrl).toBe('https://site.test/ep-1');
+        expect(queue.getJob('job-1')?.pageUrl).toBe('https://site.test/ep-1');
+        expect(runs[0]?.args).toContain('--force-ipv6');
+        expect(runs[0]?.args).not.toContain('https://site.test/ep-1');
+    });
+
+    it('has no page address for a link the user pasted', () => {
+        const { queue } = setup();
+        expect(queue.add(URL_A).job?.pageUrl).toBeNull();
+    });
+
+    it('keeps the page address and the IP family when the job is retried', async () => {
+        const { queue, runs } = setup();
+        queue.add('https://cdn.test/v?ip=203.0.113.9', { pageUrl: 'https://site.test/ep-1', ipFamily: 4 });
+        runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        await flush();
+        queue.retry('job-1');
+        expect(runs[1]?.args).toContain('--force-ipv4');
+        expect(queue.getJob('job-1')?.pageUrl).toBe('https://site.test/ep-1');
     });
 });
 
