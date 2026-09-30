@@ -53,12 +53,14 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 - Cookies from your browser (chrome, firefox, brave, chromium, edge, opera, vivaldi)
 - Default download folder, playlists, subtitles, speed limit, parallel downloads
 - Settings are saved automatically as you change them
+- Optional "keep running in the system tray" (KDE, XFCE, Cinnamon, MATE, LXQt and GNOME with the AppIndicator extension); right-click the tray icon to quit
 - Title length limit so long titles never break the file name
 - Friendly error banner with technical details on demand
 - Self-updating app: checks GitHub Releases, one click to download and one to restart into the new version
 - Update yt-dlp from the UI (downloads the latest verified release into the app data folder)
 
 ## Notes
+- **System tray:** the tray uses the StatusNotifierItem/AppIndicator standard. Stock GNOME has no tray; install the "AppIndicator and KStatusNotifierItem Support" extension (Ubuntu ships it enabled). Without one, the option is ignored and closing the window quits the app.
 - If Electron refuses to start because of the Chromium sandbox on your distro (restricted user namespaces), run it with `--no-sandbox`.
 - Third-party software bundled in the package is listed in [`resources/THIRD_PARTY_NOTICES.md`](resources/THIRD_PARTY_NOTICES.md).
 

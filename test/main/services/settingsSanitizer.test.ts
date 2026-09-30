@@ -34,6 +34,7 @@ describe('sanitizeSettings', () => {
             ffmpegPath: '/opt/ffmpeg',
             jsRuntime: 'node:/usr/bin/node',
             checkUpdatesOnStart: false,
+            closeToTray: true,
             extraArgs: '--no-mtime'
         };
         expect(sanitizeSettings(valid)).toEqual(valid);
@@ -56,12 +57,14 @@ describe('sanitizeSettings', () => {
         const result = sanitizeSettings({
             useBrowserCookies: 'yes',
             checkUpdatesOnStart: 'no',
+            closeToTray: 'yes',
             downloadDir: 5,
             maxTitleLength: '80',
             maxConcurrent: NaN
         });
         expect(result.useBrowserCookies).toBe(false);
         expect(result.checkUpdatesOnStart).toBe(true);
+        expect(result.closeToTray).toBe(false);
         expect(result.downloadDir).toBe('');
         expect(result.maxTitleLength).toBe(80);
         expect(result.maxConcurrent).toBe(2);

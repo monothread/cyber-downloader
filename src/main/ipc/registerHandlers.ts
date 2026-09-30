@@ -1,5 +1,5 @@
 import { IPC } from '@shared/constants';
-import type { AppUpdateState, BinariesStatus, HistoryEntry, Settings, UpdateResult } from '@shared/types';
+import type { AppUpdateState, BinariesStatus, HistoryEntry, Settings, TraySupport, UpdateResult } from '@shared/types';
 import { checkBinaries } from '../services/binaryLocator';
 import type { BinaryResolver } from '../services/binaryResolver';
 import { updateYtdlp } from '../services/updater';
@@ -19,6 +19,8 @@ export interface HandlerDependencies {
     queue: QueueManager;
     resolver: BinaryResolver;
     appUpdates: AppUpdateService;
+    refreshTraySupport: () => Promise<TraySupport>;
+    onSettingsSaved: (settings: Settings) => void;
     chooseDirectory: () => Promise<string | null>;
     showItemInFolder: (path: string) => void;
 }
@@ -34,7 +36,9 @@ export function registerHandlers(deps: HandlerDependencies): void {
         return settingsStore.get();
     });
     ipcMain.handle(IPC.settingsSave, (_event, input): Settings => {
-        return settingsStore.save(input);
+        const saved = settingsStore.save(input);
+        deps.onSettingsSaved(saved);
+        return saved;
     });
     ipcMain.handle(IPC.queueAdd, (_event, url) => {
         return queue.add(asString(url));
@@ -77,6 +81,9 @@ export function registerHandlers(deps: HandlerDependencies): void {
     });
     ipcMain.handle(IPC.appUpdateInstall, (): void => {
         deps.appUpdates.install();
+    });
+    ipcMain.handle(IPC.traySupport, (): Promise<TraySupport> => {
+        return deps.refreshTraySupport();
     });
     ipcMain.handle(IPC.dialogChooseDir, (): Promise<string | null> => {
         return deps.chooseDirectory();

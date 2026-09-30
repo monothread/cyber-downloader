@@ -365,3 +365,30 @@ describe('QueueManager.shutdown', () => {
     });
 });
 
+describe('QueueManager.pendingCount', () => {
+    it('is zero for an empty queue', () => {
+        expect(setup().queue.pendingCount()).toBe(0);
+    });
+
+    it('counts running and queued jobs', () => {
+        const { queue } = setup({ maxConcurrent: 1 });
+        queue.add(URL_A);
+        queue.add(URL_B);
+        expect(queue.pendingCount()).toBe(2);
+    });
+
+    it('does not count finished, failed or cancelled jobs', async () => {
+        const { queue, runs } = setup({ maxConcurrent: 3 });
+        queue.add(URL_A);
+        queue.add(URL_B);
+        queue.add(URL_C);
+        runs[0]?.resolve({ status: 'done', filePath: null });
+        runs[1]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        await flush();
+        expect(queue.pendingCount()).toBe(1);
+        queue.cancel('job-3');
+        await flush();
+        expect(queue.pendingCount()).toBe(0);
+    });
+});
+

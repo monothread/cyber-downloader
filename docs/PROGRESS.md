@@ -28,6 +28,7 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 | 9.1 | 9 | Git repository + publish to GitHub | 8.1 | .git, LICENSE | DONE | session-2026-09-30-a | Branch `main` pushed to monothread/cyber-downloader; LICENSE is the MIT one created by GitHub (copyright monothread) |
 | 10.1 | 10 | Settings auto-save + one input per link (D-015) | 9.1 | src/renderer/hooks, SettingsPanel.tsx, UrlInput.tsx, appStore.ts | DONE | session-2026-09-30-a | Committed locally; needs a new version/release to reach installed apps |
 | 10.2 | 10 | Docs/code review fixes (D-016) | 10.1 | queueManager.ts, appUpdateService.ts, registerHandlers.ts, docs | DONE | session-2026-09-30-a | Quit cleanup, downloaded-state guard, openPath IPC removed, stale docs fixed |
+| 11.1 | 11 | Close to system tray + quit confirmation + single instance (D-017) | 10.2 | src/main/index.ts, trayAvailability.ts, trayManager.ts, windowClose.ts, electronTray.ts, SettingsPanel.tsx | DONE | session-2026-09-30-a | Verified on Cinnamon (SNI item + Show/Quit menu). KDE/XFCE/GNOME rely on the same protocol but were not run here |
 
 ## Handoff notes
 - Project directory: `/home/lucas/projects/downloader`; remote `origin` = `https://github.com/monothread/cyber-downloader.git`.
@@ -37,11 +38,12 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 ## Verification status (2026-09-30)
 - `npx tsc --noEmit --project tsconfig.json`: OK
 - `npx eslint src/ test/ --max-warnings=0`: OK
-- `npx vitest run`: 356 unit tests OK (33 files)
-- `npx playwright test` (after `npm run build`): 20 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
+- `npx vitest run`: 431 unit tests OK (37 files)
+- `npx playwright test` (after `npm run build`): 28 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
 - yt-dlp args validated manually against the real yt-dlp (short download of the test video `jNQXAC9IVRw`).
 
 ## Pending / follow-ups
+- Tray: only Cinnamon was verified on a real desktop; check KDE, XFCE and GNOME (with and without the AppIndicator extension) when possible. The tray menu itself (right-click) cannot be clicked from the e2e tests.
 - Playlist downloads are one job and one history entry: the title and file shown are those of the last item, and the percentage restarts for every item.
 - `scripts/fetch-binaries.mjs` downloads the *latest* yt-dlp/ffmpeg/deno, so two builds of the same version can ship different binaries; pin versions if reproducible builds matter.
 - The maintainer e-mail is in `package.json` and `electron-builder.yml` (the `.deb` needs one) and in the git history.

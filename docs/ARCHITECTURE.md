@@ -19,6 +19,10 @@ src/
       updater.ts                # updates yt-dlp (verified download into userData/bin)
       appUpdateService.ts       # app self-update state machine (electron-updater)
       electronUpdater.ts        # thin adapter around electron-updater's autoUpdater
+      trayAvailability.ts       # is a system tray available? (SNI watcher on the session bus + desktop heuristic)
+      trayManager.ts            # creates/destroys the tray according to the closeToTray setting
+      windowClose.ts            # close action (allow / hide / ask-quit) and the quit confirmation flow
+      electronTray.ts           # thin adapter around Electron's Tray + Menu
   preload/index.ts              # contextBridge with a typed API
   renderer/
     App.tsx, theme/cyberpunk.css
@@ -35,6 +39,8 @@ docs/
 
 ## Flow
 Renderer (React) → `window.api` (preload, typed) → IPC → `registerHandlers` → `queueManager` → `ytdlpRunner` (spawn) → progress/error/finish events → IPC push → Zustand store → UI.
+
+Closing the window: `decideCloseAction` → `hide` (tray available and `closeToTray` on), `ask-quit` (ask when downloads are pending, then `app.quit()`) or `allow` (already quitting). The app is single-instance; a second launch shows the window.
 
 On `before-quit` the main process calls `queue.shutdown()`: every running yt-dlp is sent SIGTERM and no queued job is started, so no download (or ffmpeg merge) is left running in the background after the app closes.
 

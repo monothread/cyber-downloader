@@ -1,10 +1,12 @@
 import { expect, test, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '../..');
+const ELECTRON_PATH = createRequire(__filename)('electron') as unknown as string;
 const FAKE_YTDLP = resolve(__dirname, 'fixtures/fake-yt-dlp.js');
 const BUNDLED_DIR = join(ROOT, 'resources', 'bin');
 const HAS_BUNDLED_BINARIES = ['yt-dlp', 'ffmpeg', 'deno'].every((name) => {
@@ -17,25 +19,46 @@ interface Session {
     userData: string;
     downloadDir: string;
     logPath: string;
+    hasExited: () => boolean;
 }
 
 let session: Session;
 
-async function launch(useFakeYtdlp = true): Promise<Session> {
+interface LaunchOptions {
+    useFakeYtdlp?: boolean;
+    settings?: Record<string, unknown>;
+    env?: Record<string, string>;
+}
+
+async function launch(options: LaunchOptions = {}): Promise<Session> {
+    const { useFakeYtdlp = true, settings = {}, env = {} } = options;
     const workDir = mkdtempSync(join(tmpdir(), 'cyber-dl-e2e-'));
     const userData = join(workDir, 'user-data');
     const downloadDir = join(workDir, 'downloads');
     const logPath = join(workDir, 'ytdlp-calls.log');
     writeFileSync(logPath, '');
     mkdirSync(userData, { recursive: true });
-    writeFileSync(join(userData, 'settings.json'), JSON.stringify({ ...(useFakeYtdlp ? { ytdlpPath: FAKE_YTDLP } : {}), downloadDir }));
+    writeFileSync(join(userData, 'settings.json'), JSON.stringify({ ...(useFakeYtdlp ? { ytdlpPath: FAKE_YTDLP } : {}), downloadDir, ...settings }));
     const app = await electron.launch({
         args: [ROOT, '--no-sandbox', `--user-data-dir=${userData}`],
-        env: { ...process.env, FAKE_YTDLP_LOG: logPath }
+        env: { ...process.env, FAKE_YTDLP_LOG: logPath, ...env }
+    });
+    let exited = false;
+    app.on('close', () => {
+        exited = true;
     });
     const page = await app.firstWindow();
     await page.waitForSelector('.logo');
-    return { app, page, userData, downloadDir, logPath };
+    return {
+        app,
+        page,
+        userData,
+        downloadDir,
+        logPath,
+        hasExited: () => {
+            return exited;
+        }
+    };
 }
 
 function readCalls(logPath: string): string[][] {
@@ -79,7 +102,7 @@ test.describe('bundled binaries', () => {
     test.skip(!HAS_BUNDLED_BINARIES, 'run `npm run fetch-binaries` to enable these tests');
 
     test('uses the bundled yt-dlp and ffmpeg by default', async () => {
-        const bundled = await launch(false);
+        const bundled = await launch({ useFakeYtdlp: false });
         try {
             const ytdlpChip = bundled.page.locator('.chip--ok', { hasText: /^yt-dlp \d/ });
             await expect(ytdlpChip).toBeVisible();
@@ -381,5 +404,220 @@ test('closing the app stops downloads that are still running', async () => {
     } finally {
         rmSync(resolve(own.userData, '..'), { recursive: true, force: true });
     }
+});
+
+async function closeQuietly(own: Session): Promise<void> {
+    await own.app.close().catch(() => {
+        return undefined;
+    });
+    rmSync(resolve(own.userData, '..'), { recursive: true, force: true });
+}
+
+function windowVisible(own: Session): Promise<boolean> {
+    return own.app.evaluate(({ BrowserWindow }) => {
+        return BrowserWindow.getAllWindows()[0]?.isVisible() ?? false;
+    });
+}
+
+async function closeMainWindow(own: Session): Promise<void> {
+    await own.app
+        .evaluate(({ BrowserWindow }) => {
+            BrowserWindow.getAllWindows()[0]?.close();
+        })
+        .catch(() => {
+            return undefined;
+        });
+}
+
+function appExited(own: Session): boolean {
+    return own.hasExited();
+}
+
+async function stubQuitDialog(own: Session, response: number): Promise<void> {
+    await own.app.evaluate(({ dialog }, answer) => {
+        const holder = globalThis as unknown as { quitPrompts: string[] };
+        holder.quitPrompts = [];
+        dialog.showMessageBox = (async (...args: unknown[]) => {
+            const options = args[args.length - 1] as { message: string };
+            holder.quitPrompts.push(options.message);
+            return { response: answer, checkboxChecked: false };
+        }) as typeof dialog.showMessageBox;
+    }, response);
+}
+
+function quitPrompts(own: Session): Promise<string[]> {
+    return own.app.evaluate(() => {
+        return (globalThis as unknown as { quitPrompts: string[] }).quitPrompts;
+    });
+}
+
+const KDE_ENV = { XDG_CURRENT_DESKTOP: 'KDE' };
+const GNOME_WITHOUT_TRAY_ENV = { XDG_CURRENT_DESKTOP: 'GNOME', PATH: '/nonexistent' };
+
+test.describe('close to tray', () => {
+    test('is off by default: closing the window quits the app', async () => {
+        const own = await launch({ env: KDE_ENV });
+        try {
+            await closeMainWindow(own);
+            await expect.poll(() => {
+                return appExited(own);
+            }, { timeout: 8000 }).toBe(true);
+        } finally {
+            await closeQuietly(own);
+        }
+    });
+
+    test('hides the window instead of quitting and a second launch brings it back', async () => {
+        const own = await launch({ env: KDE_ENV, settings: { closeToTray: true } });
+        try {
+            await own.page.waitForTimeout(500);
+            expect(await windowVisible(own)).toBe(true);
+
+            await closeMainWindow(own);
+            await expect.poll(() => {
+                return windowVisible(own);
+            }).toBe(false);
+            expect(appExited(own)).toBe(false);
+
+            const second = spawnSync(ELECTRON_PATH, [ROOT, '--no-sandbox', `--user-data-dir=${own.userData}`], { timeout: 20000, env: { ...process.env, ...KDE_ENV } });
+            expect(second.status).toBe(0);
+            await expect.poll(() => {
+                return windowVisible(own);
+            }).toBe(true);
+            expect(appExited(own)).toBe(false);
+        } finally {
+            await closeQuietly(own);
+        }
+    });
+
+    test('keeps downloads running while the window is hidden', async () => {
+        const own = await launch({ env: KDE_ENV, settings: { closeToTray: true } });
+        try {
+            const marker = 'example.com/slow-tray-check';
+            await own.page.waitForTimeout(500);
+            await own.page.getByLabel('Link 1', { exact: true }).fill(`https://${marker}`);
+            await own.page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+            await expect(own.page.locator('.badge', { hasText: 'DOWNLOADING' })).toBeVisible();
+
+            await closeMainWindow(own);
+            await expect.poll(() => {
+                return windowVisible(own);
+            }).toBe(false);
+            await own.page.waitForTimeout(800);
+            expect(countProcesses(marker)).toBeGreaterThan(0);
+
+            spawnSync(ELECTRON_PATH, [ROOT, '--no-sandbox', `--user-data-dir=${own.userData}`], { timeout: 20000, env: { ...process.env, ...KDE_ENV } });
+            await expect.poll(() => {
+                return windowVisible(own);
+            }).toBe(true);
+            await expect(own.page.locator('.badge', { hasText: 'DOWNLOADING' })).toBeVisible();
+
+            await own.app.evaluate(({ app }) => {
+                app.quit();
+            }).catch(() => {
+                return undefined;
+            });
+            await expect.poll(() => {
+                return countProcesses(marker);
+            }, { timeout: 8000 }).toBe(0);
+        } finally {
+            await closeQuietly(own);
+        }
+    });
+
+    test('can be turned on from the settings without a warning when a tray exists', async () => {
+        const own = await launch({ env: KDE_ENV });
+        try {
+            await own.page.getByRole('button', { name: 'SETTINGS' }).click();
+            const toggle = own.page.getByLabel('Keep running in the system tray when the window is closed');
+            await expect(toggle).not.toBeChecked();
+            await toggle.check();
+            await expect(own.page.getByText('All changes saved.')).toBeVisible();
+            expect(readSettings(own.userData).closeToTray).toBe(true);
+            await expect(own.page.getByRole('alert')).toHaveCount(0);
+            await own.page.waitForTimeout(500);
+
+            await closeMainWindow(own);
+            await expect.poll(() => {
+                return windowVisible(own);
+            }).toBe(false);
+            expect(appExited(own)).toBe(false);
+        } finally {
+            await closeQuietly(own);
+        }
+    });
+
+    test('on GNOME without a tray it warns and closing the window still quits the app', async () => {
+        const own = await launch({ env: GNOME_WITHOUT_TRAY_ENV, settings: { closeToTray: true } });
+        try {
+            await own.page.getByRole('button', { name: 'SETTINGS' }).click();
+            await expect(own.page.getByRole('alert')).toContainText('AppIndicator and KStatusNotifierItem Support');
+
+            await closeMainWindow(own);
+            await expect.poll(() => {
+                return appExited(own);
+            }, { timeout: 8000 }).toBe(true);
+        } finally {
+            await closeQuietly(own);
+        }
+    });
+});
+
+test.describe('quitting with downloads in progress', () => {
+    test('asks first and keeps everything running when the user cancels', async () => {
+        const own = await launch({ env: KDE_ENV });
+        try {
+            const marker = 'example.com/slow-cancel-quit-check';
+            await stubQuitDialog(own, 1);
+            await own.page.getByLabel('Link 1', { exact: true }).fill(`https://${marker}`);
+            await own.page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+            await expect(own.page.locator('.badge', { hasText: 'DOWNLOADING' })).toBeVisible();
+
+            await closeMainWindow(own);
+            await expect.poll(() => {
+                return quitPrompts(own);
+            }).toEqual(['1 download is still in progress.']);
+            expect(appExited(own)).toBe(false);
+            expect(await windowVisible(own)).toBe(true);
+            expect(countProcesses(marker)).toBeGreaterThan(0);
+            await expect(own.page.locator('.badge', { hasText: 'DOWNLOADING' })).toBeVisible();
+        } finally {
+            await closeQuietly(own);
+        }
+    });
+
+    test('quits and stops the download when the user confirms', async () => {
+        const own = await launch({ env: KDE_ENV });
+        try {
+            const marker = 'example.com/slow-confirm-quit-check';
+            await stubQuitDialog(own, 0);
+            await own.page.getByLabel('Link 1', { exact: true }).fill(`https://${marker}`);
+            await own.page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+            await expect(own.page.locator('.badge', { hasText: 'DOWNLOADING' })).toBeVisible();
+
+            await closeMainWindow(own);
+            await expect.poll(() => {
+                return appExited(own);
+            }, { timeout: 8000 }).toBe(true);
+            await expect.poll(() => {
+                return countProcesses(marker);
+            }, { timeout: 8000 }).toBe(0);
+        } finally {
+            await closeQuietly(own);
+        }
+    });
+
+    test('quits without asking when nothing is downloading', async () => {
+        const own = await launch({ env: KDE_ENV });
+        try {
+            await stubQuitDialog(own, 1);
+            await closeMainWindow(own);
+            await expect.poll(() => {
+                return appExited(own);
+            }, { timeout: 8000 }).toBe(true);
+        } finally {
+            await closeQuietly(own);
+        }
+    });
 });
 

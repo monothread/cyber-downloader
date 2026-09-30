@@ -17,6 +17,7 @@ export const IPC = {
     appUpdateCheck: 'app-update:check',
     appUpdateDownload: 'app-update:download',
     appUpdateInstall: 'app-update:install',
+    traySupport: 'tray:support',
     dialogChooseDir: 'dialog:choose-dir',
     shellShowItem: 'shell:show-item',
     eventJobUpdate: 'event:job-update',
@@ -56,5 +57,6 @@ export const DEFAULT_SETTINGS: Settings = {
     ffmpegPath: '',
     jsRuntime: '',
     checkUpdatesOnStart: true,
+    closeToTray: false,
     extraArgs: ''
 };

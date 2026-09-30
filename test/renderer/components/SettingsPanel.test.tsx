@@ -12,7 +12,7 @@ const initial = useAppStore.getState();
 beforeEach(() => {
     vi.useFakeTimers();
     mock = installMockApi();
-    useAppStore.setState({ ...initial, settings: DEFAULT_SETTINGS, notice: null, appUpdate: INITIAL_APP_UPDATE });
+    useAppStore.setState({ ...initial, settings: DEFAULT_SETTINGS, notice: null, appUpdate: INITIAL_APP_UPDATE, traySupport: null });
 });
 
 afterEach(() => {
@@ -38,7 +38,7 @@ function type(label: string, value: string): void {
 describe('SettingsPanel layout', () => {
     it('renders every section with the stored values', () => {
         render(<SettingsPanel />);
-        ['OUTPUT', 'QUALITY & FORMAT', 'BROWSER COOKIES', 'PLAYLISTS & SUBTITLES', 'ADVANCED', 'APP UPDATES'].forEach((legend) => {
+        ['OUTPUT', 'QUALITY & FORMAT', 'BROWSER COOKIES', 'PLAYLISTS & SUBTITLES', 'ADVANCED', 'WINDOW', 'APP UPDATES'].forEach((legend) => {
             expect(screen.getByText(legend)).toBeInTheDocument();
         });
         expect(screen.getByLabelText('Download folder')).toHaveValue('');
@@ -74,7 +74,8 @@ describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
         ['Use cookies from my browser', 'useBrowserCookies'],
         ['Download whole playlist', 'downloadPlaylist'],
         ['Download subtitles', 'writeSubtitles'],
-        ['Embed subtitles in the video', 'embedSubtitles']
+        ['Embed subtitles in the video', 'embedSubtitles'],
+        ['Keep running in the system tray when the window is closed', 'closeToTray']
     ] as const)('saves right away when "%s" is toggled', async (label, key) => {
         render(<SettingsPanel />);
         fireEvent.click(screen.getByLabelText(label));
@@ -245,3 +246,60 @@ describe('SettingsPanel app updates', () => {
         expect(mock.api.downloadAppUpdate).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('SettingsPanel system tray', () => {
+    const TRAY_LABEL = 'Keep running in the system tray when the window is closed';
+
+    it('is off by default and explains how to quit', () => {
+        render(<SettingsPanel />);
+        expect(screen.getByLabelText(TRAY_LABEL)).not.toBeChecked();
+        expect(screen.getByText('Downloads keep going in the background. Right-click the tray icon to quit completely.')).toBeInTheDocument();
+    });
+
+    it('reflects the stored value', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, closeToTray: true } });
+        render(<SettingsPanel />);
+        expect(screen.getByLabelText(TRAY_LABEL)).toBeChecked();
+    });
+
+    it('checks the tray support when opened and again when the option changes', async () => {
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(mock.api.getTraySupport).toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByLabelText(TRAY_LABEL));
+        await flushPromises();
+        expect(mock.api.getTraySupport).toHaveBeenCalledTimes(2);
+    });
+
+    it('warns when the option is on and the environment has no tray', async () => {
+        mock.api.getTraySupport.mockResolvedValue({ available: false, reason: 'No system tray was detected.' });
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, closeToTray: true } });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.getByRole('alert')).toHaveTextContent('No system tray was detected.');
+    });
+
+    it('does not warn when the option is off, even without a tray', async () => {
+        mock.api.getTraySupport.mockResolvedValue({ available: false, reason: 'No system tray was detected.' });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('does not warn when a tray is available', async () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, closeToTray: true } });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('shows the warning as soon as the option is turned on', async () => {
+        mock.api.getTraySupport.mockResolvedValue({ available: false, reason: 'No system tray was detected.' });
+        render(<SettingsPanel />);
+        await flushPromises();
+        fireEvent.click(screen.getByLabelText(TRAY_LABEL));
+        await flushPromises();
+        expect(screen.getByRole('alert')).toHaveTextContent('No system tray was detected.');
+    });
+});
+

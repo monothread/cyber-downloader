@@ -8,6 +8,7 @@ import {
     RESOLUTIONS,
     VIDEO_CONTAINERS
 } from '@shared/constants';
+import { useEffect } from 'react';
 import type { MaxResolution } from '@shared/types';
 import { useAutoSaveSettings, type SaveStatus } from '../hooks/useAutoSaveSettings';
 import { useAppStore } from '../store/appStore';
@@ -43,7 +44,18 @@ export function SettingsPanel() {
     const checkAppUpdate = useAppStore((state) => {
         return state.checkAppUpdate;
     });
+    const traySupport = useAppStore((state) => {
+        return state.traySupport;
+    });
+    const refreshTraySupport = useAppStore((state) => {
+        return state.refreshTraySupport;
+    });
     const { draft, status, change, edit } = useAutoSaveSettings(stored, saveSettings);
+    const trayWarning = draft.closeToTray && traySupport !== null && !traySupport.available ? traySupport.reason : null;
+
+    useEffect(() => {
+        void refreshTraySupport();
+    }, [draft.closeToTray, refreshTraySupport]);
     const updateInProgress = appUpdate.status === 'checking' || appUpdate.status === 'downloading';
 
     async function handleChooseDirectory(): Promise<void> {
@@ -248,6 +260,23 @@ export function SettingsPanel() {
                         edit('extraArgs', value);
                     }}
                 />
+            </fieldset>
+
+            <fieldset className="panel">
+                <legend>WINDOW</legend>
+                <ToggleField
+                    label="Keep running in the system tray when the window is closed"
+                    checked={draft.closeToTray}
+                    hint="Downloads keep going in the background. Right-click the tray icon to quit completely."
+                    onChange={(value) => {
+                        change('closeToTray', value);
+                    }}
+                />
+                {trayWarning && (
+                    <p className="field__warning" role="alert">
+                        {trayWarning}
+                    </p>
+                )}
             </fieldset>
 
             <fieldset className="panel">

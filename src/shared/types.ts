@@ -24,6 +24,7 @@ export interface Settings {
     ffmpegPath: string;
     jsRuntime: string;
     checkUpdatesOnStart: boolean;
+    closeToTray: boolean;
     extraArgs: string;
 }
 
@@ -119,6 +120,11 @@ export interface AppUpdateState {
     message: string | null;
 }
 
+export interface TraySupport {
+    available: boolean;
+    reason: string | null;
+}
+
 export interface CyberApi {
     getSettings: () => Promise<Settings>;
     saveSettings: (settings: Settings) => Promise<Settings>;
@@ -136,6 +142,7 @@ export interface CyberApi {
     checkAppUpdate: () => Promise<void>;
     downloadAppUpdate: () => Promise<void>;
     installAppUpdate: () => Promise<void>;
+    getTraySupport: () => Promise<TraySupport>;
     chooseDirectory: () => Promise<string | null>;
     showItemInFolder: (path: string) => Promise<void>;
     onJobUpdate: (listener: (job: DownloadJob) => void) => () => void;

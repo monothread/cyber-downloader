@@ -75,8 +75,12 @@ function setup() {
         return '/chosen';
     });
     const showItemInFolder = vi.fn();
+    const refreshTraySupport = vi.fn(async () => {
+        return { available: false, reason: 'no tray here' };
+    });
+    const onSettingsSaved = vi.fn();
     const resolver = new BinaryResolver({ bundledDir: '/b', userBinDir: '/u' });
-    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, chooseDirectory, showItemInFolder });
+    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, refreshTraySupport, onSettingsSaved, chooseDirectory, showItemInFolder });
     const call = (channel: string, ...args: unknown[]): unknown => {
         const handler = handlers.get(channel);
         if (!handler) {
@@ -84,7 +88,7 @@ function setup() {
         }
         return handler({}, ...args);
     };
-    return { handlers, call, appUpdates, resolver, settingsStore, historyStore, queue, chooseDirectory, showItemInFolder };
+    return { handlers, call, refreshTraySupport, onSettingsSaved, appUpdates, resolver, settingsStore, historyStore, queue, chooseDirectory, showItemInFolder };
 }
 
 describe('registerHandlers', () => {
@@ -93,7 +97,7 @@ describe('registerHandlers', () => {
         expect([...handlers.keys()].sort()).toEqual(
             [
                 IPC.settingsGet, IPC.settingsSave, IPC.queueAdd, IPC.queueList, IPC.queueCancel, IPC.queueRetry, IPC.queueRemove,
-                IPC.queueClearFinished, IPC.historyList, IPC.historyClear, IPC.binariesCheck, IPC.ytdlpUpdate, IPC.appUpdateGet, IPC.appUpdateCheck, IPC.appUpdateDownload, IPC.appUpdateInstall, IPC.dialogChooseDir,
+                IPC.queueClearFinished, IPC.historyList, IPC.historyClear, IPC.binariesCheck, IPC.ytdlpUpdate, IPC.appUpdateGet, IPC.appUpdateCheck, IPC.appUpdateDownload, IPC.appUpdateInstall, IPC.traySupport, IPC.dialogChooseDir,
                 IPC.shellShowItem
             ].sort()
         );
@@ -104,6 +108,25 @@ describe('registerHandlers', () => {
         expect(call(IPC.settingsGet)).toEqual(DEFAULT_SETTINGS);
         expect(call(IPC.settingsSave, { ...DEFAULT_SETTINGS, maxTitleLength: 5000 })).toEqual({ ...DEFAULT_SETTINGS, maxTitleLength: 200 });
         expect(call(IPC.settingsGet)).toEqual({ ...DEFAULT_SETTINGS, maxTitleLength: 200 });
+    });
+
+    it('notifies the app with the sanitized settings after saving', () => {
+        const { call, onSettingsSaved } = setup();
+        call(IPC.settingsSave, { ...DEFAULT_SETTINGS, closeToTray: true, maxTitleLength: 5000 });
+        expect(onSettingsSaved).toHaveBeenCalledTimes(1);
+        expect(onSettingsSaved).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, closeToTray: true, maxTitleLength: 200 });
+    });
+
+    it('does not notify on plain settings reads', () => {
+        const { call, onSettingsSaved } = setup();
+        call(IPC.settingsGet);
+        expect(onSettingsSaved).not.toHaveBeenCalled();
+    });
+
+    it('returns a fresh tray support check', async () => {
+        const { call, refreshTraySupport } = setup();
+        await expect(call(IPC.traySupport)).resolves.toEqual({ available: false, reason: 'no tray here' });
+        expect(refreshTraySupport).toHaveBeenCalledTimes(1);
     });
 
     it('adds a download with the URL string', () => {

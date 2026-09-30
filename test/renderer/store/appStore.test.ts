@@ -9,7 +9,7 @@ const initial = useAppStore.getState();
 
 beforeEach(() => {
     mock = installMockApi();
-    useAppStore.setState({ ...initial, jobs: [], history: [], settings: DEFAULT_SETTINGS, binaries: null, notice: null, updating: false, appUpdate: INITIAL_APP_UPDATE, tab: 'downloads' });
+    useAppStore.setState({ ...initial, jobs: [], history: [], settings: DEFAULT_SETTINGS, binaries: null, notice: null, updating: false, appUpdate: INITIAL_APP_UPDATE, traySupport: null, tab: 'downloads' });
 });
 
 const HISTORY_ENTRY: HistoryEntry = { id: 'h1', url: 'https://x.com', title: 'T', filePath: '/d/T.mp4', status: 'done', errorTitle: null, finishedAt: 5 };
@@ -243,3 +243,17 @@ describe('useAppStore app updates', () => {
         expect(mock.api.installAppUpdate).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('useAppStore tray support', () => {
+    it('starts unknown', () => {
+        expect(initial.traySupport).toBeNull();
+    });
+
+    it('stores the result of the main-process check', async () => {
+        mock.api.getTraySupport.mockResolvedValueOnce({ available: false, reason: 'no tray here' });
+        await useAppStore.getState().refreshTraySupport();
+        expect(mock.api.getTraySupport).toHaveBeenCalledTimes(1);
+        expect(useAppStore.getState().traySupport).toEqual({ available: false, reason: 'no tray here' });
+    });
+});
+

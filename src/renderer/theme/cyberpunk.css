@@ -416,3 +416,5 @@ body::after {
 .save-status--saved { color: var(--green); }
 .save-status--pending, .save-status--saving { color: var(--yellow); }
 .save-status--error { color: var(--red); }
+
+.field__warning { margin: 0; color: var(--yellow); font-size: 12px; }

@@ -16,3 +16,4 @@
 - Fixed the EPIPE crash when the AppImage is launched without a terminal (updater logger off + stdio error guard). Version bumped to 0.1.1 to test the auto-update from 0.1.0.
 - Settings now auto-save (toggles/selects immediately, text/number 2 s after typing; no save button). Downloads use one input per link with an add button; long links are handled inside a non-resizable single-line input (D-015). Tests: 352 unit, 19 e2e.
 - Docs/code review: fixed leftovers (DownloadStatus name), added quit cleanup (running downloads are stopped when the app closes), guarded the downloaded-update state, removed the unused openPath IPC (D-016). Tests: 356 unit, 20 e2e.
+- Close to system tray (D-017): setting, SNI tray with Show/Quit menu, GNOME fallback with warning, quit confirmation with running downloads, single instance. Tests: 431 unit, 28 e2e. Version bumped to 0.2.0.

@@ -61,6 +61,9 @@ const api: CyberApi = {
     installAppUpdate: () => {
         return ipcRenderer.invoke(IPC.appUpdateInstall);
     },
+    getTraySupport: () => {
+        return ipcRenderer.invoke(IPC.traySupport);
+    },
     chooseDirectory: () => {
         return ipcRenderer.invoke(IPC.dialogChooseDir);
     },

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { AddJobResult, AppUpdateState, BinariesStatus, DownloadJob, HistoryEntry, Settings } from '@shared/types';
+import type { AddJobResult, AppUpdateState, BinariesStatus, DownloadJob, HistoryEntry, Settings, TraySupport } from '@shared/types';
 
 export type Tab = 'downloads' | 'history' | 'settings';
 export type NoticeKind = 'error' | 'info';
@@ -21,6 +21,7 @@ export interface AppState {
     notice: Notice | null;
     updating: boolean;
     appUpdate: AppUpdateState;
+    traySupport: TraySupport | null;
     setTab: (tab: Tab) => void;
     setNotice: (notice: Notice | null) => void;
     init: () => Promise<() => void>;
@@ -38,6 +39,7 @@ export interface AppState {
     checkAppUpdate: () => Promise<void>;
     downloadAppUpdate: () => Promise<void>;
     installAppUpdate: () => Promise<void>;
+    refreshTraySupport: () => Promise<void>;
 }
 
 export function upsertJob(jobs: DownloadJob[], job: DownloadJob): DownloadJob[] {
@@ -62,6 +64,7 @@ export const useAppStore = create<AppState>((set, get) => {
         notice: null,
         updating: false,
         appUpdate: INITIAL_APP_UPDATE,
+        traySupport: null,
 
         setTab: (tab) => {
             set({ tab });
@@ -181,6 +184,10 @@ export const useAppStore = create<AppState>((set, get) => {
 
         installAppUpdate: async () => {
             await window.api.installAppUpdate();
+        },
+
+        refreshTraySupport: async () => {
+            set({ traySupport: await window.api.getTraySupport() });
         }
     };
 });

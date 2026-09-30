@@ -42,6 +42,12 @@ export class QueueManager {
         });
     }
 
+    pendingCount(): number {
+        return this.jobs.filter((job) => {
+            return job.status === 'running' || job.status === 'queued';
+        }).length;
+    }
+
     shutdown(): void {
         this.closed = true;
         this.handles.forEach((handle) => {

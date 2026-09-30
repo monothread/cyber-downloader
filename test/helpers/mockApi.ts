@@ -78,6 +78,9 @@ export function createMockApi(): MockApiHandle {
         installAppUpdate: vi.fn(async () => {
             return undefined;
         }),
+        getTraySupport: vi.fn(async () => {
+            return { available: true, reason: null };
+        }),
         chooseDirectory: vi.fn(async () => {
             return null;
         }),
