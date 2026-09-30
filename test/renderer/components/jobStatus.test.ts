@@ -28,7 +28,7 @@ describe('canFindStream', () => {
         expect(canFindStream(errorWith(code))).toBe(true);
     });
 
-    it.each(['NETWORK', 'UNAVAILABLE', 'LOGIN_REQUIRED', 'FFMPEG_MISSING', 'FILENAME_TOO_LONG', 'BINARY_MISSING'] as const)('is false for %s', (code) => {
+    it.each(['NETWORK', 'UNAVAILABLE', 'LOGIN_REQUIRED', 'FFMPEG_MISSING', 'FILENAME_TOO_LONG', 'BINARY_MISSING', 'FORBIDDEN'] as const)('is false for %s', (code) => {
         expect(canFindStream(errorWith(code))).toBe(false);
     });
 

@@ -15,7 +15,7 @@ beforeEach(() => {
 });
 
 function candidate(overrides: Partial<StreamCandidate> = {}): StreamCandidate {
-    return { id: 'c1', url: 'https://cdn.test/v/master.m3u8', kind: 'hls', source: 'page', host: 'cdn.test', title: 'Episode 1', ...overrides };
+    return { id: 'c1', url: 'https://cdn.test/v/master.m3u8', kind: 'hls', source: 'page', host: 'cdn.test', title: 'Episode 1', duplicates: 0, ...overrides };
 }
 
 function setSearch(search: Partial<StreamSearchState>): void {
@@ -62,6 +62,16 @@ describe('StreamFinder', () => {
         expect(within(items[1] as HTMLElement).getByText('MP4')).toBeInTheDocument();
         expect(within(items[1] as HTMLElement).getByText('cdn.test · seen on the network')).toBeInTheDocument();
         expect(within(items[2] as HTMLElement).getByText('VIDEO')).toBeInTheDocument();
+    });
+
+    it('says how many alternate addresses were folded into a candidate', () => {
+        setSearch({
+            candidates: [candidate({ duplicates: 2 }), candidate({ id: 'c2', url: 'https://cdn.test/b.mp4', kind: 'mp4', duplicates: 1 }), candidate({ id: 'c3', url: 'https://cdn.test/c.mp4', kind: 'mp4', duplicates: 0 })]
+        });
+        render(<StreamFinder jobId="job-1" />);
+        expect(screen.getByText('cdn.test · found in the page · +2 alternate addresses')).toBeInTheDocument();
+        expect(screen.getByText('cdn.test · found in the page · +1 alternate address')).toBeInTheDocument();
+        expect(screen.getByText('cdn.test · found in the page')).toBeInTheDocument();
     });
 
     it.each([

@@ -28,6 +28,7 @@ src/
       sniffRules.ts             # which network requests/responses count as media (pure)
       browserSniffer.ts         # hidden, sandboxed BrowserWindow that watches the page's network
       playlistFilter.ts         # drops HLS quality variants covered by a master playlist
+      streamGrouping.ts         # folds near-identical addresses of one video (mirrors/redirects) into one candidate
       streamFinder.ts           # static scan -> hidden browser; keeps candidates' request details in the main process
   preload/index.ts              # contextBridge with a typed API
   renderer/

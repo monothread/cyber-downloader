@@ -34,6 +34,7 @@ export type ErrorCode =
     | 'LOGIN_REQUIRED'
     | 'FFMPEG_MISSING'
     | 'FILENAME_TOO_LONG'
+    | 'FORBIDDEN'
     | 'OUTDATED'
     | 'BINARY_MISSING'
     | 'UNKNOWN';
@@ -136,6 +137,7 @@ export interface StreamCandidate {
     source: StreamSource;
     host: string;
     title: string | null;
+    duplicates: number;
 }
 
 export interface StreamFindResult {

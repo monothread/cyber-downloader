@@ -8,6 +8,7 @@ Every yt-dlp error is mapped by `errorMapper` into `{ code, title, hint, raw }`.
 | `UNAVAILABLE` | `Video unavailable`, `Private video`, `removed`, `not available` | Video unavailable | The video may be private, removed or blocked in your region. |
 | `LOGIN_REQUIRED` | `Sign in`, `age-restricted`, `members-only`, bot check | Login required | Enable browser cookies in the settings and make sure you are logged in. |
 | `FFMPEG_MISSING` | `ffmpeg not found`, `ffprobe and ffmpeg not found` | ffmpeg not found | Install ffmpeg or set its path in the settings. |
+| `FORBIDDEN` | `HTTP Error 401/403/410`, `Forbidden` (checked before `NETWORK`, because yt-dlp words it as "Unable to download webpage") | Access refused by the server | The link may have expired or may only work for the original session, network or browser. Try again from the page, enable browser cookies, or search for the stream again. |
 | `FILENAME_TOO_LONG` | `File name too long`, `Errno 36` | Title too long | Reduce the maximum title length in the settings. |
 | `OUTDATED` | `Unable to extract`, `Please update`, `Unsupported URL` | yt-dlp may be outdated | Use the update button to get the latest yt-dlp. |
 | `BINARY_MISSING` | ENOENT on spawn | yt-dlp not found | Install yt-dlp or set its path in the settings. |

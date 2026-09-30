@@ -204,6 +204,19 @@ test('shows the error on the link row for an invalid URL, keeps it for editing a
     await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
 });
 
+test('explains an HTTP 403 in plain words, keeps the raw error on demand and does not offer FIND STREAM', async () => {
+    const { page } = session;
+    await submitUrl(page, 'https://cdn.example.test/forbidden/videoplayback?id=1&sig=abc');
+    const banner = page.getByRole('alert').filter({ hasText: 'Access refused by the server' });
+    await expect(banner).toBeVisible();
+    await expect(banner.locator('.error-banner__code')).toHaveText('FORBIDDEN');
+    await expect(banner.locator('.error-banner__hint')).toContainText('The link may have expired or may only work for the original session, network or browser');
+    await expect(page.locator('.badge', { hasText: 'FAILED' })).toBeVisible();
+    await expect(banner.getByRole('button', { name: 'FIND STREAM' })).toHaveCount(0);
+    await banner.getByRole('button', { name: 'SHOW DETAILS' }).click();
+    await expect(banner.locator('.error-banner__raw')).toContainText('HTTP Error 403: Forbidden');
+});
+
 test('asks for a link when every row is empty', async () => {
     const { page } = session;
     await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
@@ -664,11 +677,31 @@ function nestedPlayerPage(port: number): string {
         <iframe src="http://localhost:${port}/frame/player.html" width="640" height="360" loading="lazy"></iframe></body></html>`;
 }
 
+// The same video asked for through two almost identical addresses (another host and another session parameter),
+// like a mirror or a redirect would produce.
+function variantsPage(port: number): string {
+    const query = 'id=abc123&itag=18&mime=video%2Fmp4&sig=Sig&expire=1999999999&cpn=session&r1=1&r2=2';
+    return `<html><head><title>Variants</title></head><body><script>
+        window.addEventListener('load', function () {
+            ['/videoplayback?${query}&extra=one', 'http://localhost:${port}/videoplayback?${query}&extra=two'].forEach(function (source) {
+                var video = document.createElement('video');
+                video.muted = true;
+                video.src = source;
+                document.body.appendChild(video);
+                video.play().catch(function () {});
+            });
+        });
+    </script></body></html>`;
+}
+
 function startLocalSite(): Promise<{ server: Server; origin: string }> {
     return new Promise((resolvePromise) => {
         const server = createServer((request, response) => {
             const path = (request.url ?? '/').split('?')[0] ?? '/';
-            if (path === '/unsupported/nested.html') {
+            if (path === '/unsupported/variants.html') {
+                response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+                response.end(variantsPage((server.address() as AddressInfo).port));
+            } else if (path === '/unsupported/nested.html') {
                 response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
                 response.end(nestedPlayerPage((server.address() as AddressInfo).port));
             } else if (path === '/frame/player.html') {
@@ -814,6 +847,17 @@ test.describe('find stream', () => {
         expect(args.at(-1)).toContain('/videoplayback?expire=1999999999&ip=203.0.113.9&id=7081&itag=18&mime=video%2Fmp4&sig=AbC123');
         expect(args[args.indexOf('--referer') + 1]).toMatch(/^http:\/\/localhost:\d+\//);
         expect(args[args.indexOf('-o') + 1]).toBe('Nested Player [%(id)s].%(ext)s');
+    });
+
+    test('lists one video once when it is asked for through near-identical addresses', async () => {
+        test.setTimeout(60000);
+        const { page } = session;
+        await failOn('/unsupported/variants.html');
+        await page.getByRole('button', { name: 'FIND STREAM' }).click();
+        const item = panel().getByRole('listitem');
+        await expect(item).toHaveCount(1, { timeout: 40000 });
+        await expect(item).toContainText('/videoplayback?id=abc123');
+        await expect(item).toContainText('+1 alternate address');
     });
 
     test('can search deeper with the browser after a static result', async () => {

@@ -80,6 +80,7 @@ export function StreamFinder({ jobId }: StreamFinderProps) {
                                         </span>
                                         <span className="stream-candidate__meta">
                                             {candidate.host} · {SOURCE_LABELS[candidate.source]}
+                                            {candidate.duplicates > 0 && ` · +${candidate.duplicates} alternate ${candidate.duplicates === 1 ? 'address' : 'addresses'}`}
                                         </span>
                                     </span>
                                     <button

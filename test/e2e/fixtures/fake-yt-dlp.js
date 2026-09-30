@@ -25,6 +25,11 @@ function progress(percent) {
     process.stdout.write(`CYBERPROG|${percent.toFixed(1).padStart(6)}%|1.00MiB/s|00:01|${title}\n`);
 }
 
+if (url.includes('forbidden')) {
+    process.stderr.write(`ERROR: [generic] ${url}: Unable to download webpage: HTTP Error 403: Forbidden (caused by <HTTPError 403: Forbidden>)\n`);
+    process.exit(1);
+}
+
 if (url.includes('unsupported')) {
     process.stderr.write(`ERROR: Unsupported URL: ${url}\n`);
     process.exit(1);

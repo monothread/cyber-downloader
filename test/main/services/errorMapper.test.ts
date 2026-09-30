@@ -14,6 +14,11 @@ describe('mapDownloadError', () => {
         ['OUTDATED', 'ERROR: Unable to extract initial data; please report this issue', 'yt-dlp may be outdated'],
         ['OUTDATED', 'ERROR: Unsupported URL: https://x.com', 'yt-dlp may be outdated'],
         ['NETWORK', 'ERROR: Unable to download webpage: <urlopen error timed out>', 'Network failure'],
+        ['FORBIDDEN', 'ERROR: [generic] https://cdn.example.test/videoplayback?sig=abc&expire=1: Unable to download webpage: HTTP Error 403: Forbidden (caused by <HTTPError 403: Forbidden>)', 'Access refused by the server'],
+        ['FORBIDDEN', 'ERROR: unable to download video data: HTTP Error 403: Forbidden', 'Access refused by the server'],
+        ['FORBIDDEN', 'ERROR: HTTP Error 401: Unauthorized', 'Access refused by the server'],
+        ['FORBIDDEN', 'ERROR: HTTP Error 410: Gone', 'Access refused by the server'],
+        ['FORBIDDEN', 'ERROR: Forbidden', 'Access refused by the server'],
         ['NETWORK', 'ERROR: getaddrinfo failed', 'Network failure'],
         ['NETWORK', 'ERROR: HTTP Error 503: Service Unavailable', 'Network failure']
     ];
@@ -77,3 +82,27 @@ describe('mapSpawnError', () => {
         });
     });
 });
+
+describe('mapDownloadError for refused requests', () => {
+    const FORBIDDEN_STDERR =
+        'ERROR: [generic] https://cdn.example.test/videoplayback?sig=abc&expire=1: Unable to download webpage: HTTP Error 403: Forbidden (caused by <HTTPError 403: Forbidden>)';
+
+    it('maps an HTTP 403 to a friendly message instead of a network failure and keeps the raw text', () => {
+        expect(mapDownloadError(FORBIDDEN_STDERR, 1)).toEqual({
+            code: 'FORBIDDEN',
+            title: 'Access refused by the server',
+            hint: 'The server refused the request (HTTP 401/403/410). The link may have expired or may only work for the original session, network or browser, which is common for temporary addresses. Try again from the page, enable browser cookies in the settings, or search for the stream again.',
+            raw: FORBIDDEN_STDERR
+        });
+    });
+
+    it('still reports real network failures as NETWORK', () => {
+        expect(mapDownloadError('ERROR: Unable to download webpage: <urlopen error [Errno -2] Name or service not known>', 1).code).toBe('NETWORK');
+        expect(mapDownloadError('ERROR: HTTP Error 503: Service Unavailable', 1).code).toBe('NETWORK');
+    });
+
+    it('prefers a more specific cause over the refusal when both appear', () => {
+        expect(mapDownloadError('ERROR: Sign in to confirm your age\nHTTP Error 403: Forbidden', 1).code).toBe('LOGIN_REQUIRED');
+    });
+});
+

@@ -258,7 +258,7 @@ describe('useAppStore tray support', () => {
 });
 
 describe('useAppStore stream search', () => {
-    const FOUND = { id: 'c1', url: 'https://cdn.test/a.m3u8', kind: 'hls' as const, source: 'page' as const, host: 'cdn.test', title: 'Ep' };
+    const FOUND = { id: 'c1', url: 'https://cdn.test/a.m3u8', kind: 'hls' as const, source: 'page' as const, host: 'cdn.test', title: 'Ep', duplicates: 0 };
 
     it('starts empty', () => {
         expect(initial.streamSearches).toEqual({});

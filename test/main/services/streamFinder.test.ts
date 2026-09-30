@@ -51,7 +51,7 @@ describe('StreamFinder.find', () => {
         const result = await find();
         expect(result).toEqual({
             ok: true,
-            candidates: [{ id: 'id-1', url: 'https://cdn.test/a.mp4', kind: 'mp4', source: 'page', host: 'cdn.test', title: 'Episode 1' }],
+            candidates: [{ id: 'id-1', url: 'https://cdn.test/a.mp4', kind: 'mp4', source: 'page', host: 'cdn.test', title: 'Episode 1', duplicates: 0 }],
             message: null,
             usedBrowser: false
         });
@@ -65,7 +65,7 @@ describe('StreamFinder.find', () => {
         const result = await find();
         expect(result).toEqual({
             ok: true,
-            candidates: [{ id: 'id-1', url: 'https://cdn.test/c.mpd', kind: 'dash', source: 'network', host: 'cdn.test', title: 'Page' }],
+            candidates: [{ id: 'id-1', url: 'https://cdn.test/c.mpd', kind: 'dash', source: 'network', host: 'cdn.test', title: 'Page', duplicates: 0 }],
             message: null,
             usedBrowser: true
         });
@@ -179,6 +179,38 @@ describe('StreamFinder refine step', () => {
     });
 });
 
+describe('StreamFinder grouping of near-identical addresses', () => {
+    const variant = (host: string, marker: string) => {
+        const query = new URLSearchParams({ expire: '1999999999', id: 'abc123', itag: '18', mime: 'video/mp4', sig: 'Sig', cpn: 'sess', extra: marker });
+        return { url: `https://${host}/videoplayback?${query.toString()}`, kind: 'mp4' as const, referer: PAGE, cookie: null };
+    };
+
+    it('lists one video once, with the number of folded variants, and keeps the request details of the first address', async () => {
+        const first = variant('rr4---sn-a.cdn.test', 'one');
+        const second = variant('r2---sn-b.cdn.test', 'two');
+        const third = variant('r2---sn-b.cdn.test', 'three');
+        const { find, finder } = setup(scanResult(), sniffResult({ streams: [first, second, third] }));
+        const result = await find();
+        expect(result.candidates).toHaveLength(1);
+        expect(result.candidates[0]).toMatchObject({ url: first.url, kind: 'mp4', source: 'network', duplicates: 2 });
+        expect(finder.getCandidate(result.candidates[0]?.id ?? '')?.url).toBe(first.url);
+        expect(finder.getCandidate('id-2')).toBeUndefined();
+    });
+
+    it('keeps genuinely different streams apart and orders them by kind', async () => {
+        const video = variant('rr4---sn-a.cdn.test', 'one');
+        const { find } = setup(scanResult({ candidates: [PAGE_MP4, PAGE_HLS] }), sniffResult({ streams: [video] }), undefined);
+        const result = await find('job-1', true);
+        expect(result.candidates.map((candidate) => {
+            return [candidate.kind, candidate.duplicates];
+        })).toEqual([
+            ['hls', 0],
+            ['mp4', 0],
+            ['mp4', 0]
+        ]);
+    });
+});
+
 describe('StreamFinder candidates', () => {
     it('keeps the request details for the download inside the main process', async () => {
         const { find, finder } = setup(scanResult({ candidates: [PAGE_HLS], title: 'Ep' }), sniffResult());
@@ -192,6 +224,7 @@ describe('StreamFinder candidates', () => {
             source: 'page',
             host: 'cdn.test',
             title: 'Ep',
+            duplicates: 0,
             referer: 'https://player.test/embed',
             userAgent: STREAM_USER_AGENT,
             cookie: null
