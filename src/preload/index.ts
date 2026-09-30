@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IPC } from '@shared/constants';
-import type { AppUpdateState, CyberApi, DownloadJob } from '@shared/types';
+import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
     const wrapped = (_event: IpcRendererEvent, payload: T): void => {
@@ -64,6 +64,15 @@ const api: CyberApi = {
     getTraySupport: () => {
         return ipcRenderer.invoke(IPC.traySupport);
     },
+    findStreams: (jobId, deep) => {
+        return ipcRenderer.invoke(IPC.streamFind, jobId, deep);
+    },
+    cancelStreamFind: (jobId) => {
+        return ipcRenderer.invoke(IPC.streamCancel, jobId);
+    },
+    downloadStream: (candidateId) => {
+        return ipcRenderer.invoke(IPC.streamDownload, candidateId);
+    },
     chooseDirectory: () => {
         return ipcRenderer.invoke(IPC.dialogChooseDir);
     },
@@ -78,6 +87,9 @@ const api: CyberApi = {
     },
     onAppUpdateState: (listener) => {
         return subscribe<AppUpdateState>(IPC.eventAppUpdateState, listener);
+    },
+    onStreamFindProgress: (listener) => {
+        return subscribe<StreamFindProgress>(IPC.eventStreamProgress, listener);
     },
     onHistoryChanged: (listener) => {
         return subscribe<undefined>(IPC.eventHistoryChanged, () => {

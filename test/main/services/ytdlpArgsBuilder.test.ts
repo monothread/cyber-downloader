@@ -1,7 +1,7 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import type { Settings } from '@shared/types';
 import { FILE_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from '@main/services/progressParser';
-import { buildYtdlpArgs, splitArguments } from '@main/services/ytdlpArgsBuilder';
+import { buildYtdlpArgs, escapeTitleForTemplate, splitArguments } from '@main/services/ytdlpArgsBuilder';
 
 const URL = 'https://example.com/watch?v=abc';
 const DEFAULT_DIR = '/home/u/Downloads';
@@ -163,3 +163,72 @@ describe('buildYtdlpArgs', () => {
         expect(args.slice(-6)).toEqual(['--retries', '5', '--user-agent', 'My Agent', '--', URL]);
     });
 });
+
+describe('escapeTitleForTemplate', () => {
+    it('replaces path separators, reserved characters and control characters with spaces', () => {
+        expect(escapeTitleForTemplate('a/b\\c:d*e?f"g<h>i|j\tk\nl', 100)).toBe('a b c d e f g h i j k l');
+    });
+
+    it('collapses whitespace and trims', () => {
+        expect(escapeTitleForTemplate('   Episode    14  ', 100)).toBe('Episode 14');
+    });
+
+    it('cuts the title to the maximum length and trims the cut end', () => {
+        expect(escapeTitleForTemplate('Hello wonderful world', 6)).toBe('Hello');
+        expect(escapeTitleForTemplate('abcdefghij', 4)).toBe('abcd');
+    });
+
+    it('escapes percent signs so they are not read as template fields', () => {
+        expect(escapeTitleForTemplate('100% %(title)s', 100)).toBe('100%% %%(title)s');
+    });
+
+    it('keeps international characters', () => {
+        expect(escapeTitleForTemplate('Mushoku Tensei — 無職転生', 100)).toBe('Mushoku Tensei — 無職転生');
+    });
+
+    it('can end up empty', () => {
+        expect(escapeTitleForTemplate('///', 100)).toBe('');
+    });
+});
+
+describe('buildYtdlpArgs with request extras (streams found on a page)', () => {
+    const build = (extras: Parameters<typeof buildYtdlpArgs>[4]) => {
+        return buildYtdlpArgs(URL, DEFAULT_SETTINGS, DEFAULT_DIR, null, extras);
+    };
+
+    it('adds the referer, the user agent and the cookie header', () => {
+        const args = build({ referer: 'https://site.test/ep-1', userAgent: 'Agent/1.0', cookie: 'sid=abc; t=1' });
+        expect(args[args.indexOf('--referer') + 1]).toBe('https://site.test/ep-1');
+        expect(args[args.indexOf('--user-agent') + 1]).toBe('Agent/1.0');
+        expect(args[args.indexOf('--add-header') + 1]).toBe('Cookie:sid=abc; t=1');
+    });
+
+    it('puts them before the user extra arguments and the URL separator', () => {
+        const args = buildYtdlpArgs(URL, { ...DEFAULT_SETTINGS, extraArgs: '--no-mtime' }, DEFAULT_DIR, null, { referer: 'https://r.test/' });
+        expect(args.slice(-5)).toEqual(['--referer', 'https://r.test/', '--no-mtime', '--', URL]);
+    });
+
+    it('names the file after the page title instead of the stream name', () => {
+        const args = build({ title: 'Show: Episode 14 / 100%' });
+        expect(args[args.indexOf('-o') + 1]).toBe('Show Episode 14 100%% [%(id)s].%(ext)s');
+    });
+
+    it('limits the page title to the configured maximum length', () => {
+        const args = buildYtdlpArgs(URL, { ...DEFAULT_SETTINGS, maxTitleLength: 20 }, DEFAULT_DIR, null, { title: 'A very long episode title that goes on' });
+        expect(args[args.indexOf('-o') + 1]).toBe('A very long episode [%(id)s].%(ext)s');
+    });
+
+    it('falls back to the default name when the title has nothing usable', () => {
+        expect(build({ title: '///' })[build({ title: '///' }).indexOf('-o') + 1]).toBe('%(title).80s [%(id)s].%(ext)s');
+        expect(build({ title: '' })[build({ title: '' }).indexOf('-o') + 1]).toBe('%(title).80s [%(id)s].%(ext)s');
+    });
+
+    it('adds nothing for empty extras', () => {
+        expect(build({})).toEqual(buildYtdlpArgs(URL, DEFAULT_SETTINGS, DEFAULT_DIR));
+        const args = build({ referer: '', userAgent: '', cookie: '' });
+        expect(args).not.toContain('--referer');
+        expect(args).not.toContain('--user-agent');
+        expect(args).not.toContain('--add-header');
+    });
+});
+

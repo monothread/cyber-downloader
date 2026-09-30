@@ -4,11 +4,15 @@ import { IPC } from '@shared/constants';
 import { registerHandlers } from './ipc/registerHandlers';
 import { AppUpdateService } from './services/appUpdateService';
 import { BinaryResolver } from './services/binaryResolver';
+import { sniffStreams } from './services/browserSniffer';
 import { createElectronTray } from './services/electronTray';
 import { getElectronUpdater } from './services/electronUpdater';
 import { HistoryStore } from './services/historyStore';
 import { QueueManager } from './services/queueManager';
 import { SettingsStore } from './services/settingsStore';
+import { defaultFetchPage, scanPage } from './services/pageScanner';
+import { defaultFetchPlaylist, dropVariantPlaylists } from './services/playlistFilter';
+import { StreamFinder } from './services/streamFinder';
 import { ignoreStdioErrors } from './services/stdioGuard';
 import { checkTraySupport } from './services/trayAvailability';
 import { TrayManager } from './services/trayManager';
@@ -200,6 +204,15 @@ function bootstrap(): void {
             });
         }
     });
+    const streamFinder = new StreamFinder({
+        scan: (url, signal) => {
+            return scanPage(url, { fetchPage: defaultFetchPage }, signal);
+        },
+        sniff: sniffStreams,
+        refine: (streams) => {
+            return dropVariantPlaylists(streams, defaultFetchPlaylist);
+        }
+    });
     trayManager = manager;
     void manager.sync(settingsStore.get().closeToTray);
 
@@ -217,6 +230,10 @@ function bootstrap(): void {
         appUpdates,
         refreshTraySupport: () => {
             return manager.refreshSupport();
+        },
+        streamFinder,
+        sendStreamProgress: (progress) => {
+            sendToRenderer(IPC.eventStreamProgress, progress);
         },
         onSettingsSaved: (settings) => {
             void manager.sync(settings.closeToTray);

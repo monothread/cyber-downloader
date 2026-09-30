@@ -4,9 +4,10 @@ import type { DownloadError } from '@shared/types';
 interface ErrorBannerProps {
     error: DownloadError;
     onRetry: () => void;
+    onFindStream?: () => void;
 }
 
-export function ErrorBanner({ error, onRetry }: ErrorBannerProps) {
+export function ErrorBanner({ error, onRetry, onFindStream }: ErrorBannerProps) {
     const [showDetails, setShowDetails] = useState(false);
     return (
         <div className="error-banner" role="alert">
@@ -30,6 +31,11 @@ export function ErrorBanner({ error, onRetry }: ErrorBannerProps) {
                 <button type="button" className="btn btn--small btn--hot" onClick={onRetry}>
                     RETRY
                 </button>
+                {onFindStream && (
+                    <button type="button" className="btn btn--small btn--primary" onClick={onFindStream}>
+                        FIND STREAM
+                    </button>
+                )}
             </div>
             {showDetails && <pre className="error-banner__raw">{error.raw}</pre>}
         </div>

@@ -18,12 +18,16 @@ export const IPC = {
     appUpdateDownload: 'app-update:download',
     appUpdateInstall: 'app-update:install',
     traySupport: 'tray:support',
+    streamFind: 'stream:find',
+    streamCancel: 'stream:cancel',
+    streamDownload: 'stream:download',
     dialogChooseDir: 'dialog:choose-dir',
     shellShowItem: 'shell:show-item',
     eventJobUpdate: 'event:job-update',
     eventJobRemoved: 'event:job-removed',
     eventHistoryChanged: 'event:history-changed',
-    eventAppUpdateState: 'event:app-update-state'
+    eventAppUpdateState: 'event:app-update-state',
+    eventStreamProgress: 'event:stream-progress'
 } as const;
 
 export const BROWSERS: readonly BrowserName[] = ['chrome', 'firefox', 'brave', 'chromium', 'edge', 'opera', 'vivaldi'];

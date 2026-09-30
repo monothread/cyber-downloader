@@ -1,5 +1,7 @@
 import { expect, test, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -618,6 +620,186 @@ test.describe('quitting with downloads in progress', () => {
         } finally {
             await closeQuietly(own);
         }
+    });
+});
+
+// ---- finding the stream of a page that yt-dlp does not understand (local pages, no external site involved)
+const PAGES: Record<string, string> = {
+    '/unsupported/static.html': '<html><head><title>Static Episode</title></head><body><video controls><source src="/media/static-clip.mp4" type="video/mp4"></video></body></html>',
+    '/unsupported/embed.html': '<html><head><title>Embed Page</title></head><body><iframe src="/player/inner.html"></iframe></body></html>',
+    '/player/inner.html': '<html><body><script>var config = {"hls": "\\/media\\/inner-master.m3u8"};</script></body></html>',
+    '/unsupported/dynamic.html': `<html><head><title>Dynamic Episode</title></head><body><script>
+        var parts = ['/me', 'dia/dyn', 'amic.m3u8'];
+        window.addEventListener('load', function () {
+            var video = document.createElement('video');
+            video.muted = true;
+            video.src = parts.join('');
+            document.body.appendChild(video);
+            video.play().catch(function () {});
+        });
+    </script></body></html>`,
+    '/unsupported/none.html': '<html><head><title>Nothing here</title></head><body><p>No video on this page.</p></body></html>'
+};
+
+function startLocalSite(): Promise<{ server: Server; origin: string }> {
+    return new Promise((resolvePromise) => {
+        const server = createServer((request, response) => {
+            const path = (request.url ?? '/').split('?')[0] ?? '/';
+            if (PAGES[path]) {
+                response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+                response.end(PAGES[path]);
+            } else if (path.endsWith('.m3u8')) {
+                response.writeHead(200, { 'content-type': 'application/vnd.apple.mpegurl' });
+                response.end('#EXTM3U\n#EXT-X-ENDLIST\n');
+            } else if (path.endsWith('.mp4')) {
+                response.writeHead(200, { 'content-type': 'video/mp4' });
+                response.end(Buffer.alloc(2048));
+            } else {
+                response.writeHead(404, { 'content-type': 'text/plain' });
+                response.end('not found');
+            }
+        });
+        server.listen(0, '127.0.0.1', () => {
+            resolvePromise({ server, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` });
+        });
+    });
+}
+
+function lastYtdlpCall(logPath: string, urlEnding: string): string[] {
+    return (
+        readCalls(logPath)
+            .filter((call) => {
+                return call.at(-1)?.endsWith(urlEnding);
+            })
+            .at(-1) ?? []
+    );
+}
+
+test.describe('find stream', () => {
+    let site: { server: Server; origin: string };
+
+    test.beforeAll(async () => {
+        site = await startLocalSite();
+    });
+
+    test.afterAll(async () => {
+        await new Promise<void>((done) => {
+            site.server.close(() => {
+                done();
+            });
+        });
+    });
+
+    async function failOn(path: string): Promise<void> {
+        await submitUrl(session.page, `${site.origin}${path}`);
+        await expect(session.page.locator('.badge', { hasText: 'FAILED' })).toBeVisible();
+        await expect(session.page.getByRole('alert').filter({ hasText: 'yt-dlp may be outdated' })).toBeVisible();
+    }
+
+    function panel() {
+        return session.page.getByRole('region', { name: 'Stream finder' });
+    }
+
+    test('offers FIND STREAM only for failures a page scan can help with', async () => {
+        const { page } = session;
+        await submitUrl(page, 'https://example.com/fail');
+        await expect(page.getByRole('alert').filter({ hasText: 'Video unavailable' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'FIND STREAM' })).toHaveCount(0);
+    });
+
+    test('finds a <video> source in the page and downloads it with the page as referer and its title as name', async () => {
+        const { page, logPath } = session;
+        await failOn('/unsupported/static.html');
+        await page.getByRole('button', { name: 'FIND STREAM' }).click();
+
+        const item = panel().getByRole('listitem');
+        await expect(item).toHaveCount(1);
+        await expect(item).toContainText('MP4');
+        await expect(item).toContainText(`${site.origin}/media/static-clip.mp4`);
+        await expect(item).toContainText('found in the page');
+        await expect(panel()).toContainText('Protected (DRM) streams cannot be downloaded.');
+
+        await panel().getByRole('button', { name: 'Download stream 1' }).click();
+        await expect(panel()).toHaveCount(0);
+        await expect(page.getByTestId('job-card')).toHaveCount(2);
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+
+        const args = lastYtdlpCall(logPath, '/media/static-clip.mp4');
+        expect(args.at(-1)).toBe(`${site.origin}/media/static-clip.mp4`);
+        expect(args[args.indexOf('--referer') + 1]).toBe(`${site.origin}/unsupported/static.html`);
+        expect(args[args.indexOf('--user-agent') + 1]).toContain('Chrome/');
+        expect(args[args.indexOf('-o') + 1]).toBe('Static Episode [%(id)s].%(ext)s');
+        expect(args).not.toContain('--add-header');
+    });
+
+    test('follows an iframe and uses the iframe as the referer of what it finds', async () => {
+        const { page, logPath } = session;
+        await failOn('/unsupported/embed.html');
+        await page.getByRole('button', { name: 'FIND STREAM' }).click();
+        const item = panel().getByRole('listitem');
+        await expect(item).toHaveCount(1);
+        await expect(item).toContainText('HLS');
+        await expect(item).toContainText(`${site.origin}/media/inner-master.m3u8`);
+        await panel().getByRole('button', { name: 'Download stream 1' }).click();
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        const args = lastYtdlpCall(logPath, '/media/inner-master.m3u8');
+        expect(args[args.indexOf('--referer') + 1]).toBe(`${site.origin}/player/inner.html`);
+        expect(args[args.indexOf('-o') + 1]).toBe('Embed Page [%(id)s].%(ext)s');
+    });
+
+    test('falls back to the hidden browser for a player built by JavaScript', async () => {
+        const { page, logPath } = session;
+        await failOn('/unsupported/dynamic.html');
+        await page.getByRole('button', { name: 'FIND STREAM' }).click();
+        const item = panel().getByRole('listitem');
+        await expect(item).toHaveCount(1, { timeout: 30000 });
+        await expect(item).toContainText('HLS');
+        await expect(item).toContainText(`${site.origin}/media/dynamic.m3u8`);
+        await expect(item).toContainText('seen on the network');
+        await expect(panel().getByRole('button', { name: 'NOT THE ONE? SEARCH DEEPER' })).toHaveCount(0);
+
+        await panel().getByRole('button', { name: 'Download stream 1' }).click();
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        const args = lastYtdlpCall(logPath, '/media/dynamic.m3u8');
+        expect(args[args.indexOf('--referer') + 1]).toMatch(new RegExp(`^${site.origin.replace(/[.:/]/g, '\\$&')}/`));
+        expect(args[args.indexOf('-o') + 1]).toBe('Dynamic Episode [%(id)s].%(ext)s');
+    });
+
+    test('can search deeper with the browser after a static result', async () => {
+        const { page } = session;
+        await failOn('/unsupported/static.html');
+        await page.getByRole('button', { name: 'FIND STREAM' }).click();
+        await expect(panel().getByRole('listitem')).toHaveCount(1);
+        await panel().getByRole('button', { name: 'NOT THE ONE? SEARCH DEEPER' }).click();
+        await expect(panel().getByRole('button', { name: 'NOT THE ONE? SEARCH DEEPER' })).toHaveCount(0, { timeout: 35000 });
+        await expect(panel().getByRole('listitem')).toHaveCount(1);
+    });
+
+    test('says so when the page has no video', async () => {
+        test.setTimeout(60000);
+        await session.app.close();
+        rmSync(resolve(session.userData, '..'), { recursive: true, force: true });
+        session = await launch({ env: { CYBER_DL_SNIFF_TIMEOUT_MS: '3000' } });
+        await failOn('/unsupported/none.html');
+        await session.page.getByRole('button', { name: 'FIND STREAM' }).click();
+        await expect(panel()).toContainText('No video stream was found.', { timeout: 30000 });
+        await expect(panel().getByRole('button', { name: /DOWNLOAD|SEARCH DEEPER/ })).toHaveCount(0);
+        await expect(panel()).toContainText('Protected (DRM) streams cannot be downloaded.');
+    });
+
+    test('lets the user cancel a search and close the panel', async () => {
+        test.setTimeout(60000);
+        await session.app.close();
+        rmSync(resolve(session.userData, '..'), { recursive: true, force: true });
+        session = await launch({ env: { CYBER_DL_SNIFF_TIMEOUT_MS: '20000' } });
+        await failOn('/unsupported/none.html');
+        await session.page.getByRole('button', { name: 'FIND STREAM' }).click();
+        await expect(panel()).toContainText('Watching the page’s network activity', { timeout: 15000 });
+        await panel().getByRole('button', { name: 'CANCEL' }).click();
+        await expect(panel()).toContainText('Search cancelled.', { timeout: 5000 });
+        await panel().getByRole('button', { name: 'Close stream finder' }).click();
+        await expect(panel()).toHaveCount(0);
+        await expect(session.page.getByRole('button', { name: 'FIND STREAM' })).toBeVisible();
     });
 });
 

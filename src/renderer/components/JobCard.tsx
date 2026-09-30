@@ -1,6 +1,8 @@
 import type { DownloadJob } from '@shared/types';
+import { useAppStore } from '../store/appStore';
 import { ErrorBanner } from './ErrorBanner';
-import { formatPercent, statusLabel } from './jobStatus';
+import { canFindStream, formatPercent, statusLabel } from './jobStatus';
+import { StreamFinder } from './StreamFinder';
 
 interface JobCardProps {
     job: DownloadJob;
@@ -13,6 +15,12 @@ interface JobCardProps {
 export function JobCard({ job, onCancel, onRetry, onRemove, onShowFile }: JobCardProps) {
     const isActive = job.status === 'queued' || job.status === 'running';
     const canRetry = job.status === 'error' || job.status === 'cancelled';
+    const searchOpen = useAppStore((state) => {
+        return state.streamSearches[job.id] !== undefined;
+    });
+    const findStreams = useAppStore((state) => {
+        return state.findStreams;
+    });
     return (
         <article className={`job job--${job.status}`} data-testid="job-card">
             <header className="job__head">
@@ -42,8 +50,16 @@ export function JobCard({ job, onCancel, onRetry, onRemove, onShowFile }: JobCar
                     onRetry={() => {
                         onRetry(job.id);
                     }}
+                    onFindStream={
+                        canFindStream(job.error) && !searchOpen
+                            ? () => {
+                                  void findStreams(job.id, false);
+                              }
+                            : undefined
+                    }
                 />
             )}
+            <StreamFinder jobId={job.id} />
             <div className="job__actions">
                 {isActive && (
                     <button

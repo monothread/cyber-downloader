@@ -23,11 +23,17 @@ src/
       trayManager.ts            # creates/destroys the tray according to the closeToTray setting
       windowClose.ts            # close action (allow / hide / ask-quit) and the quit confirmation flow
       electronTray.ts           # thin adapter around Electron's Tray + Menu
+      mediaKinds.ts             # media type from URL / Content-Type, segment and private-host detection
+      pageScanner.ts            # static scan of a page's HTML (and iframes) for video addresses
+      sniffRules.ts             # which network requests/responses count as media (pure)
+      browserSniffer.ts         # hidden, sandboxed BrowserWindow that watches the page's network
+      playlistFilter.ts         # drops HLS quality variants covered by a master playlist
+      streamFinder.ts           # static scan -> hidden browser; keeps candidates' request details in the main process
   preload/index.ts              # contextBridge with a typed API
   renderer/
     App.tsx, theme/cyberpunk.css
     components/ UrlInput, QueueList, JobCard, SettingsPanel, HistoryList, ErrorBanner, BinaryStatus,
-                Toast, UpdateBanner, UpdateActions, fields
+                Toast, UpdateBanner, UpdateActions, StreamFinder, fields
     hooks/ useAutoSaveSettings (debounced settings auto-save)
     store/ (zustand)
 test/            # unit tests mirroring src
@@ -45,6 +51,9 @@ Closing the window: `decideCloseAction` → `hide` (tray available and `closeToT
 
 On `before-quit` the main process calls `queue.shutdown()`: every running yt-dlp is sent SIGTERM and no queued job is started, so no download (or ffmpeg merge) is left running in the background after the app closes.
 
+## Stream finder
+Failed job (`UNKNOWN`/`OUTDATED`) → **FIND STREAM** → `stream:find` (main: `StreamFinder.find`) → stage events (`event:stream-progress`: scanning → watching) → candidate list in the job card → **DOWNLOAD** → `stream:download` → `QueueManager.add(url, { referer, userAgent, cookie, title })` → the usual `ytdlpRunner` flow. Request details (referer, cookies) never reach the renderer. See D-019.
+
 ## Feature → yt-dlp args (`ytdlpArgsBuilder`)
 | Feature | Args |
 |---|---|
@@ -58,6 +67,7 @@ On `before-quit` the main process calls `queue.shutdown()`: every running yt-dlp
 | Subtitles | `--write-subs --sub-langs <..> [--embed-subs]` |
 | Progress | `--newline --progress-template "download:CYBERPROG\|%(progress._percent_str)s\|..."` plus `--print after_move:CYBERFILE\|%(filepath)s` |
 | Extras | rate limit, concurrency, custom paths, JS runtime, extra args |
+| Stream found on a page | `--referer <page>`, `--user-agent <UA used to find it>`, `--add-header Cookie:<cookies seen>`, file named from the page title |
 
 ## Theme
 Neon cyan/magenta/yellow on a dark background, mono font, scanlines, glitch on titles, glowing borders. Errors in neon red.

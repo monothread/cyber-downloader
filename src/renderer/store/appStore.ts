@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { AddJobResult, AppUpdateState, BinariesStatus, DownloadJob, HistoryEntry, Settings, TraySupport } from '@shared/types';
+import type {
+    AddJobResult,
+    AppUpdateState,
+    BinariesStatus,
+    DownloadJob,
+    HistoryEntry,
+    Settings,
+    StreamCandidate,
+    StreamFindStage,
+    TraySupport
+} from '@shared/types';
 
 export type Tab = 'downloads' | 'history' | 'settings';
 export type NoticeKind = 'error' | 'info';
@@ -8,6 +18,14 @@ export type NoticeKind = 'error' | 'info';
 export interface Notice {
     kind: NoticeKind;
     message: string;
+}
+
+export interface StreamSearchState {
+    status: 'searching' | 'done';
+    stage: StreamFindStage;
+    candidates: StreamCandidate[];
+    message: string | null;
+    usedBrowser: boolean;
 }
 
 export const INITIAL_APP_UPDATE: AppUpdateState = { status: 'idle', currentVersion: '', version: null, percent: 0, message: null };
@@ -22,6 +40,7 @@ export interface AppState {
     updating: boolean;
     appUpdate: AppUpdateState;
     traySupport: TraySupport | null;
+    streamSearches: Record<string, StreamSearchState>;
     setTab: (tab: Tab) => void;
     setNotice: (notice: Notice | null) => void;
     init: () => Promise<() => void>;
@@ -40,6 +59,18 @@ export interface AppState {
     downloadAppUpdate: () => Promise<void>;
     installAppUpdate: () => Promise<void>;
     refreshTraySupport: () => Promise<void>;
+    findStreams: (jobId: string, deep: boolean) => Promise<void>;
+    cancelStreamSearch: (jobId: string) => Promise<void>;
+    downloadStream: (jobId: string, candidateId: string) => Promise<void>;
+    closeStreamSearch: (jobId: string) => void;
+}
+
+function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+    return Object.fromEntries(
+        Object.entries(record).filter(([entryKey]) => {
+            return entryKey !== key;
+        })
+    );
 }
 
 export function upsertJob(jobs: DownloadJob[], job: DownloadJob): DownloadJob[] {
@@ -65,6 +96,7 @@ export const useAppStore = create<AppState>((set, get) => {
         updating: false,
         appUpdate: INITIAL_APP_UPDATE,
         traySupport: null,
+        streamSearches: {},
 
         setTab: (tab) => {
             set({ tab });
@@ -95,8 +127,18 @@ export const useAppStore = create<AppState>((set, get) => {
                         return {
                             jobs: state.jobs.filter((job) => {
                                 return job.id !== id;
-                            })
+                            }),
+                            streamSearches: withoutKey(state.streamSearches, id)
                         };
+                    });
+                }),
+                api.onStreamFindProgress((progress) => {
+                    set((state) => {
+                        const search = state.streamSearches[progress.jobId];
+                        if (search?.status !== 'searching') {
+                            return state;
+                        }
+                        return { streamSearches: { ...state.streamSearches, [progress.jobId]: { ...search, stage: progress.stage } } };
                     });
                 }),
                 api.onHistoryChanged(() => {
@@ -188,6 +230,55 @@ export const useAppStore = create<AppState>((set, get) => {
 
         refreshTraySupport: async () => {
             set({ traySupport: await window.api.getTraySupport() });
+        },
+
+        findStreams: async (jobId, deep) => {
+            set((state) => {
+                return {
+                    streamSearches: {
+                        ...state.streamSearches,
+                        [jobId]: { status: 'searching', stage: 'scanning', candidates: [], message: null, usedBrowser: false }
+                    }
+                };
+            });
+            const result = await window.api.findStreams(jobId, deep);
+            set((state) => {
+                if (!state.streamSearches[jobId]) {
+                    return state;
+                }
+                return {
+                    streamSearches: {
+                        ...state.streamSearches,
+                        [jobId]: {
+                            status: 'done',
+                            stage: state.streamSearches[jobId]?.stage ?? 'scanning',
+                            candidates: result.candidates,
+                            message: result.message,
+                            usedBrowser: result.usedBrowser
+                        }
+                    }
+                };
+            });
+        },
+
+        cancelStreamSearch: async (jobId) => {
+            await window.api.cancelStreamFind(jobId);
+        },
+
+        downloadStream: async (jobId, candidateId) => {
+            const result = await window.api.downloadStream(candidateId);
+            if (!result.ok) {
+                set({ notice: { kind: 'error', message: result.message ?? 'Could not add the download.' } });
+                return;
+            }
+            get().closeStreamSearch(jobId);
+        },
+
+        closeStreamSearch: (jobId) => {
+            void window.api.cancelStreamFind(jobId);
+            set((state) => {
+                return { streamSearches: withoutKey(state.streamSearches, jobId) };
+            });
         }
     };
 });

@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { AppUpdateState, CyberApi, DownloadJob } from '@shared/types';
+import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 export interface MockApiHandle {
     api: { [K in keyof CyberApi]: ReturnType<typeof vi.fn> };
@@ -7,6 +7,7 @@ export interface MockApiHandle {
     emitJobRemoved: (id: string) => void;
     emitHistoryChanged: () => void;
     emitAppUpdateState: (state: AppUpdateState) => void;
+    emitStreamProgress: (progress: StreamFindProgress) => void;
     unsubscribers: Array<ReturnType<typeof vi.fn>>;
 }
 
@@ -17,6 +18,7 @@ export function createMockApi(): MockApiHandle {
     const removedListeners: Array<(id: string) => void> = [];
     const historyListeners: Array<() => void> = [];
     const appUpdateListeners: Array<(state: AppUpdateState) => void> = [];
+    const streamProgressListeners: Array<(progress: StreamFindProgress) => void> = [];
     const unsubscribers: Array<ReturnType<typeof vi.fn>> = [];
 
     function subscribe<T>(listeners: T[], listener: T): () => void {
@@ -78,6 +80,15 @@ export function createMockApi(): MockApiHandle {
         installAppUpdate: vi.fn(async () => {
             return undefined;
         }),
+        findStreams: vi.fn(async () => {
+            return { ok: false, candidates: [], message: 'No video stream was found.', usedBrowser: true };
+        }),
+        cancelStreamFind: vi.fn(async () => {
+            return undefined;
+        }),
+        downloadStream: vi.fn(async () => {
+            return { ok: true, job: null, message: null };
+        }),
         getTraySupport: vi.fn(async () => {
             return { available: true, reason: null };
         }),
@@ -96,6 +107,9 @@ export function createMockApi(): MockApiHandle {
         onAppUpdateState: vi.fn((listener: (state: AppUpdateState) => void) => {
             return subscribe(appUpdateListeners, listener);
         }),
+        onStreamFindProgress: vi.fn((listener: (progress: StreamFindProgress) => void) => {
+            return subscribe(streamProgressListeners, listener);
+        }),
         onHistoryChanged: vi.fn((listener: () => void) => {
             return subscribe(historyListeners, listener);
         })
@@ -112,6 +126,11 @@ export function createMockApi(): MockApiHandle {
         emitJobRemoved: (id) => {
             removedListeners.forEach((listener) => {
                 listener(id);
+            });
+        },
+        emitStreamProgress: (progress) => {
+            streamProgressListeners.forEach((listener) => {
+                listener(progress);
             });
         },
         emitAppUpdateState: (state) => {

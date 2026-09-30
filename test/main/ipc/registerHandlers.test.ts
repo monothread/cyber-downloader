@@ -8,6 +8,7 @@ import { updateYtdlp } from '@main/services/updater';
 import { HistoryStore } from '@main/services/historyStore';
 import type { AppUpdateService } from '@main/services/appUpdateService';
 import type { QueueManager } from '@main/services/queueManager';
+import type { StreamFinder } from '@main/services/streamFinder';
 import { SettingsStore } from '@main/services/settingsStore';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
 
@@ -54,6 +55,7 @@ function setup() {
         list: vi.fn(() => {
             return [JOB];
         }),
+        getJob: vi.fn(),
         cancel: vi.fn(),
         retry: vi.fn(),
         remove: vi.fn(),
@@ -79,8 +81,16 @@ function setup() {
         return { available: false, reason: 'no tray here' };
     });
     const onSettingsSaved = vi.fn();
+    const sendStreamProgress = vi.fn();
+    const streamFinder = {
+        find: vi.fn<StreamFinder['find']>(async () => {
+            return { ok: true, candidates: [], message: null, usedBrowser: false };
+        }),
+        cancel: vi.fn(),
+        getCandidate: vi.fn()
+    };
     const resolver = new BinaryResolver({ bundledDir: '/b', userBinDir: '/u' });
-    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, refreshTraySupport, onSettingsSaved, chooseDirectory, showItemInFolder });
+    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, refreshTraySupport, onSettingsSaved, streamFinder: streamFinder as unknown as StreamFinder, sendStreamProgress, chooseDirectory, showItemInFolder });
     const call = (channel: string, ...args: unknown[]): unknown => {
         const handler = handlers.get(channel);
         if (!handler) {
@@ -88,7 +98,7 @@ function setup() {
         }
         return handler({}, ...args);
     };
-    return { handlers, call, refreshTraySupport, onSettingsSaved, appUpdates, resolver, settingsStore, historyStore, queue, chooseDirectory, showItemInFolder };
+    return { handlers, call, streamFinder, sendStreamProgress, refreshTraySupport, onSettingsSaved, appUpdates, resolver, settingsStore, historyStore, queue, chooseDirectory, showItemInFolder };
 }
 
 describe('registerHandlers', () => {
@@ -97,7 +107,7 @@ describe('registerHandlers', () => {
         expect([...handlers.keys()].sort()).toEqual(
             [
                 IPC.settingsGet, IPC.settingsSave, IPC.queueAdd, IPC.queueList, IPC.queueCancel, IPC.queueRetry, IPC.queueRemove,
-                IPC.queueClearFinished, IPC.historyList, IPC.historyClear, IPC.binariesCheck, IPC.ytdlpUpdate, IPC.appUpdateGet, IPC.appUpdateCheck, IPC.appUpdateDownload, IPC.appUpdateInstall, IPC.traySupport, IPC.dialogChooseDir,
+                IPC.queueClearFinished, IPC.historyList, IPC.historyClear, IPC.binariesCheck, IPC.ytdlpUpdate, IPC.appUpdateGet, IPC.appUpdateCheck, IPC.appUpdateDownload, IPC.appUpdateInstall, IPC.traySupport, IPC.streamFind, IPC.streamCancel, IPC.streamDownload, IPC.dialogChooseDir,
                 IPC.shellShowItem
             ].sort()
         );
@@ -127,6 +137,67 @@ describe('registerHandlers', () => {
         const { call, refreshTraySupport } = setup();
         await expect(call(IPC.traySupport)).resolves.toEqual({ available: false, reason: 'no tray here' });
         expect(refreshTraySupport).toHaveBeenCalledTimes(1);
+    });
+
+    describe('stream finder', () => {
+        const TARGET = { id: 'j1', url: 'https://site.test/ep-1' };
+
+        it('searches the page of an existing job and reports the stage to the screen', async () => {
+            const { call, queue, streamFinder, sendStreamProgress } = setup();
+            queue.getJob.mockReturnValue(TARGET);
+            streamFinder.find.mockImplementationOnce(async (_jobId, _url, _deep, onStage) => {
+                onStage('scanning');
+                onStage('watching');
+                return { ok: true, candidates: [], message: null, usedBrowser: true };
+            });
+            await expect(call(IPC.streamFind, 'j1', true)).resolves.toEqual({ ok: true, candidates: [], message: null, usedBrowser: true });
+            expect(queue.getJob).toHaveBeenCalledWith('j1');
+            expect(streamFinder.find).toHaveBeenCalledWith('j1', 'https://site.test/ep-1', true, expect.any(Function));
+            expect(sendStreamProgress.mock.calls).toEqual([[{ jobId: 'j1', stage: 'scanning' }], [{ jobId: 'j1', stage: 'watching' }]]);
+        });
+
+        it('only searches deeper when asked with exactly true', async () => {
+            const { call, queue, streamFinder } = setup();
+            queue.getJob.mockReturnValue(TARGET);
+            await call(IPC.streamFind, 'j1', 'yes');
+            expect(streamFinder.find).toHaveBeenCalledWith('j1', TARGET.url, false, expect.any(Function));
+        });
+
+        it('refuses to search for a job that does not exist', () => {
+            const { call, queue, streamFinder } = setup();
+            queue.getJob.mockReturnValue(undefined);
+            expect(call(IPC.streamFind, 'gone', false)).toEqual({ ok: false, candidates: [], message: 'That download no longer exists.', usedBrowser: false });
+            expect(streamFinder.find).not.toHaveBeenCalled();
+        });
+
+        it('cancels a search by job id', () => {
+            const { call, streamFinder } = setup();
+            call(IPC.streamCancel, 'j1');
+            call(IPC.streamCancel, 7);
+            expect(streamFinder.cancel.mock.calls).toEqual([['j1'], ['']]);
+        });
+
+        it('downloads the chosen stream with the referer, user agent, cookie and title the finder kept', () => {
+            const { call, queue, streamFinder } = setup();
+            streamFinder.getCandidate.mockReturnValue({ url: 'https://cdn.test/a.m3u8', referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: 'sid=1', title: 'Episode 1' });
+            expect(call(IPC.streamDownload, 'c1')).toEqual({ ok: true, job: JOB, message: null });
+            expect(streamFinder.getCandidate).toHaveBeenCalledWith('c1');
+            expect(queue.add).toHaveBeenCalledWith('https://cdn.test/a.m3u8', { referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: 'sid=1', title: 'Episode 1' });
+        });
+
+        it('leaves the cookie and title out when the stream has none', () => {
+            const { call, queue, streamFinder } = setup();
+            streamFinder.getCandidate.mockReturnValue({ url: 'https://cdn.test/a.mp4', referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: null, title: null });
+            call(IPC.streamDownload, 'c2');
+            expect(queue.add).toHaveBeenCalledWith('https://cdn.test/a.mp4', { referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: undefined, title: undefined });
+        });
+
+        it('explains when the stream is no longer known', () => {
+            const { call, queue, streamFinder } = setup();
+            streamFinder.getCandidate.mockReturnValue(undefined);
+            expect(call(IPC.streamDownload, 'old')).toEqual({ ok: false, job: null, message: 'That stream is no longer available. Search again.' });
+            expect(queue.add).not.toHaveBeenCalled();
+        });
     });
 
     it('adds a download with the URL string', () => {

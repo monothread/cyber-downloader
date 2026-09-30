@@ -3,9 +3,19 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { DownloadError, DownloadJob } from '@shared/types';
 import { JobCard } from '@renderer/components/JobCard';
-import { makeJob } from '../../helpers/mockApi';
+import { useAppStore } from '@renderer/store/appStore';
+import { installMockApi, makeJob, type MockApiHandle } from '../../helpers/mockApi';
 
 const ERROR: DownloadError = { code: 'UNAVAILABLE', title: 'Video unavailable', hint: 'Maybe private.', raw: 'ERROR: gone' };
+const UNSUPPORTED: DownloadError = { code: 'OUTDATED', title: 'yt-dlp may be outdated', hint: 'Update.', raw: 'ERROR: Unsupported URL' };
+
+let mock: MockApiHandle;
+const initial = useAppStore.getState();
+
+beforeEach(() => {
+    mock = installMockApi();
+    useAppStore.setState({ ...initial, streamSearches: {} });
+});
 
 function renderCard(job: DownloadJob) {
     const handlers = { onCancel: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onShowFile: vi.fn() };
@@ -86,5 +96,33 @@ describe('JobCard', () => {
         expect(screen.getByText('CANCELLED')).toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'RETRY' }));
         expect(handlers.onRetry).toHaveBeenCalledWith('job-1');
+    });
+
+    describe('stream finder', () => {
+        it('offers FIND STREAM for a page yt-dlp did not understand and starts the search', async () => {
+            renderCard(makeJob({ status: 'error', error: UNSUPPORTED }));
+            await userEvent.setup().click(screen.getByRole('button', { name: 'FIND STREAM' }));
+            expect(mock.api.findStreams).toHaveBeenCalledWith('job-1', false);
+            expect(useAppStore.getState().streamSearches['job-1']?.status).toMatch(/searching|done/);
+        });
+
+        it('does not offer it for failures a page scan cannot fix', () => {
+            renderCard(makeJob({ status: 'error', error: ERROR }));
+            expect(screen.queryByRole('button', { name: 'FIND STREAM' })).not.toBeInTheDocument();
+        });
+
+        it('does not offer it again while a search panel is open, and shows the panel', () => {
+            useAppStore.setState({
+                streamSearches: { 'job-1': { status: 'searching', stage: 'scanning', candidates: [], message: null, usedBrowser: false } }
+            });
+            renderCard(makeJob({ status: 'error', error: UNSUPPORTED }));
+            expect(screen.queryByRole('button', { name: 'FIND STREAM' })).not.toBeInTheDocument();
+            expect(screen.getByRole('region', { name: 'Stream finder' })).toBeInTheDocument();
+        });
+
+        it('shows no panel for jobs without a search', () => {
+            renderCard(makeJob({ status: 'error', error: UNSUPPORTED }));
+            expect(screen.queryByRole('region', { name: 'Stream finder' })).not.toBeInTheDocument();
+        });
     });
 });

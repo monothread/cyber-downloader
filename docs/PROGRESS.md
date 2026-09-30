@@ -31,6 +31,7 @@ Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github
 | 11.1 | 11 | Close to system tray + quit confirmation + single instance (D-017) | 10.2 | src/main/index.ts, trayAvailability.ts, trayManager.ts, windowClose.ts, electronTray.ts, SettingsPanel.tsx | DONE | session-2026-09-30-a | Verified on Cinnamon (SNI item + Show/Quit menu). KDE/XFCE/GNOME rely on the same protocol but were not run here |
 | 12.1 | 12 | Windows build + Fedora (rpm) + Arch (pacman) packages (D-018) | 11.1 | scripts/fetch-binaries.mjs, scripts/check-linux-tools.mjs, electron-builder.yml, .github/workflows, binaryResolver.ts, updater.ts, trayAvailability.ts | DONE | session-2026-09-30-a | Code + config + workflows done. Windows/rpm/pacman packages were not built or run here (see D-018) |
 | 13.1 | 13 | Release 0.3.0 | 12.1 | .github/workflows, GitHub Release | DONE | session-2026-09-30-a | Release Linux and Release Windows workflows ran green and uploaded to one draft, which was then published. Tag `v0.3.0` = `0fd500a` |
+| 14.1 | 14 | Stream finder: find and download the video stream of a page yt-dlp does not understand (D-019) | 13.1 | src/main/services/{mediaKinds,pageScanner,sniffRules,browserSniffer,playlistFilter,streamFinder}.ts, JobCard/StreamFinder UI | DONE | session-2026-09-30-a | On branch `feature/stream-sniffer` (not merged, not released). Verified with local pages (e2e) and a public hls.js/Mux test stream |
 
 ## Handoff notes
 - Project directory: `/home/lucas/projects/downloader`; remote `origin` = `https://github.com/monothread/cyber-downloader.git`.
@@ -40,11 +41,13 @@ Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github
 ## Verification status (2026-09-30)
 - `npx tsc --noEmit --project tsconfig.json`: OK
 - `npx eslint src/ test/ --max-warnings=0`: OK
-- `npx vitest run`: 431 unit tests OK (37 files)
-- `npx playwright test` (after `npm run build`): 28 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
+- `npx vitest run`: 668 unit tests OK (43 files)
+- `npx playwright test` (after `npm run build`): 35 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
 - yt-dlp args validated manually against the real yt-dlp (short download of the test video `jNQXAC9IVRw`).
 
 ## Pending / follow-ups
+- Stream finder: review and merge `feature/stream-sniffer`, then release (new version). Not tried on Windows; the hidden browser window and the network rules are the same code, but its behaviour there was not observed.
+- Stream finder ideas not done: choosing the quality of a master playlist in the list, showing a preview/duration, remembering which sites needed the browser, cookies from the user's real browser for sites that need a login.
 - Test the published packages on real machines: the Windows installer on Windows 10/11 and the rpm/pacman on Fedora/Arch. The CI runs succeeded and the Linux AppImage was smoke-tested, but the other packages were not executed anywhere yet.
 - Validate the full auto-update cycle: install 0.3.0, publish a higher version (see `RELEASING.md`) and click update.
 - Windows: `yt-dlp --cookies-from-browser` can fail for Chromium-based browsers (Chrome/Edge) because of their newer cookie encryption; Firefox is more reliable. Not handled by the app.

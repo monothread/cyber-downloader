@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isValidHttpUrl } from '@shared/url';
 import type { AddJobResult, DownloadJob, DownloadError, HistoryEntry, ProgressInfo, Settings } from '@shared/types';
 import type { RunHandle, RunResult } from './ytdlpRunner';
-import { buildYtdlpArgs } from './ytdlpArgsBuilder';
+import { buildYtdlpArgs, type RequestExtras } from './ytdlpArgsBuilder';
 
 export interface QueueDependencies {
     getSettings: () => Settings;
@@ -27,6 +27,7 @@ function isFinished(job: DownloadJob): boolean {
 export class QueueManager {
     private readonly jobs: DownloadJob[] = [];
     private readonly handles = new Map<string, RunHandle>();
+    private readonly extras = new Map<string, RequestExtras>();
     private closed = false;
     private readonly generateId: () => string;
     private readonly now: () => number;
@@ -55,7 +56,12 @@ export class QueueManager {
         });
     }
 
-    add(url: string): AddJobResult {
+    getJob(id: string): DownloadJob | undefined {
+        const job = this.find(id);
+        return job ? { ...job } : undefined;
+    }
+
+    add(url: string, options: RequestExtras = {}): AddJobResult {
         const trimmed = url.trim();
         if (!isValidHttpUrl(trimmed)) {
             return { ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' };
@@ -64,7 +70,7 @@ export class QueueManager {
             id: this.generateId(),
             url: trimmed,
             status: 'queued',
-            title: null,
+            title: options.title ?? null,
             percent: 0,
             speed: '',
             eta: '',
@@ -73,6 +79,7 @@ export class QueueManager {
             createdAt: this.now()
         };
         this.jobs.push(job);
+        this.extras.set(job.id, options);
         this.emit(job);
         this.pump();
         return { ok: true, job: { ...job }, message: null };
@@ -112,6 +119,7 @@ export class QueueManager {
             this.handles.get(id)?.cancel();
         }
         this.jobs.splice(this.jobs.indexOf(job), 1);
+        this.extras.delete(id);
         this.deps.onJobRemoved(id);
         this.pump();
     }
@@ -156,7 +164,7 @@ export class QueueManager {
     private start(job: DownloadJob, settings: Settings): void {
         job.status = 'running';
         this.emit(job);
-        const args = buildYtdlpArgs(job.url, settings, this.deps.defaultDownloadDir, this.deps.resolveFfmpegLocation(settings));
+        const args = buildYtdlpArgs(job.url, settings, this.deps.defaultDownloadDir, this.deps.resolveFfmpegLocation(settings), this.extras.get(job.id));
         const handle = this.deps.startRun(this.deps.resolveYtdlpPath(settings), args, (progress) => {
             this.applyProgress(job, progress);
         });

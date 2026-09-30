@@ -1,5 +1,15 @@
 import { IPC } from '@shared/constants';
-import type { AppUpdateState, BinariesStatus, HistoryEntry, Settings, TraySupport, UpdateResult } from '@shared/types';
+import type {
+    AddJobResult,
+    AppUpdateState,
+    BinariesStatus,
+    HistoryEntry,
+    Settings,
+    StreamFindProgress,
+    StreamFindResult,
+    TraySupport,
+    UpdateResult
+} from '@shared/types';
 import { checkBinaries } from '../services/binaryLocator';
 import type { BinaryResolver } from '../services/binaryResolver';
 import { updateYtdlp } from '../services/updater';
@@ -7,6 +17,7 @@ import type { AppUpdateService } from '../services/appUpdateService';
 import type { HistoryStore } from '../services/historyStore';
 import type { QueueManager } from '../services/queueManager';
 import type { SettingsStore } from '../services/settingsStore';
+import type { StreamFinder } from '../services/streamFinder';
 
 export interface IpcMainLike {
     handle: (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void;
@@ -20,6 +31,8 @@ export interface HandlerDependencies {
     resolver: BinaryResolver;
     appUpdates: AppUpdateService;
     refreshTraySupport: () => Promise<TraySupport>;
+    streamFinder: StreamFinder;
+    sendStreamProgress: (progress: StreamFindProgress) => void;
     onSettingsSaved: (settings: Settings) => void;
     chooseDirectory: () => Promise<string | null>;
     showItemInFolder: (path: string) => void;
@@ -84,6 +97,30 @@ export function registerHandlers(deps: HandlerDependencies): void {
     });
     ipcMain.handle(IPC.traySupport, (): Promise<TraySupport> => {
         return deps.refreshTraySupport();
+    });
+    ipcMain.handle(IPC.streamFind, (_event, jobId, deep): Promise<StreamFindResult> | StreamFindResult => {
+        const job = queue.getJob(asString(jobId));
+        if (!job) {
+            return { ok: false, candidates: [], message: 'That download no longer exists.', usedBrowser: false };
+        }
+        return deps.streamFinder.find(job.id, job.url, deep === true, (stage) => {
+            deps.sendStreamProgress({ jobId: job.id, stage });
+        });
+    });
+    ipcMain.handle(IPC.streamCancel, (_event, jobId): void => {
+        deps.streamFinder.cancel(asString(jobId));
+    });
+    ipcMain.handle(IPC.streamDownload, (_event, candidateId): AddJobResult => {
+        const candidate = deps.streamFinder.getCandidate(asString(candidateId));
+        if (!candidate) {
+            return { ok: false, job: null, message: 'That stream is no longer available. Search again.' };
+        }
+        return queue.add(candidate.url, {
+            referer: candidate.referer,
+            userAgent: candidate.userAgent,
+            cookie: candidate.cookie ?? undefined,
+            title: candidate.title ?? undefined
+        });
     });
     ipcMain.handle(IPC.dialogChooseDir, (): Promise<string | null> => {
         return deps.chooseDirectory();

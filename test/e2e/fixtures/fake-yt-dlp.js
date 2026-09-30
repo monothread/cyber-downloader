@@ -25,6 +25,11 @@ function progress(percent) {
     process.stdout.write(`CYBERPROG|${percent.toFixed(1).padStart(6)}%|1.00MiB/s|00:01|${title}\n`);
 }
 
+if (url.includes('unsupported')) {
+    process.stderr.write(`ERROR: Unsupported URL: ${url}\n`);
+    process.exit(1);
+}
+
 if (url.includes('fail')) {
     process.stderr.write('ERROR: [youtube] abc: Video unavailable\n');
     process.exit(1);

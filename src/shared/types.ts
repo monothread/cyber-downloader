@@ -125,6 +125,31 @@ export interface TraySupport {
     reason: string | null;
 }
 
+export type StreamKind = 'hls' | 'dash' | 'mp4' | 'webm' | 'other';
+export type StreamSource = 'page' | 'network';
+export type StreamFindStage = 'scanning' | 'watching';
+
+export interface StreamCandidate {
+    id: string;
+    url: string;
+    kind: StreamKind;
+    source: StreamSource;
+    host: string;
+    title: string | null;
+}
+
+export interface StreamFindResult {
+    ok: boolean;
+    candidates: StreamCandidate[];
+    message: string | null;
+    usedBrowser: boolean;
+}
+
+export interface StreamFindProgress {
+    jobId: string;
+    stage: StreamFindStage;
+}
+
 export interface CyberApi {
     getSettings: () => Promise<Settings>;
     saveSettings: (settings: Settings) => Promise<Settings>;
@@ -143,10 +168,14 @@ export interface CyberApi {
     downloadAppUpdate: () => Promise<void>;
     installAppUpdate: () => Promise<void>;
     getTraySupport: () => Promise<TraySupport>;
+    findStreams: (jobId: string, deep: boolean) => Promise<StreamFindResult>;
+    cancelStreamFind: (jobId: string) => Promise<void>;
+    downloadStream: (candidateId: string) => Promise<AddJobResult>;
     chooseDirectory: () => Promise<string | null>;
     showItemInFolder: (path: string) => Promise<void>;
     onJobUpdate: (listener: (job: DownloadJob) => void) => () => void;
     onJobRemoved: (listener: (id: string) => void) => () => void;
     onHistoryChanged: (listener: () => void) => () => void;
     onAppUpdateState: (listener: (state: AppUpdateState) => void) => () => void;
+    onStreamFindProgress: (listener: (progress: StreamFindProgress) => void) => () => void;
 }

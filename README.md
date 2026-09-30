@@ -71,8 +71,16 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 - Optional "keep running in the system tray" (KDE, XFCE, Cinnamon, MATE, LXQt and GNOME with the AppIndicator extension); right-click the tray icon to quit
 - Title length limit so long titles never break the file name
 - Friendly error banner with technical details on demand
+- **Find stream**: when yt-dlp does not understand a page, scan it (and, if needed, watch it in a hidden browser window) for the video stream and pick one to download
 - Self-updating app: checks GitHub Releases, one click to download and one to restart into the new version
 - Update yt-dlp from the UI (downloads the latest verified release into the app data folder)
+
+## Find stream
+When a download fails because yt-dlp does not understand the page (for example "Unsupported URL"), the job card shows **FIND STREAM**. The app first scans the page's HTML, then, if nothing is found, loads the page in a hidden, sandboxed browser window for up to 25 seconds and watches which video playlists/files it requests. You choose one of the streams found and it is downloaded like any other link (with the page as referer).
+
+- It does **not** bypass DRM: protected streams (Widevine, FairPlay...) cannot be downloaded, and pages that need a login or an action the app cannot perform may show nothing.
+- The hidden window contacts the site like any browser would, so the site sees a visit from you. Nothing from it is kept after the search.
+- Use it only for content you have the right to download.
 
 ## Notes
 - **System tray:** on Linux the tray uses the StatusNotifierItem/AppIndicator standard (KDE, XFCE, Cinnamon, MATE, LXQt and GNOME with an extension); on Windows it is the notification area. Stock GNOME has no tray: install the "AppIndicator and KStatusNotifierItem Support" extension (Ubuntu ships it enabled; Fedora: `sudo dnf install gnome-shell-extension-appindicator`; Arch: `sudo pacman -S gnome-shell-extension-appindicator`, then enable it). Without one, the option is ignored and closing the window quits the app.

@@ -392,3 +392,61 @@ describe('QueueManager.pendingCount', () => {
     });
 });
 
+describe('QueueManager request extras (streams found on a page)', () => {
+    const STREAM = 'https://cdn.test/v/master.m3u8';
+    const EXTRAS = { referer: 'https://site.test/ep-1', userAgent: 'Agent/1.0', cookie: 'sid=1', title: 'Episode 1' };
+
+    it('starts the job with the extras and shows the page title right away', () => {
+        const { queue, runs } = setup();
+        const result = queue.add(STREAM, EXTRAS);
+        expect(result.job?.title).toBe('Episode 1');
+        expect(runs[0]?.args).toEqual(buildYtdlpArgs(STREAM, { ...DEFAULT_SETTINGS, maxConcurrent: 2 }, '/dl', '/bundled/bin', EXTRAS));
+        expect(runs[0]?.args).toEqual(expect.arrayContaining(['--referer', 'https://site.test/ep-1', '--user-agent', 'Agent/1.0', '--add-header', 'Cookie:sid=1']));
+    });
+
+    it('keeps the extras when the job is retried', async () => {
+        const { queue, runs } = setup();
+        queue.add(STREAM, EXTRAS);
+        runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        await flush();
+        queue.retry('job-1');
+        expect(runs[1]?.args).toEqual(runs[0]?.args);
+    });
+
+    it('forgets the extras when the job is removed', async () => {
+        const { queue, runs } = setup();
+        queue.add(STREAM, EXTRAS);
+        runs[0]?.resolve({ status: 'done', filePath: null });
+        await flush();
+        queue.remove('job-1');
+        queue.add(STREAM);
+        expect(runs[1]?.args).not.toContain('--referer');
+    });
+
+    it('does not leak extras between jobs', () => {
+        const { queue, runs } = setup({ maxConcurrent: 3 });
+        queue.add(STREAM, EXTRAS);
+        queue.add(URL_B);
+        expect(runs[0]?.args).toContain('--referer');
+        expect(runs[1]?.args).not.toContain('--referer');
+        expect(runs[1]?.args).toContain('%(title).80s [%(id)s].%(ext)s');
+    });
+});
+
+describe('QueueManager.getJob', () => {
+    it('returns a copy of the job', () => {
+        const { queue } = setup();
+        queue.add(URL_A);
+        const job = queue.getJob('job-1');
+        expect(job).toMatchObject({ id: 'job-1', url: URL_A, status: 'running' });
+        if (job) {
+            job.percent = 50;
+        }
+        expect(queue.getJob('job-1')?.percent).toBe(0);
+    });
+
+    it('returns undefined for unknown ids', () => {
+        expect(setup().queue.getJob('nope')).toBeUndefined();
+    });
+});
+

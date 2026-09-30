@@ -69,7 +69,7 @@ describe('App', () => {
         const { unmount } = render(<App />);
         await screen.findByLabelText('Link 1');
         unmount();
-        expect(mock.unsubscribers).toHaveLength(4);
+        expect(mock.unsubscribers).toHaveLength(5);
         mock.unsubscribers.forEach((unsubscribe) => {
             expect(unsubscribe).toHaveBeenCalledTimes(1);
         });
@@ -93,7 +93,7 @@ describe('App', () => {
         unmount();
         release();
         await waitFor(() => {
-            expect(mock.unsubscribers).toHaveLength(4);
+            expect(mock.unsubscribers).toHaveLength(5);
         });
         mock.unsubscribers.forEach((unsubscribe) => {
             expect(unsubscribe).toHaveBeenCalledTimes(1);

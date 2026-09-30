@@ -3,6 +3,14 @@ import { FILE_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from './progressParser';
 
 const FILENAME_BYTE_LIMIT = '240';
 
+// What a download found by the stream finder needs to reach the stream as the page itself would have.
+export interface RequestExtras {
+    referer?: string;
+    userAgent?: string;
+    cookie?: string;
+    title?: string;
+}
+
 export function splitArguments(input: string): string[] {
     const tokens: string[] = [];
     const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
@@ -14,8 +22,41 @@ export function splitArguments(input: string): string[] {
     return tokens;
 }
 
-function buildOutputTemplate(settings: Settings): string {
-    return `%(title).${settings.maxTitleLength}s [%(id)s].%(ext)s`;
+const INVALID_FILENAME_CHARACTERS = new Set(['\\', '/', ':', '*', '?', '"', '<', '>', '|']);
+
+function replaceInvalidCharacters(title: string): string {
+    return Array.from(title, (character) => {
+        return character.charCodeAt(0) < 32 || INVALID_FILENAME_CHARACTERS.has(character) ? ' ' : character;
+    }).join('');
+}
+
+// A title taken from a web page goes into an output template: "%" must be escaped and path separators removed.
+export function escapeTitleForTemplate(title: string, maxLength: number): string {
+    return replaceInvalidCharacters(title)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, maxLength)
+        .trim()
+        .replace(/%/g, '%%');
+}
+
+function buildOutputTemplate(settings: Settings, extras: RequestExtras): string {
+    const title = extras.title ? escapeTitleForTemplate(extras.title, settings.maxTitleLength) : '';
+    return title.length > 0 ? `${title} [%(id)s].%(ext)s` : `%(title).${settings.maxTitleLength}s [%(id)s].%(ext)s`;
+}
+
+function buildRequestArgs(extras: RequestExtras): string[] {
+    const args: string[] = [];
+    if (extras.referer) {
+        args.push('--referer', extras.referer);
+    }
+    if (extras.userAgent) {
+        args.push('--user-agent', extras.userAgent);
+    }
+    if (extras.cookie) {
+        args.push('--add-header', `Cookie:${extras.cookie}`);
+    }
+    return args;
 }
 
 function buildFormatArgs(settings: Settings): string[] {
@@ -62,7 +103,13 @@ function buildOptionalArgs(settings: Settings, ffmpegLocation: string | null): s
     return args;
 }
 
-export function buildYtdlpArgs(url: string, settings: Settings, defaultDownloadDir: string, ffmpegLocation: string | null = null): string[] {
+export function buildYtdlpArgs(
+    url: string,
+    settings: Settings,
+    defaultDownloadDir: string,
+    ffmpegLocation: string | null = null,
+    extras: RequestExtras = {}
+): string[] {
     const downloadDir = settings.downloadDir.length > 0 ? settings.downloadDir : defaultDownloadDir;
     return [
         '--newline',
@@ -76,7 +123,7 @@ export function buildYtdlpArgs(url: string, settings: Settings, defaultDownloadD
         '-P',
         downloadDir,
         '-o',
-        buildOutputTemplate(settings),
+        buildOutputTemplate(settings, extras),
         '--trim-filenames',
         FILENAME_BYTE_LIMIT,
         settings.downloadPlaylist ? '--yes-playlist' : '--no-playlist',
@@ -84,6 +131,7 @@ export function buildYtdlpArgs(url: string, settings: Settings, defaultDownloadD
         ...buildCookieArgs(settings),
         ...buildSubtitleArgs(settings),
         ...buildOptionalArgs(settings, ffmpegLocation),
+        ...buildRequestArgs(extras),
         ...splitArguments(settings.extraArgs),
         '--',
         url
