@@ -2,6 +2,31 @@
 
 Cyberpunk-themed Linux desktop app (Electron + React + TypeScript) that wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
+## Install
+Download the latest file from the [Releases page](https://github.com/monothread/cyber-downloader/releases/latest). Nothing else has to be installed: yt-dlp, ffmpeg/ffprobe and deno are bundled.
+
+| File | Best for |
+|---|---|
+| `cyber-downloader-x.y.z.deb` | Ubuntu, Debian and derivatives |
+| `cyber-downloader-x.y.z.AppImage` | Any other Linux distribution (portable, installs nothing) |
+
+**`.deb`** — double-click it to open your software installer, or run:
+```bash
+sudo apt install ./cyber-downloader-x.y.z.deb
+```
+Then open **Cyber Downloader** from your applications menu.
+
+**AppImage** — browsers drop the executable permission, so enable it first:
+```bash
+chmod +x cyber-downloader-x.y.z.AppImage
+./cyber-downloader-x.y.z.AppImage
+```
+Or right-click the file > Properties > Permissions > "Allow executing file as program", then double-click it.
+- Ubuntu 22.04 and newer need FUSE 2 to run AppImages: `sudo apt install libfuse2` (`libfuse2t64` on Ubuntu 24.04).
+- If it does not open on Ubuntu 24.04 (restricted user namespaces), run it with `--no-sandbox`. The `.deb` does not have this problem.
+
+Once installed, the app checks for new versions by itself (Settings > APP UPDATES).
+
 ## Requirements
 - **Using the packaged app:** nothing else. yt-dlp, ffmpeg/ffprobe and deno are bundled.
 - **Developing:** Node.js 22+. `npm run fetch-binaries` downloads the bundled binaries into `resources/bin` (checksum-verified; `npm run dist` runs it automatically).
