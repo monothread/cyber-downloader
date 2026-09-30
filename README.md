@@ -94,3 +94,8 @@ When a download fails because yt-dlp does not understand the page (for example "
 - Third-party software bundled in the package is listed in [`resources/THIRD_PARTY_NOTICES.md`](resources/THIRD_PARTY_NOTICES.md).
 
 Developer docs live in [`docs/`](docs/README.md).
+
+## Screenshots
+| Cyberpunk | Dark | Light |
+|---|---|---|
+| ![Cyberpunk theme](docs/screenshots/cyberpunk-downloads.png) | ![Dark theme](docs/screenshots/dark-downloads.png) | ![Light theme](docs/screenshots/light-downloads.png) |
