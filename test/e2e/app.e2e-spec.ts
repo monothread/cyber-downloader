@@ -49,8 +49,12 @@ function readCalls(logPath: string): string[][] {
 }
 
 async function submitUrl(page: Page, url: string): Promise<void> {
-    await page.getByLabel('TARGET URL(S)').fill(url);
+    await page.getByLabel('Link 1', { exact: true }).fill(url);
     await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+}
+
+function readSettings(userData: string): Record<string, unknown> {
+    return JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf-8')) as Record<string, unknown>;
 }
 
 test.beforeEach(async () => {
@@ -160,18 +164,121 @@ test('cancels a running download and lets the user remove it', async () => {
     await expect(page.getByText('NO ACTIVE DOWNLOADS')).toBeVisible();
 });
 
-test('shows an error notice for an invalid URL and does not create a job', async () => {
+test('shows the error on the link row for an invalid URL, keeps it for editing and does not create a job', async () => {
     const { page } = session;
     await submitUrl(page, 'not-a-url');
     await expect(page.getByRole('alert').filter({ hasText: 'Invalid URL. Use an http(s) link.' })).toBeVisible();
+    await expect(page.getByLabel('Link 1', { exact: true })).toHaveValue('not-a-url');
+    await expect(page.getByLabel('Link 1', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByTestId('job-card')).toHaveCount(0);
+
+    await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/ok');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+});
+
+test('asks for a link when every row is empty', async () => {
+    const { page } = session;
+    await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Paste at least one video URL.' })).toBeVisible();
     await expect(page.getByTestId('job-card')).toHaveCount(0);
 });
 
-test('queues several URLs pasted at once', async () => {
+test('adds several links with the add button, queues them all and resets the rows', async () => {
     const { page } = session;
-    await submitUrl(page, 'https://example.com/ok1 https://example.com/ok2\nhttps://example.com/ok3');
+    await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/ok1');
+    await page.getByRole('button', { name: '+ ADD LINK' }).click();
+    await expect(page.getByLabel('Link 2', { exact: true })).toBeFocused();
+    await page.getByLabel('Link 2', { exact: true }).fill('https://example.com/ok2');
+    await page.getByRole('button', { name: '+ ADD LINK' }).click();
+    await page.getByLabel('Link 3', { exact: true }).fill('https://example.com/ok3');
+    await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+
     await expect(page.getByTestId('job-card')).toHaveCount(3);
     await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(3);
+    await expect(page.getByLabel('Link 1', { exact: true })).toHaveValue('');
+    await expect(page.getByLabel('Link 2', { exact: true })).toHaveCount(0);
+});
+
+test('removes a link row with its remove button', async () => {
+    const { page } = session;
+    await page.getByRole('button', { name: '+ ADD LINK' }).click();
+    await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/first');
+    await page.getByLabel('Link 2', { exact: true }).fill('https://example.com/second');
+    await page.getByRole('button', { name: 'Remove link 1' }).click();
+    await expect(page.getByLabel('Link 2', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Link 1', { exact: true })).toHaveValue('https://example.com/second');
+    await expect(page.getByRole('button', { name: /Remove link/ })).toHaveCount(0);
+});
+
+test('queues the valid links and keeps only the invalid one with its error', async () => {
+    const { page } = session;
+    await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/ok1');
+    await page.getByRole('button', { name: '+ ADD LINK' }).click();
+    await page.getByLabel('Link 2', { exact: true }).fill('not-a-url');
+    await page.getByRole('button', { name: '+ ADD LINK' }).click();
+    await page.getByLabel('Link 3', { exact: true }).fill('https://example.com/ok3');
+    await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+
+    await expect(page.getByTestId('job-card')).toHaveCount(2);
+    await expect(page.getByLabel('Link 2', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Link 1', { exact: true })).toHaveValue('not-a-url');
+    await expect(page.getByRole('alert').filter({ hasText: 'Invalid URL. Use an http(s) link.' })).toBeVisible();
+});
+
+test('handles a very long link without resizing the field or overflowing the page', async () => {
+    const { page, logPath } = session;
+    const longUrl = `https://example.com/watch?v=abc&list=${'x'.repeat(1500)}`;
+    const field = page.getByLabel('Link 1', { exact: true });
+    await field.fill(longUrl);
+
+    const before = await field.boundingBox();
+    expect(before).not.toBeNull();
+    expect(await field.evaluate((element: HTMLInputElement) => {
+        return element.tagName === 'INPUT' && element.scrollWidth > element.clientWidth;
+    })).toBe(true);
+    expect(await page.evaluate(() => {
+        return document.documentElement.scrollWidth <= window.innerWidth;
+    })).toBe(true);
+    await expect(field).toHaveValue(longUrl);
+
+    await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+    const after = await field.boundingBox();
+    expect(after?.width).toBe(before?.width);
+    expect(after?.height).toBe(before?.height);
+    const args = readCalls(logPath).find((call) => {
+        return call.includes('--no-playlist');
+    }) ?? [];
+    expect(args.at(-1)).toBe(longUrl);
+});
+
+test('settings have no save button and are saved automatically', async () => {
+    const { page, userData } = session;
+    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await expect(page.getByRole('button', { name: 'SAVE SETTINGS' })).toHaveCount(0);
+    await expect(page.getByText('Changes are saved automatically.')).toBeVisible();
+
+    await page.getByLabel('Video container').selectOption('mkv');
+    await expect(page.getByText('All changes saved.')).toBeVisible();
+    expect(readSettings(userData).videoContainer).toBe('mkv');
+
+    await page.getByLabel('Max title length (characters)').fill('66');
+    await expect(page.getByText('Unsaved changes…')).toBeVisible();
+    expect(readSettings(userData).maxTitleLength).toBe(80);
+    await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+    expect(readSettings(userData).maxTitleLength).toBe(66);
+});
+
+test('pending text edits are saved when leaving the settings tab', async () => {
+    const { page, userData } = session;
+    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await page.getByLabel('Subtitle languages').fill('fr,de');
+    await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+    await expect.poll(() => {
+        return readSettings(userData).subtitleLangs;
+    }).toBe('fr,de');
 });
 
 test('persists edited settings to disk and passes them to yt-dlp', async () => {
@@ -184,11 +291,9 @@ test('persists edited settings to disk and passes them to yt-dlp', async () => {
     await page.getByLabel('Browser', { exact: true }).selectOption('brave');
     await page.getByLabel('Download whole playlist').check();
     await page.getByLabel('JavaScript runtime').fill('node');
-    await page.getByRole('button', { name: 'SAVE SETTINGS' }).click();
-    await expect(page.getByRole('status').filter({ hasText: 'Settings saved.' })).toBeVisible();
+    await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
 
-    const stored = JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf-8')) as Record<string, unknown>;
-    expect(stored).toMatchObject({
+    expect(readSettings(userData)).toMatchObject({
         maxTitleLength: 55,
         maxResolution: '720',
         videoContainer: 'mkv',
@@ -244,8 +349,6 @@ test('the startup update check setting is saved', async () => {
     await page.getByRole('button', { name: 'SETTINGS' }).click();
     await expect(page.getByLabel('Check for updates on startup')).toBeChecked();
     await page.getByLabel('Check for updates on startup').uncheck();
-    await page.getByRole('button', { name: 'SAVE SETTINGS' }).click();
-    await expect(page.getByRole('status').filter({ hasText: 'Settings saved.' })).toBeVisible();
-    const stored = JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf-8')) as Record<string, unknown>;
-    expect(stored.checkUpdatesOnStart).toBe(false);
+    await expect(page.getByText('All changes saved.')).toBeVisible();
+    expect(readSettings(userData).checkUpdatesOnStart).toBe(false);
 });

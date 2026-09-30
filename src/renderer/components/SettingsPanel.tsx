@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
     AUDIO_FORMATS,
     BROWSERS,
@@ -9,11 +8,20 @@ import {
     RESOLUTIONS,
     VIDEO_CONTAINERS
 } from '@shared/constants';
-import type { MaxResolution, Settings } from '@shared/types';
+import type { MaxResolution } from '@shared/types';
+import { useAutoSaveSettings, type SaveStatus } from '../hooks/useAutoSaveSettings';
 import { useAppStore } from '../store/appStore';
 import { NumberField, SelectField, TextField, ToggleField } from './fields';
 import { UpdateActions } from './UpdateActions';
 import { updateSummary } from './updateText';
+
+const SAVE_STATUS_TEXT: Record<SaveStatus, string> = {
+    idle: 'Changes are saved automatically.',
+    pending: 'Unsaved changes…',
+    saving: 'Saving…',
+    saved: 'All changes saved.',
+    error: 'Could not save the settings.'
+};
 
 function formatResolution(resolution: MaxResolution): string {
     return resolution === 'best' ? 'Best available' : `Up to ${resolution}p`;
@@ -29,39 +37,28 @@ export function SettingsPanel() {
     const chooseDirectory = useAppStore((state) => {
         return state.chooseDirectory;
     });
-    const setNotice = useAppStore((state) => {
-        return state.setNotice;
-    });
     const appUpdate = useAppStore((state) => {
         return state.appUpdate;
     });
     const checkAppUpdate = useAppStore((state) => {
         return state.checkAppUpdate;
     });
-    const [draft, setDraft] = useState<Settings>(stored);
+    const { draft, status, change, edit } = useAutoSaveSettings(stored, saveSettings);
     const updateInProgress = appUpdate.status === 'checking' || appUpdate.status === 'downloading';
-
-    function update<K extends keyof Settings>(key: K, value: Settings[K]): void {
-        setDraft((previous) => {
-            return { ...previous, [key]: value };
-        });
-    }
 
     async function handleChooseDirectory(): Promise<void> {
         const directory = await chooseDirectory();
         if (directory) {
-            update('downloadDir', directory);
+            change('downloadDir', directory);
         }
-    }
-
-    async function handleSave(): Promise<void> {
-        const saved = await saveSettings(draft);
-        setDraft(saved);
-        setNotice({ kind: 'info', message: 'Settings saved.' });
     }
 
     return (
         <section className="settings" aria-label="Settings">
+            <p className={`save-status save-status--${status}`} aria-live="polite">
+                {SAVE_STATUS_TEXT[status]}
+            </p>
+
             <fieldset className="panel">
                 <legend>OUTPUT</legend>
                 <div className="field-row">
@@ -70,7 +67,7 @@ export function SettingsPanel() {
                         value={draft.downloadDir}
                         placeholder="Default: system Downloads folder"
                         onChange={(value) => {
-                            update('downloadDir', value);
+                            edit('downloadDir', value);
                         }}
                     />
                     <button
@@ -90,14 +87,14 @@ export function SettingsPanel() {
                     max={MAX_TITLE_LENGTH}
                     hint="Long titles are cut in the file name so the download does not fail."
                     onChange={(value) => {
-                        update('maxTitleLength', value);
+                        edit('maxTitleLength', value);
                     }}
                 />
                 <ToggleField
                     label="Restrict file names (ASCII only)"
                     checked={draft.restrictFilenames}
                     onChange={(value) => {
-                        update('restrictFilenames', value);
+                        change('restrictFilenames', value);
                     }}
                 />
             </fieldset>
@@ -111,7 +108,7 @@ export function SettingsPanel() {
                     formatOption={formatResolution}
                     hint="Always picks the best video + best audio within the limit."
                     onChange={(value) => {
-                        update('maxResolution', value);
+                        change('maxResolution', value);
                     }}
                 />
                 <SelectField
@@ -119,14 +116,14 @@ export function SettingsPanel() {
                     value={draft.videoContainer}
                     options={VIDEO_CONTAINERS}
                     onChange={(value) => {
-                        update('videoContainer', value);
+                        change('videoContainer', value);
                     }}
                 />
                 <ToggleField
                     label="Audio only"
                     checked={draft.audioOnly}
                     onChange={(value) => {
-                        update('audioOnly', value);
+                        change('audioOnly', value);
                     }}
                 />
                 <SelectField
@@ -134,7 +131,7 @@ export function SettingsPanel() {
                     value={draft.audioFormat}
                     options={AUDIO_FORMATS}
                     onChange={(value) => {
-                        update('audioFormat', value);
+                        change('audioFormat', value);
                     }}
                 />
             </fieldset>
@@ -146,7 +143,7 @@ export function SettingsPanel() {
                     checked={draft.useBrowserCookies}
                     hint="Needed for age-restricted, private or members-only videos."
                     onChange={(value) => {
-                        update('useBrowserCookies', value);
+                        change('useBrowserCookies', value);
                     }}
                 />
                 <SelectField
@@ -154,14 +151,14 @@ export function SettingsPanel() {
                     value={draft.cookiesBrowser}
                     options={BROWSERS}
                     onChange={(value) => {
-                        update('cookiesBrowser', value);
+                        change('cookiesBrowser', value);
                     }}
                 />
                 <TextField
                     label="Browser profile (optional)"
                     value={draft.cookiesProfile}
                     onChange={(value) => {
-                        update('cookiesProfile', value);
+                        edit('cookiesProfile', value);
                     }}
                 />
             </fieldset>
@@ -172,14 +169,14 @@ export function SettingsPanel() {
                     label="Download whole playlist"
                     checked={draft.downloadPlaylist}
                     onChange={(value) => {
-                        update('downloadPlaylist', value);
+                        change('downloadPlaylist', value);
                     }}
                 />
                 <ToggleField
                     label="Download subtitles"
                     checked={draft.writeSubtitles}
                     onChange={(value) => {
-                        update('writeSubtitles', value);
+                        change('writeSubtitles', value);
                     }}
                 />
                 <TextField
@@ -187,14 +184,14 @@ export function SettingsPanel() {
                     value={draft.subtitleLangs}
                     hint="Comma separated, e.g. en,pt"
                     onChange={(value) => {
-                        update('subtitleLangs', value);
+                        edit('subtitleLangs', value);
                     }}
                 />
                 <ToggleField
                     label="Embed subtitles in the video"
                     checked={draft.embedSubtitles}
                     onChange={(value) => {
-                        update('embedSubtitles', value);
+                        change('embedSubtitles', value);
                     }}
                 />
             </fieldset>
@@ -207,7 +204,7 @@ export function SettingsPanel() {
                     min={MIN_CONCURRENT}
                     max={MAX_CONCURRENT}
                     onChange={(value) => {
-                        update('maxConcurrent', value);
+                        edit('maxConcurrent', value);
                     }}
                 />
                 <TextField
@@ -215,7 +212,7 @@ export function SettingsPanel() {
                     value={draft.rateLimit}
                     placeholder="e.g. 2M or 500K"
                     onChange={(value) => {
-                        update('rateLimit', value);
+                        edit('rateLimit', value);
                     }}
                 />
                 <TextField
@@ -223,7 +220,7 @@ export function SettingsPanel() {
                     value={draft.ytdlpPath}
                     placeholder="Default: bundled yt-dlp"
                     onChange={(value) => {
-                        update('ytdlpPath', value);
+                        edit('ytdlpPath', value);
                     }}
                 />
                 <TextField
@@ -231,7 +228,7 @@ export function SettingsPanel() {
                     value={draft.ffmpegPath}
                     placeholder="Default: bundled ffmpeg"
                     onChange={(value) => {
-                        update('ffmpegPath', value);
+                        edit('ffmpegPath', value);
                     }}
                 />
                 <TextField
@@ -240,7 +237,7 @@ export function SettingsPanel() {
                     placeholder="Default: bundled deno"
                     hint="Optional override, e.g. node or RUNTIME:/path/to/binary."
                     onChange={(value) => {
-                        update('jsRuntime', value);
+                        edit('jsRuntime', value);
                     }}
                 />
                 <TextField
@@ -248,7 +245,7 @@ export function SettingsPanel() {
                     value={draft.extraArgs}
                     hint="Passed as-is to yt-dlp, including options that run commands (e.g. --exec). Only use arguments you trust."
                     onChange={(value) => {
-                        update('extraArgs', value);
+                        edit('extraArgs', value);
                     }}
                 />
             </fieldset>
@@ -275,22 +272,10 @@ export function SettingsPanel() {
                     label="Check for updates on startup"
                     checked={draft.checkUpdatesOnStart}
                     onChange={(value) => {
-                        update('checkUpdatesOnStart', value);
+                        change('checkUpdatesOnStart', value);
                     }}
                 />
             </fieldset>
-
-            <div className="settings__actions">
-                <button
-                    type="button"
-                    className="btn btn--primary"
-                    onClick={() => {
-                        void handleSave();
-                    }}
-                >
-                    SAVE SETTINGS
-                </button>
-            </div>
         </section>
     );
 }

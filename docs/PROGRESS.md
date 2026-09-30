@@ -26,6 +26,7 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 | 7.1 | 7 | Bundle yt-dlp, ffmpeg, deno in the package + own updater (D-013) | 6.1 | scripts/, src/main/services/binaryResolver.ts, updater.ts, electron-builder.yml | DONE | session-2026-09-30-a | Tested with a restricted PATH: mp4 (merge) and mp3 downloads using only the bundled binaries; package built and smoke-tested |
 | 8.1 | 8 | App self-update (D-014) | 7.1 | src/main/services/appUpdateService.ts, electronUpdater.ts, update UI, docs/RELEASING.md | DONE | session-2026-09-30-a | Tested on the real package: it queries GitHub and answers "No published versions" (no Release yet). The download/install flow can only be validated after the first Release plus a higher version |
 | 9.1 | 9 | Git repository + publish to GitHub | 8.1 | .git, LICENSE | DONE | session-2026-09-30-a | Branch `main` pushed to monothread/cyber-downloader; LICENSE is the MIT one created by GitHub (copyright monothread) |
+| 10.1 | 10 | Settings auto-save + one input per link (D-015) | 9.1 | src/renderer/hooks, SettingsPanel.tsx, UrlInput.tsx, appStore.ts | DONE | session-2026-09-30-a | Committed locally; needs a new version/release to reach installed apps |
 
 ## Handoff notes
 - Project directory: `/home/lucas/projects/downloader`; remote `origin` = `https://github.com/monothread/cyber-downloader.git`.
@@ -35,8 +36,8 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 ## Verification status (2026-09-30)
 - `npx tsc --noEmit --project tsconfig.json`: OK
 - `npx eslint src/ test/ --max-warnings=0`: OK
-- `npx vitest run`: 294 unit tests OK (31 files)
-- `npx playwright test` (after `npm run build`): 13 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
+- `npx vitest run`: 352 unit tests OK (33 files)
+- `npx playwright test` (after `npm run build`): 19 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
 - yt-dlp args validated manually against the real yt-dlp (short download of the test video `jNQXAC9IVRw`).
 
 ## Pending / follow-ups

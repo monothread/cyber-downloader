@@ -19,7 +19,7 @@ describe('App', () => {
         render(<App />);
         expect(screen.getByText('// BOOTING SYSTEMS…')).toBeInTheDocument();
         await waitFor(() => {
-            expect(screen.getByLabelText('TARGET URL(S)')).toBeInTheDocument();
+            expect(screen.getByLabelText('Link 1')).toBeInTheDocument();
         });
         expect(screen.queryByText('// BOOTING SYSTEMS…')).not.toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'CYBER//DL' })).toBeInTheDocument();
@@ -29,7 +29,7 @@ describe('App', () => {
     it('marks the active tab and switches between sections', async () => {
         const user = userEvent.setup();
         render(<App />);
-        await screen.findByLabelText('TARGET URL(S)');
+        await screen.findByLabelText('Link 1');
         expect(screen.getByRole('button', { name: 'DOWNLOADS' })).toHaveAttribute('aria-current', 'page');
         expect(screen.getByRole('button', { name: 'HISTORY' })).not.toHaveAttribute('aria-current');
 
@@ -38,15 +38,16 @@ describe('App', () => {
         expect(screen.getByRole('button', { name: 'HISTORY' })).toHaveAttribute('aria-current', 'page');
 
         await user.click(screen.getByRole('button', { name: 'SETTINGS' }));
-        expect(screen.getByRole('button', { name: 'SAVE SETTINGS' })).toBeInTheDocument();
+        expect(screen.getByText('Changes are saved automatically.')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'SAVE SETTINGS' })).not.toBeInTheDocument();
 
         await user.click(screen.getByRole('button', { name: 'DOWNLOADS' }));
-        expect(screen.getByLabelText('TARGET URL(S)')).toBeInTheDocument();
+        expect(screen.getByLabelText('Link 1')).toBeInTheDocument();
     });
 
     it('renders jobs pushed from the main process', async () => {
         render(<App />);
-        await screen.findByLabelText('TARGET URL(S)');
+        await screen.findByLabelText('Link 1');
         act(() => {
             mock.emitJobUpdate(makeJob({ id: 'x', title: 'Pushed Video' }));
         });
@@ -55,7 +56,7 @@ describe('App', () => {
 
     it('shows the update banner when a new version is pushed', async () => {
         render(<App />);
-        await screen.findByLabelText('TARGET URL(S)');
+        await screen.findByLabelText('Link 1');
         expect(screen.queryByText('Version 0.2.0 is available.')).not.toBeInTheDocument();
         act(() => {
             mock.emitAppUpdateState({ ...APP_UPDATE_IDLE, status: 'available', version: '0.2.0' });
@@ -66,7 +67,7 @@ describe('App', () => {
 
     it('unsubscribes from events on unmount', async () => {
         const { unmount } = render(<App />);
-        await screen.findByLabelText('TARGET URL(S)');
+        await screen.findByLabelText('Link 1');
         unmount();
         expect(mock.unsubscribers).toHaveLength(4);
         mock.unsubscribers.forEach((unsubscribe) => {

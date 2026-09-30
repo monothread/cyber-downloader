@@ -14,3 +14,4 @@
 - Git: repository initialized, code pushed to `monothread/cyber-downloader` on `main` (rebased on top of the GitHub-created LICENSE commit, no force push). MIT `LICENSE` kept from the remote.
 - Docs translated to English.
 - Fixed the EPIPE crash when the AppImage is launched without a terminal (updater logger off + stdio error guard). Version bumped to 0.1.1 to test the auto-update from 0.1.0.
+- Settings now auto-save (toggles/selects immediately, text/number 2 s after typing; no save button). Downloads use one input per link with an add button; long links are handled inside a non-resizable single-line input (D-015). Tests: 352 unit, 19 e2e.

@@ -1,4 +1,4 @@
-import { isValidHttpUrl, splitUrls } from '@shared/url';
+import { isValidHttpUrl } from '@shared/url';
 
 describe('isValidHttpUrl', () => {
     it('accepts http and https URLs', () => {
@@ -19,19 +19,5 @@ describe('isValidHttpUrl', () => {
     it('rejects invalid and empty values', () => {
         expect(isValidHttpUrl('not a url')).toBe(false);
         expect(isValidHttpUrl('')).toBe(false);
-    });
-});
-
-describe('splitUrls', () => {
-    it('splits on any whitespace and drops empty tokens', () => {
-        expect(splitUrls(' https://a.com \n\n https://b.com\thttps://c.com ')).toEqual([
-            'https://a.com',
-            'https://b.com',
-            'https://c.com'
-        ]);
-    });
-
-    it('returns an empty array for blank input', () => {
-        expect(splitUrls('   \n ')).toEqual([]);
     });
 });

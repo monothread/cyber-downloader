@@ -96,29 +96,26 @@ describe('useAppStore.init', () => {
 });
 
 describe('useAppStore.addUrls', () => {
-    it('shows an error notice when no URL was given', async () => {
-        await useAppStore.getState().addUrls('   ');
-        expect(mock.api.addDownload).not.toHaveBeenCalled();
-        expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'Paste at least one video URL.' });
-    });
-
-    it('adds each URL separately', async () => {
-        await useAppStore.getState().addUrls('https://a.com\nhttps://b.com  https://c.com');
-        expect(mock.api.addDownload.mock.calls).toEqual([['https://a.com'], ['https://b.com'], ['https://c.com']]);
-        expect(useAppStore.getState().notice).toBeNull();
-    });
-
-    it('shows the first failure message', async () => {
+    it('adds each URL separately and returns the results in order', async () => {
         mock.api.addDownload.mockResolvedValueOnce({ ok: true, job: null, message: null });
         mock.api.addDownload.mockResolvedValueOnce({ ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' });
-        await useAppStore.getState().addUrls('https://a.com nope');
-        expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'Invalid URL. Use an http(s) link.' });
+        const results = await useAppStore.getState().addUrls(['https://a.com', 'nope']);
+        expect(mock.api.addDownload.mock.calls).toEqual([['https://a.com'], ['nope']]);
+        expect(results).toEqual([
+            { ok: true, job: null, message: null },
+            { ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' }
+        ]);
     });
 
-    it('uses a generic message when a failure has no message', async () => {
-        mock.api.addDownload.mockResolvedValueOnce({ ok: false, job: null, message: null });
-        await useAppStore.getState().addUrls('nope');
-        expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'Could not add the download.' });
+    it('does not call the API and returns nothing for an empty list', async () => {
+        await expect(useAppStore.getState().addUrls([])).resolves.toEqual([]);
+        expect(mock.api.addDownload).not.toHaveBeenCalled();
+    });
+
+    it('does not set a notice; feedback is shown by the caller', async () => {
+        mock.api.addDownload.mockResolvedValueOnce({ ok: false, job: null, message: 'bad' });
+        await useAppStore.getState().addUrls(['nope']);
+        expect(useAppStore.getState().notice).toBeNull();
     });
 });
 
@@ -152,15 +149,34 @@ describe('useAppStore history', () => {
 });
 
 describe('useAppStore settings and binaries', () => {
-    it('saves settings, stores the sanitized result and re-checks binaries', async () => {
+    it('saves settings and stores the sanitized result', async () => {
         const sanitized = { ...DEFAULT_SETTINGS, maxTitleLength: 200 };
         mock.api.saveSettings.mockResolvedValueOnce(sanitized);
         const result = await useAppStore.getState().saveSettings({ ...DEFAULT_SETTINGS, maxTitleLength: 5000 });
         expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, maxTitleLength: 5000 });
         expect(result).toEqual(sanitized);
         expect(useAppStore.getState().settings).toEqual(sanitized);
+    });
+
+    it('does not re-check the binaries when their paths did not change', async () => {
+        await useAppStore.getState().saveSettings({ ...DEFAULT_SETTINGS, audioOnly: true, downloadDir: '/x' });
+        expect(mock.api.checkBinaries).not.toHaveBeenCalled();
+        expect(useAppStore.getState().binaries).toBeNull();
+    });
+
+    it.each([
+        ['ytdlpPath', '/opt/yt-dlp'],
+        ['ffmpegPath', '/opt/ffmpeg']
+    ] as const)('re-checks the binaries when %s changes', async (key, value) => {
+        await useAppStore.getState().saveSettings({ ...DEFAULT_SETTINGS, [key]: value });
         expect(mock.api.checkBinaries).toHaveBeenCalledTimes(1);
         expect(useAppStore.getState().binaries).not.toBeNull();
+    });
+
+    it('does not re-check again when the same custom path is saved twice', async () => {
+        await useAppStore.getState().saveSettings({ ...DEFAULT_SETTINGS, ytdlpPath: '/opt/yt-dlp' });
+        await useAppStore.getState().saveSettings({ ...DEFAULT_SETTINGS, ytdlpPath: '/opt/yt-dlp', audioOnly: true });
+        expect(mock.api.checkBinaries).toHaveBeenCalledTimes(1);
     });
 
     it('opens the directory chooser', async () => {

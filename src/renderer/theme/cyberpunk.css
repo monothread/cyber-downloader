@@ -178,9 +178,6 @@ body::after {
     box-shadow: 0 0 0 1px var(--cyan), 0 0 14px rgba(0, 240, 255, 0.35);
 }
 
-textarea.input {
-    resize: vertical;
-}
 
 .btn {
     background: transparent;
@@ -406,3 +403,16 @@ textarea.input {
 
 .update-banner__text { color: var(--yellow); }
 .update-status { margin: 0; color: var(--text); }
+
+.url-input { min-width: 0; }
+.link-rows { display: flex; flex-direction: column; gap: 8px; }
+.link-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.link-row__line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.link-row__input { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.input--invalid { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+.link-row__error { margin: 0; color: var(--red); font-size: 12px; }
+.url-input__buttons { display: flex; align-items: center; gap: 10px; }
+.save-status { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; letter-spacing: 1px; }
+.save-status--saved { color: var(--green); }
+.save-status--pending, .save-status--saving { color: var(--yellow); }
+.save-status--error { color: var(--red); }

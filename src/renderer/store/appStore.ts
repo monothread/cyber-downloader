@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import { splitUrls } from '@shared/url';
-import type { AppUpdateState, BinariesStatus, DownloadJob, HistoryEntry, Settings } from '@shared/types';
+import type { AddJobResult, AppUpdateState, BinariesStatus, DownloadJob, HistoryEntry, Settings } from '@shared/types';
 
 export type Tab = 'downloads' | 'history' | 'settings';
 export type NoticeKind = 'error' | 'info';
@@ -25,7 +24,7 @@ export interface AppState {
     setTab: (tab: Tab) => void;
     setNotice: (notice: Notice | null) => void;
     init: () => Promise<() => void>;
-    addUrls: (input: string) => Promise<void>;
+    addUrls: (urls: string[]) => Promise<AddJobResult[]>;
     cancelJob: (id: string) => Promise<void>;
     retryJob: (id: string) => Promise<void>;
     removeJob: (id: string) => Promise<void>;
@@ -111,23 +110,12 @@ export const useAppStore = create<AppState>((set, get) => {
             };
         },
 
-        addUrls: async (input) => {
-            const urls = splitUrls(input);
-            if (urls.length === 0) {
-                set({ notice: { kind: 'error', message: 'Paste at least one video URL.' } });
-                return;
-            }
-            const results = await Promise.all(
+        addUrls: (urls) => {
+            return Promise.all(
                 urls.map((url) => {
                     return window.api.addDownload(url);
                 })
             );
-            const failed = results.filter((result) => {
-                return !result.ok;
-            });
-            if (failed.length > 0) {
-                set({ notice: { kind: 'error', message: failed[0]?.message ?? 'Could not add the download.' } });
-            }
         },
 
         cancelJob: async (id) => {
@@ -156,9 +144,12 @@ export const useAppStore = create<AppState>((set, get) => {
         },
 
         saveSettings: async (settings) => {
+            const previous = get().settings;
             const saved = await window.api.saveSettings(settings);
             set({ settings: saved });
-            await get().refreshBinaries();
+            if (saved.ytdlpPath !== previous.ytdlpPath || saved.ffmpegPath !== previous.ffmpegPath) {
+                await get().refreshBinaries();
+            }
             return saved;
         },
 

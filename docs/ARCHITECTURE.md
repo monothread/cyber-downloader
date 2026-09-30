@@ -24,6 +24,7 @@ src/
     App.tsx, theme/cyberpunk.css
     components/ UrlInput, QueueList, JobCard, SettingsPanel, HistoryList, ErrorBanner, BinaryStatus,
                 Toast, UpdateBanner, UpdateActions, fields
+    hooks/ useAutoSaveSettings (debounced settings auto-save)
     store/ (zustand)
 test/            # unit tests mirroring src
 test/e2e/        # Playwright-Electron (fake yt-dlp via stub)
