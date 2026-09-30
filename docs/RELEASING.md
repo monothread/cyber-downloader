@@ -30,3 +30,10 @@ The app updates itself (via `electron-updater`) from the **public Releases** of
 - The bundled yt-dlp has its own update mechanism (the "UPDATE YT-DLP" button), independent of the app version.
 - ffmpeg and deno only change when you rebuild the package (`npm run fetch-binaries -- --force`) and release a new version.
 - Code signing is not required on Linux.
+
+## Troubleshooting
+- **The app says "No published versions on GitHub" or never shows the banner:** the Release is still a draft. Publish it, then confirm with
+  `curl -s https://api.github.com/repos/monothread/cyber-downloader/releases/latest | grep -E '"tag_name"|"name"'`.
+- **403 "Resource not accessible by personal access token" on `npm run release`:** the token cannot write Releases. Use a fine-grained token with *Contents: Read and write* on this repository (repository access must be "Only select repositories"), or a classic token with the `repo` scope.
+- **The upload looks stuck:** electron-builder prints nothing while uploading ~470 MB; check the Assets of the draft Release on GitHub.
+- **Installed version < new version but no banner:** an app older than 0.1.1 crashes with `write EPIPE` when opened from a file manager; open it from a terminal or download the new file manually.

@@ -81,9 +81,6 @@ export function createMockApi(): MockApiHandle {
         chooseDirectory: vi.fn(async () => {
             return null;
         }),
-        openPath: vi.fn(async () => {
-            return undefined;
-        }),
         showItemInFolder: vi.fn(async () => {
             return undefined;
         }),

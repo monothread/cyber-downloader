@@ -98,6 +98,14 @@ describe('AppUpdateService.check', () => {
         expect(service.getState().message).toBe('Update failed.');
     });
 
+    it('keeps a downloaded update ready to install instead of checking again', async () => {
+        const { service, updater } = setup();
+        updater.emitter.emit('update-downloaded', { version: '0.2.0' });
+        await service.check();
+        expect(updater.checkForUpdates).not.toHaveBeenCalled();
+        expect(service.getState()).toEqual({ ...IDLE, status: 'downloaded', version: '0.2.0', percent: 100 });
+    });
+
     it('can check again after finishing', async () => {
         const { service, updater } = setup();
         await service.check();

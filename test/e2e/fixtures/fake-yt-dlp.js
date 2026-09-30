@@ -31,7 +31,10 @@ if (url.includes('fail')) {
 }
 
 progress(10);
-if (url.includes('slow')) {
+if (url.includes('quiet')) {
+    // Stays alive without writing anything, so it never notices that its parent is gone.
+    setInterval(() => {}, 1000);
+} else if (url.includes('slow')) {
     setInterval(() => {
         progress(50);
     }, 200);

@@ -3,7 +3,7 @@
 ## Folder structure
 ```
 src/
-  shared/        types.ts (Settings, DownloadJob, DownloadStatus, HistoryEntry, ...), constants.ts (IPC channels, defaults), url.ts
+  shared/        types.ts (Settings, DownloadJob, JobStatus, HistoryEntry, AppUpdateState, CyberApi, ...), constants.ts (IPC channels, defaults), url.ts (isValidHttpUrl)
   main/
     index.ts                    # window, lifecycle, wiring
     ipc/registerHandlers.ts     # typed IPC channels
@@ -35,6 +35,8 @@ docs/
 
 ## Flow
 Renderer (React) → `window.api` (preload, typed) → IPC → `registerHandlers` → `queueManager` → `ytdlpRunner` (spawn) → progress/error/finish events → IPC push → Zustand store → UI.
+
+On `before-quit` the main process calls `queue.shutdown()`: every running yt-dlp is sent SIGTERM and no queued job is started, so no download (or ffmpeg merge) is left running in the background after the app closes.
 
 ## Feature → yt-dlp args (`ytdlpArgsBuilder`)
 | Feature | Args |

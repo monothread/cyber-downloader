@@ -116,6 +116,10 @@ function bootstrap(): void {
     );
     scheduleStartupUpdateCheck(appUpdates, settingsStore.get().checkUpdatesOnStart);
 
+    app.on('before-quit', () => {
+        queue.shutdown();
+    });
+
     registerHandlers({
         ipcMain,
         settingsStore,
@@ -127,9 +131,6 @@ function bootstrap(): void {
             const options = { properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'> };
             const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
             return result.canceled ? null : (result.filePaths[0] ?? null);
-        },
-        openPath: (path) => {
-            return shell.openPath(path);
         },
         showItemInFolder: (path) => {
             shell.showItemInFolder(path);

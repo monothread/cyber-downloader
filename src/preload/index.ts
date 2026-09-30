@@ -64,9 +64,6 @@ const api: CyberApi = {
     chooseDirectory: () => {
         return ipcRenderer.invoke(IPC.dialogChooseDir);
     },
-    openPath: (path) => {
-        return ipcRenderer.invoke(IPC.shellOpenPath, path);
-    },
     showItemInFolder: (path) => {
         return ipcRenderer.invoke(IPC.shellShowItem, path);
     },

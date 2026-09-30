@@ -56,7 +56,7 @@ export class AppUpdateService {
             this.setState({ status: 'unsupported', message: UNSUPPORTED_MESSAGE });
             return;
         }
-        if (this.isBusy()) {
+        if (this.blocksCheck()) {
             return;
         }
         this.setState({ status: 'checking', message: null });
@@ -86,8 +86,8 @@ export class AppUpdateService {
         this.updater.quitAndInstall(false, true);
     }
 
-    private isBusy(): boolean {
-        return this.state.status === 'checking' || this.state.status === 'downloading';
+    private blocksCheck(): boolean {
+        return this.state.status === 'checking' || this.state.status === 'downloading' || this.state.status === 'downloaded';
     }
 
     private setState(patch: Partial<AppUpdateState>): void {

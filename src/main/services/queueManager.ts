@@ -27,6 +27,7 @@ function isFinished(job: DownloadJob): boolean {
 export class QueueManager {
     private readonly jobs: DownloadJob[] = [];
     private readonly handles = new Map<string, RunHandle>();
+    private closed = false;
     private readonly generateId: () => string;
     private readonly now: () => number;
 
@@ -38,6 +39,13 @@ export class QueueManager {
     list(): DownloadJob[] {
         return this.jobs.map((job) => {
             return { ...job };
+        });
+    }
+
+    shutdown(): void {
+        this.closed = true;
+        this.handles.forEach((handle) => {
+            handle.cancel();
         });
     }
 
@@ -121,6 +129,9 @@ export class QueueManager {
     }
 
     private pump(): void {
+        if (this.closed) {
+            return;
+        }
         const settings = this.deps.getSettings();
         let running = this.jobs.filter((job) => {
             return job.status === 'running';

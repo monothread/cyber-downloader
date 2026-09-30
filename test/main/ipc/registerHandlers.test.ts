@@ -74,12 +74,9 @@ function setup() {
     const chooseDirectory = vi.fn(async () => {
         return '/chosen';
     });
-    const openPath = vi.fn(async () => {
-        return '';
-    });
     const showItemInFolder = vi.fn();
     const resolver = new BinaryResolver({ bundledDir: '/b', userBinDir: '/u' });
-    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, chooseDirectory, openPath, showItemInFolder });
+    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, chooseDirectory, showItemInFolder });
     const call = (channel: string, ...args: unknown[]): unknown => {
         const handler = handlers.get(channel);
         if (!handler) {
@@ -87,7 +84,7 @@ function setup() {
         }
         return handler({}, ...args);
     };
-    return { handlers, call, appUpdates, resolver, settingsStore, historyStore, queue, chooseDirectory, openPath, showItemInFolder };
+    return { handlers, call, appUpdates, resolver, settingsStore, historyStore, queue, chooseDirectory, showItemInFolder };
 }
 
 describe('registerHandlers', () => {
@@ -97,7 +94,7 @@ describe('registerHandlers', () => {
             [
                 IPC.settingsGet, IPC.settingsSave, IPC.queueAdd, IPC.queueList, IPC.queueCancel, IPC.queueRetry, IPC.queueRemove,
                 IPC.queueClearFinished, IPC.historyList, IPC.historyClear, IPC.binariesCheck, IPC.ytdlpUpdate, IPC.appUpdateGet, IPC.appUpdateCheck, IPC.appUpdateDownload, IPC.appUpdateInstall, IPC.dialogChooseDir,
-                IPC.shellOpenPath, IPC.shellShowItem
+                IPC.shellShowItem
             ].sort()
         );
     });
@@ -180,15 +177,6 @@ describe('registerHandlers', () => {
         const { call, chooseDirectory } = setup();
         await expect(call(IPC.dialogChooseDir)).resolves.toBe('/chosen');
         expect(chooseDirectory).toHaveBeenCalledTimes(1);
-    });
-
-    it('opens a path only when it is a non-empty string', async () => {
-        const { call, openPath } = setup();
-        await call(IPC.shellOpenPath, '/dl');
-        await call(IPC.shellOpenPath, '');
-        await call(IPC.shellOpenPath, 5);
-        expect(openPath).toHaveBeenCalledTimes(1);
-        expect(openPath).toHaveBeenCalledWith('/dl');
     });
 
     it('shows an item in the folder only when the path is a non-empty string', () => {

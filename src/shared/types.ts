@@ -137,7 +137,6 @@ export interface CyberApi {
     downloadAppUpdate: () => Promise<void>;
     installAppUpdate: () => Promise<void>;
     chooseDirectory: () => Promise<string | null>;
-    openPath: (path: string) => Promise<void>;
     showItemInFolder: (path: string) => Promise<void>;
     onJobUpdate: (listener: (job: DownloadJob) => void) => () => void;
     onJobRemoved: (listener: (id: string) => void) => () => void;

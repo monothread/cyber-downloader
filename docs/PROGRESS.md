@@ -27,6 +27,7 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 | 8.1 | 8 | App self-update (D-014) | 7.1 | src/main/services/appUpdateService.ts, electronUpdater.ts, update UI, docs/RELEASING.md | DONE | session-2026-09-30-a | Tested on the real package: it queries GitHub and answers "No published versions" (no Release yet). The download/install flow can only be validated after the first Release plus a higher version |
 | 9.1 | 9 | Git repository + publish to GitHub | 8.1 | .git, LICENSE | DONE | session-2026-09-30-a | Branch `main` pushed to monothread/cyber-downloader; LICENSE is the MIT one created by GitHub (copyright monothread) |
 | 10.1 | 10 | Settings auto-save + one input per link (D-015) | 9.1 | src/renderer/hooks, SettingsPanel.tsx, UrlInput.tsx, appStore.ts | DONE | session-2026-09-30-a | Committed locally; needs a new version/release to reach installed apps |
+| 10.2 | 10 | Docs/code review fixes (D-016) | 10.1 | queueManager.ts, appUpdateService.ts, registerHandlers.ts, docs | DONE | session-2026-09-30-a | Quit cleanup, downloaded-state guard, openPath IPC removed, stale docs fixed |
 
 ## Handoff notes
 - Project directory: `/home/lucas/projects/downloader`; remote `origin` = `https://github.com/monothread/cyber-downloader.git`.
@@ -36,11 +37,14 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 ## Verification status (2026-09-30)
 - `npx tsc --noEmit --project tsconfig.json`: OK
 - `npx eslint src/ test/ --max-warnings=0`: OK
-- `npx vitest run`: 352 unit tests OK (33 files)
-- `npx playwright test` (after `npm run build`): 19 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
+- `npx vitest run`: 356 unit tests OK (33 files)
+- `npx playwright test` (after `npm run build`): 20 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
 - yt-dlp args validated manually against the real yt-dlp (short download of the test video `jNQXAC9IVRw`).
 
 ## Pending / follow-ups
+- Playlist downloads are one job and one history entry: the title and file shown are those of the last item, and the percentage restarts for every item.
+- `scripts/fetch-binaries.mjs` downloads the *latest* yt-dlp/ffmpeg/deno, so two builds of the same version can ship different binaries; pin versions if reproducible builds matter.
+- The maintainer e-mail is in `package.json` and `electron-builder.yml` (the `.deb` needs one) and in the git history.
 - Validate the full auto-update cycle: publish 0.1.0 (`npm run release`), install it, publish 0.2.0 and click update (see `RELEASING.md`).
 - No deduplication of repeated URLs in the queue; no per-video quality selector (uses the global settings).
 - YouTube JS runtime: bundled deno (found through the process PATH); `jsRuntime` in Settings > Advanced is an optional override.

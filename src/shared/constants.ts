@@ -18,7 +18,6 @@ export const IPC = {
     appUpdateDownload: 'app-update:download',
     appUpdateInstall: 'app-update:install',
     dialogChooseDir: 'dialog:choose-dir',
-    shellOpenPath: 'shell:open-path',
     shellShowItem: 'shell:show-item',
     eventJobUpdate: 'event:job-update',
     eventJobRemoved: 'event:job-removed',

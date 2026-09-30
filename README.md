@@ -47,10 +47,12 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 
 ## Features
 - Download queue with progress, speed, ETA, cancel, retry and history
+- One field per link with an "+ ADD LINK" button; long links scroll inside the field
 - Best video + best audio, max resolution, output container (mp4/mkv/webm)
 - Audio-only mode (mp3/m4a/opus)
 - Cookies from your browser (chrome, firefox, brave, chromium, edge, opera, vivaldi)
 - Default download folder, playlists, subtitles, speed limit, parallel downloads
+- Settings are saved automatically as you change them
 - Title length limit so long titles never break the file name
 - Friendly error banner with technical details on demand
 - Self-updating app: checks GitHub Releases, one click to download and one to restart into the new version

@@ -1,4 +1,5 @@
 import { expect, test, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -352,3 +353,33 @@ test('the startup update check setting is saved', async () => {
     await expect(page.getByText('All changes saved.')).toBeVisible();
     expect(readSettings(userData).checkUpdatesOnStart).toBe(false);
 });
+
+function countProcesses(marker: string): number {
+    try {
+        return Number(execFileSync('pgrep', ['-fc', marker], { encoding: 'utf-8' }).trim());
+    } catch {
+        return 0;
+    }
+}
+
+test('closing the app stops downloads that are still running', async () => {
+    const own = await launch();
+    try {
+        const marker = 'example.com/quiet-shutdown-check';
+        await own.page.getByLabel('Link 1', { exact: true }).fill(`https://${marker}`);
+        await own.page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+        await expect(own.page.locator('.badge', { hasText: 'DOWNLOADING' })).toBeVisible();
+        await expect.poll(() => {
+            return countProcesses(marker);
+        }).toBeGreaterThan(0);
+
+        await own.app.close();
+
+        await expect.poll(() => {
+            return countProcesses(marker);
+        }, { timeout: 8000 }).toBe(0);
+    } finally {
+        rmSync(resolve(own.userData, '..'), { recursive: true, force: true });
+    }
+});
+

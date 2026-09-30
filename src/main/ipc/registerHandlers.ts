@@ -20,7 +20,6 @@ export interface HandlerDependencies {
     resolver: BinaryResolver;
     appUpdates: AppUpdateService;
     chooseDirectory: () => Promise<string | null>;
-    openPath: (path: string) => Promise<string>;
     showItemInFolder: (path: string) => void;
 }
 
@@ -81,12 +80,6 @@ export function registerHandlers(deps: HandlerDependencies): void {
     });
     ipcMain.handle(IPC.dialogChooseDir, (): Promise<string | null> => {
         return deps.chooseDirectory();
-    });
-    ipcMain.handle(IPC.shellOpenPath, async (_event, path): Promise<void> => {
-        const target = asString(path);
-        if (target.length > 0) {
-            await deps.openPath(target);
-        }
     });
     ipcMain.handle(IPC.shellShowItem, (_event, path): void => {
         const target = asString(path);

@@ -324,3 +324,44 @@ describe('QueueManager.list', () => {
         expect(queue.list()[0]?.percent).toBe(0);
     });
 });
+
+describe('QueueManager.shutdown', () => {
+    it('cancels every running process', () => {
+        const { queue, runs } = setup({ maxConcurrent: 3 });
+        queue.add(URL_A);
+        queue.add(URL_B);
+        queue.shutdown();
+        expect(runs[0]?.cancel).toHaveBeenCalledTimes(1);
+        expect(runs[1]?.cancel).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not start queued jobs when a running one is cancelled', async () => {
+        const { queue, runs } = setup({ maxConcurrent: 1 });
+        queue.add(URL_A);
+        queue.add(URL_B);
+        queue.shutdown();
+        await flush();
+        expect(runs).toHaveLength(1);
+        expect(queue.list().map((job) => {
+            return job.status;
+        })).toEqual(['cancelled', 'queued']);
+    });
+
+    it('does not start new jobs added after the shutdown', () => {
+        const { queue, runs } = setup();
+        queue.shutdown();
+        const result = queue.add(URL_A);
+        expect(result.ok).toBe(true);
+        expect(result.job?.status).toBe('queued');
+        expect(runs).toHaveLength(0);
+    });
+
+    it('does nothing when no job is running', () => {
+        const { queue, runs } = setup();
+        expect(() => {
+            queue.shutdown();
+        }).not.toThrow();
+        expect(runs).toHaveLength(0);
+    });
+});
+
