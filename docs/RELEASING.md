@@ -15,6 +15,8 @@ The app updates itself (via `electron-updater`) from the **public Releases** of
 7. On GitHub, open the draft Release, check the assets and click **Publish release**. Drafts are **not** seen by installed apps.
 8. In the Release notes, mention where the FFmpeg source code can be found (Linux: https://johnvansickle.com/ffmpeg/, Windows: https://www.gyan.dev/ffmpeg/builds/; GPLv3).
 
+Run the two workflows **one after the other**, not at the same time: both create the draft Release if it does not exist yet, and running them in parallel can create two drafts for the same tag.
+
 Rules that keep the updater working:
 - Publish the Release only **after** all platforms were uploaded.
 - Do not build Linux both locally and on GitHub for the same version: both upload `latest-linux.yml` and the last one wins.

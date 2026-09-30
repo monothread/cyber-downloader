@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-09-30 · All phases complete; code published to `github.com/monothread/cyber-downloader` (branch `main`).
+Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github.com/monothread/cyber-downloader` (Windows installer, AppImage, deb, rpm, pacman).
 
 | ID | Phase | Task | Depends on | Files | Status | Owner | Notes |
 |---|---|---|---|---|---|---|---|
@@ -30,6 +30,7 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 | 10.2 | 10 | Docs/code review fixes (D-016) | 10.1 | queueManager.ts, appUpdateService.ts, registerHandlers.ts, docs | DONE | session-2026-09-30-a | Quit cleanup, downloaded-state guard, openPath IPC removed, stale docs fixed |
 | 11.1 | 11 | Close to system tray + quit confirmation + single instance (D-017) | 10.2 | src/main/index.ts, trayAvailability.ts, trayManager.ts, windowClose.ts, electronTray.ts, SettingsPanel.tsx | DONE | session-2026-09-30-a | Verified on Cinnamon (SNI item + Show/Quit menu). KDE/XFCE/GNOME rely on the same protocol but were not run here |
 | 12.1 | 12 | Windows build + Fedora (rpm) + Arch (pacman) packages (D-018) | 11.1 | scripts/fetch-binaries.mjs, scripts/check-linux-tools.mjs, electron-builder.yml, .github/workflows, binaryResolver.ts, updater.ts, trayAvailability.ts | DONE | session-2026-09-30-a | Code + config + workflows done. Windows/rpm/pacman packages were not built or run here (see D-018) |
+| 13.1 | 13 | Release 0.3.0 | 12.1 | .github/workflows, GitHub Release | DONE | session-2026-09-30-a | Release Linux and Release Windows workflows ran green and uploaded to one draft, which was then published. Tag `v0.3.0` = `0fd500a` |
 
 ## Handoff notes
 - Project directory: `/home/lucas/projects/downloader`; remote `origin` = `https://github.com/monothread/cyber-downloader.git`.
@@ -44,14 +45,14 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 - yt-dlp args validated manually against the real yt-dlp (short download of the test video `jNQXAC9IVRw`).
 
 ## Pending / follow-ups
-- First real run of the **Release Windows** and **Release Linux** workflows: watch them for surprises (unsigned installer, rpm/pacman tooling, draft matching), then test the installer on a Windows 10/11 machine and the rpm/pacman on Fedora/Arch.
+- Test the published packages on real machines: the Windows installer on Windows 10/11 and the rpm/pacman on Fedora/Arch. The CI runs succeeded and the Linux AppImage was smoke-tested, but the other packages were not executed anywhere yet.
+- Validate the full auto-update cycle: install 0.3.0, publish a higher version (see `RELEASING.md`) and click update.
 - Windows: `yt-dlp --cookies-from-browser` can fail for Chromium-based browsers (Chrome/Edge) because of their newer cookie encryption; Firefox is more reliable. Not handled by the app.
 - Windows: the unit tests assume POSIX paths, so CI only type-checks and lints there; making them path-agnostic would allow running them on Windows too.
 - Tray: only Cinnamon was verified on a real desktop; check KDE, XFCE and GNOME (with and without the AppIndicator extension) when possible. The tray menu itself (right-click) cannot be clicked from the e2e tests.
 - Playlist downloads are one job and one history entry: the title and file shown are those of the last item, and the percentage restarts for every item.
 - `scripts/fetch-binaries.mjs` downloads the *latest* yt-dlp/ffmpeg/deno, so two builds of the same version can ship different binaries; pin versions if reproducible builds matter.
 - The maintainer e-mail is in `package.json` and `electron-builder.yml` (the `.deb` needs one) and in the git history.
-- Validate the full auto-update cycle: publish 0.1.0 (`npm run release`), install it, publish 0.2.0 and click update (see `RELEASING.md`).
 - No deduplication of repeated URLs in the queue; no per-video quality selector (uses the global settings).
 - YouTube JS runtime: bundled deno (found through the process PATH); `jsRuntime` in Settings > Advanced is an optional override.
 - The bundled ffmpeg/deno are not updated by the button (only yt-dlp); a new version means running `npm run fetch-binaries -- --force` and rebuilding the package.
