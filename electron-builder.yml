@@ -1,0 +1,27 @@
+appId: dev.lucas.cyberdownloader
+productName: Cyber Downloader
+artifactName: cyber-downloader-${version}.${ext}
+directories:
+  output: dist
+publish:
+  provider: github
+  owner: monothread
+  repo: cyber-downloader
+files:
+  - out/**/*
+  - package.json
+  - resources/icon.png
+extraResources:
+  - from: resources/bin
+    to: bin
+  - from: resources/THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+icon: resources/icon.png
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Network
+  syncDesktopName: true
+  maintainer: monothread <realrukasu@proton.me>
+  synopsis: Cyberpunk desktop frontend for yt-dlp
