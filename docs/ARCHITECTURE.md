@@ -78,7 +78,7 @@ Neon cyan/magenta/yellow on a dark background, mono font, scanlines, glitch on t
 - e2e: `test/e2e/app.e2e-spec.ts` launches the real Electron app (run `npm run build` first) with a temporary `--user-data-dir` and `FAKE_YTDLP_LOG` to record the fake yt-dlp's argv and `PATH`.
 
 ## Bundled binaries
-`scripts/fetch-binaries.mjs [--platform=linux|win32] [--out=<dir>] [--force]` → `resources/bin/` (git-ignored): `yt-dlp`, `ffmpeg`, `ffprobe`, `deno`, `ffmpeg-GPLv3.txt` on Linux, and the same with `.exe` on Windows. Every download is checked against the checksum its source publishes. In dev the app uses `<appPath>/resources/bin`; packaged, `process.resourcesPath/bin`. See D-013.
+`scripts/fetch-binaries.mjs [--platform=linux|win32] [--out=<dir>] [--force]` → `resources/bin/` (git-ignored): `yt-dlp`, `ffmpeg`, `ffprobe`, `deno`, `ffmpeg-GPLv3.txt` on Linux (plus `resources/lib/` with ffmpeg's shared libraries, see D-024), and the same with `.exe` on Windows (no `lib/`). Every download is checked against the checksum its source publishes. In dev the app uses `<appPath>/resources/bin`; packaged, `process.resourcesPath/bin`. See D-013.
 
 ## Platforms
 | OS | Package | Built by | Auto-update |

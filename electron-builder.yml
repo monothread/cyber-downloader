@@ -11,13 +11,16 @@ files:
   - out/**/*
   - package.json
   - resources/icon.png
-extraResources:
-  - from: resources/bin
-    to: bin
-  - from: resources/THIRD_PARTY_NOTICES.md
-    to: THIRD_PARTY_NOTICES.md
 icon: resources/icon.png
 linux:
+  # ffmpeg/ffprobe on Linux are the shared build: the programs are in bin, their libraries in ../lib.
+  extraResources:
+    - from: resources/bin
+      to: bin
+    - from: resources/lib
+      to: lib
+    - from: resources/THIRD_PARTY_NOTICES.md
+      to: THIRD_PARTY_NOTICES.md
   # One build must produce every Linux package: latest-linux.yml has to list all of them so that the
   # in-app updater finds its own file type (AppImage, deb, rpm for Fedora, pacman for Arch).
   target:
@@ -30,6 +33,11 @@ linux:
   maintainer: monothread <realrukasu@proton.me>
   synopsis: Cyberpunk desktop frontend for yt-dlp
 win:
+  extraResources:
+    - from: resources/bin
+      to: bin
+    - from: resources/THIRD_PARTY_NOTICES.md
+      to: THIRD_PARTY_NOTICES.md
   target:
     - target: nsis
       arch: x64

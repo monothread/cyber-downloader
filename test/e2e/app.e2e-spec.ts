@@ -109,7 +109,7 @@ test.describe('bundled binaries', () => {
             const ytdlpChip = bundled.page.locator('.chip--ok', { hasText: /^yt-dlp \d/ });
             await expect(ytdlpChip).toBeVisible();
             await expect(ytdlpChip).toHaveAttribute('title', `${join(BUNDLED_DIR, 'yt-dlp')} (bundled)`);
-            const ffmpegChip = bundled.page.locator('.chip--ok', { hasText: /^ffmpeg \d/ });
+            const ffmpegChip = bundled.page.locator('.chip--ok', { hasText: /^ffmpeg \S+/ });
             await expect(ffmpegChip).toBeVisible();
             await expect(ffmpegChip).toHaveAttribute('title', `${join(BUNDLED_DIR, 'ffmpeg')} (bundled)`);
         } finally {

@@ -13,7 +13,7 @@ The app updates itself (via `electron-updater`) from the **public Releases** of
 5. **Windows installer:** Actions tab → **Release Windows** → *Run workflow*.
 6. Each run uploads its files to the **draft** Release `v<version>` (creating it if needed): Linux uploads `cyber-downloader-<version>.{AppImage,deb,rpm,pacman}` and `latest-linux.yml`; Windows uploads `cyber-downloader-<version>-setup.exe` and `latest.yml`. Wait until every run you started has finished.
 7. On GitHub, open the draft Release, check the assets and click **Publish release**. Drafts are **not** seen by installed apps.
-8. In the Release notes, mention where the FFmpeg source code can be found (Linux: https://johnvansickle.com/ffmpeg/, Windows: https://www.gyan.dev/ffmpeg/builds/; GPLv3).
+8. In the Release notes, mention where the FFmpeg source code can be found (Linux: https://github.com/BtbN/FFmpeg-Builds, Windows: https://www.gyan.dev/ffmpeg/builds/; GPLv3).
 
 Run the two workflows **one after the other**, not at the same time: both create the draft Release if it does not exist yet, and running them in parallel can create two drafts for the same tag.
 

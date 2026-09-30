@@ -10,9 +10,11 @@ import { execFileSync } from 'node:child_process';
 import {
     chmodSync,
     copyFileSync,
+    cpSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
+    readFileSync,
     readdirSync,
     renameSync,
     rmSync,
@@ -34,6 +36,9 @@ function option(name) {
 const FORCE = args.includes('--force');
 const PLATFORM = option('platform') ?? process.platform;
 const BIN_DIR = option('out') ? resolve(option('out')) : join(ROOT, 'resources', 'bin');
+// Shared libraries of ffmpeg (Linux): a sibling of the bin folder, as the binaries expect.
+const LIB_DIR = join(BIN_DIR, '..', 'lib');
+const FFMPEG_SOURCE_MARKER = join(BIN_DIR, '.ffmpeg-source');
 
 const YTDLP_BASE = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download';
 const DENO_BASE = 'https://github.com/denoland/deno/releases/latest/download';
@@ -44,9 +49,13 @@ const TARGETS = {
         ytdlpFile: 'yt-dlp',
         denoArchive: 'deno-x86_64-unknown-linux-gnu.zip',
         denoFile: 'deno',
-        ffmpegUrl: 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz',
-        ffmpegHash: { algorithm: 'md5', suffix: '.md5', length: 32 },
-        ffmpegFiles: ['ffmpeg', 'ffprobe']
+        // The shared BtbN build, not the fully static one: the static ffmpeg/ffprobe crash (segfault) as soon as they
+        // read MPEG-TS, which is what HLS streams (live or not) are made of. The shared build finds its libraries in
+        // ../lib (RPATH $ORIGIN/../lib), next to the bin folder. Needs glibc 2.28 or newer.
+        ffmpegUrl: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-linux64-gpl-shared-9.0.tar.xz',
+        ffmpegHash: { algorithm: 'sha256', checksumsUrl: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256', length: 64 },
+        ffmpegFiles: ['ffmpeg', 'ffprobe'],
+        ffmpegLibraries: true
     },
     win32: {
         ytdlpAsset: 'yt-dlp.exe',
@@ -55,7 +64,8 @@ const TARGETS = {
         denoFile: 'deno.exe',
         ffmpegUrl: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
         ffmpegHash: { algorithm: 'sha256', suffix: '.sha256', length: 64 },
-        ffmpegFiles: ['ffmpeg.exe', 'ffprobe.exe']
+        ffmpegFiles: ['ffmpeg.exe', 'ffprobe.exe'],
+        ffmpegLibraries: false
     }
 };
 
@@ -126,6 +136,20 @@ function findFile(directory, fileName) {
     return null;
 }
 
+function findDirectory(directory, name) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (!entry.isDirectory()) {
+            continue;
+        }
+        const fullPath = join(directory, entry.name);
+        const found = entry.name === name ? fullPath : findDirectory(fullPath, name);
+        if (found) {
+            return found;
+        }
+    }
+    return null;
+}
+
 function installFile(source, name) {
     const target = join(BIN_DIR, name);
     copyFileSync(source, target);
@@ -173,13 +197,34 @@ async function fetchDeno(workDir) {
     installFile(binary, TARGET.denoFile);
 }
 
+function isFfmpegCurrent() {
+    const sameSource = existsSync(FFMPEG_SOURCE_MARKER) && readFileSync(FFMPEG_SOURCE_MARKER, 'utf-8').trim() === TARGET.ffmpegUrl;
+    const hasLibraries = !TARGET.ffmpegLibraries || existsSync(LIB_DIR);
+    return isPresent(...TARGET.ffmpegFiles) && sameSource && hasLibraries;
+}
+
+async function expectedFfmpegHash() {
+    const { checksumsUrl, suffix, length } = TARGET.ffmpegHash;
+    if (checksumsUrl) {
+        const fileName = TARGET.ffmpegUrl.split('/').pop();
+        const line = (await download(checksumsUrl)).toString('utf-8').split('\n').find((candidate) => {
+            return candidate.trim().endsWith(fileName);
+        });
+        if (!line) {
+            throw new Error(`${fileName} is not listed in ${checksumsUrl} (the build may have been renamed or removed)`);
+        }
+        return extractHash(line, length);
+    }
+    return extractHash((await download(`${TARGET.ffmpegUrl}${suffix}`)).toString('utf-8'), length);
+}
+
 async function fetchFfmpeg(workDir) {
-    if (isPresent(...TARGET.ffmpegFiles)) {
+    if (isFfmpegCurrent()) {
         return;
     }
     console.log('> ffmpeg + ffprobe');
-    const { algorithm, suffix, length } = TARGET.ffmpegHash;
-    const expected = extractHash((await download(`${TARGET.ffmpegUrl}${suffix}`)).toString('utf-8'), length);
+    const { algorithm } = TARGET.ffmpegHash;
+    const expected = await expectedFfmpegHash();
     const archive = await download(TARGET.ffmpegUrl);
     verify(algorithm, archive, expected, 'ffmpeg');
     const isZip = TARGET.ffmpegUrl.endsWith('.zip');
@@ -199,10 +244,19 @@ async function fetchFfmpeg(workDir) {
         }
         installFile(binary, name);
     }
-    const license = findFile(extracted, 'GPLv3.txt') ?? findFile(extracted, 'LICENSE');
+    if (TARGET.ffmpegLibraries) {
+        const libraries = findDirectory(extracted, 'lib');
+        if (!libraries) {
+            throw new Error('lib folder not found in the ffmpeg archive');
+        }
+        rmSync(LIB_DIR, { recursive: true, force: true });
+        cpSync(libraries, LIB_DIR, { recursive: true, verbatimSymlinks: true });
+    }
+    const license = findFile(extracted, 'GPLv3.txt') ?? findFile(extracted, 'LICENSE.txt') ?? findFile(extracted, 'LICENSE');
     if (license) {
         copyFileSync(license, join(BIN_DIR, 'ffmpeg-GPLv3.txt'));
     }
+    writeFileSync(FFMPEG_SOURCE_MARKER, `${TARGET.ffmpegUrl}\n`);
 }
 
 async function main() {
