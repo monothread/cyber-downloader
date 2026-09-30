@@ -15,6 +15,7 @@ import { TrayManager } from './services/trayManager';
 import { createQuitRequester, decideCloseAction, describePending } from './services/windowClose';
 import { runYtdlp } from './services/ytdlpRunner';
 
+const APP_ID = 'dev.lucas.cyberdownloader';
 const STARTUP_UPDATE_CHECK_DELAY_MS = 5000;
 const PRODUCTION_CSP =
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'";
@@ -239,6 +240,9 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     void app.whenReady().then(() => {
+        if (process.platform === 'win32') {
+            app.setAppUserModelId(APP_ID);
+        }
         applyContentSecurityPolicy();
         bootstrap();
         mainWindow = createWindow();

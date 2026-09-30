@@ -5,6 +5,10 @@ import type { BinarySource, Settings } from '@shared/types';
 export const YTDLP_COMMAND = 'yt-dlp';
 export const FFMPEG_COMMAND = 'ffmpeg';
 
+export function executableName(command: string, platform: NodeJS.Platform = process.platform): string {
+    return platform === 'win32' ? `${command}.exe` : command;
+}
+
 export interface BinaryLocations {
     bundledDir: string;
     userBinDir: string;
@@ -18,11 +22,12 @@ export interface ResolvedBinary {
 export class BinaryResolver {
     constructor(
         private readonly locations: BinaryLocations,
-        private readonly exists: (path: string) => boolean = existsSync
+        private readonly exists: (path: string) => boolean = existsSync,
+        private readonly platform: NodeJS.Platform = process.platform
     ) {}
 
     get userYtdlpPath(): string {
-        return join(this.locations.userBinDir, YTDLP_COMMAND);
+        return join(this.locations.userBinDir, executableName(YTDLP_COMMAND, this.platform));
     }
 
     get userBinDir(): string {
@@ -36,7 +41,7 @@ export class BinaryResolver {
         if (this.exists(this.userYtdlpPath)) {
             return { path: this.userYtdlpPath, source: 'updated' };
         }
-        const bundledPath = join(this.locations.bundledDir, YTDLP_COMMAND);
+        const bundledPath = join(this.locations.bundledDir, executableName(YTDLP_COMMAND, this.platform));
         if (this.exists(bundledPath)) {
             return { path: bundledPath, source: 'bundled' };
         }
@@ -47,7 +52,7 @@ export class BinaryResolver {
         if (settings.ffmpegPath.length > 0) {
             return { path: settings.ffmpegPath, source: 'custom' };
         }
-        const bundledPath = join(this.locations.bundledDir, FFMPEG_COMMAND);
+        const bundledPath = join(this.locations.bundledDir, executableName(FFMPEG_COMMAND, this.platform));
         if (this.exists(bundledPath)) {
             return { path: bundledPath, source: 'bundled' };
         }
@@ -66,8 +71,13 @@ export class BinaryResolver {
         if (!this.exists(this.locations.bundledDir)) {
             return baseEnv;
         }
-        const currentPath = baseEnv.PATH ?? '';
+        // On Windows the variable is usually spelled "Path"; adding a second "PATH" key would be ignored.
+        const pathKey =
+            Object.keys(baseEnv).find((key) => {
+                return key.toLowerCase() === 'path';
+            }) ?? 'PATH';
+        const currentPath = baseEnv[pathKey] ?? '';
         const pathValue = currentPath.length > 0 ? `${this.locations.bundledDir}${delimiter}${currentPath}` : this.locations.bundledDir;
-        return { ...baseEnv, PATH: pathValue };
+        return { ...baseEnv, [pathKey]: pathValue };
     }
 }

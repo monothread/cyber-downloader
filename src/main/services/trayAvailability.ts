@@ -40,8 +40,13 @@ export function isGnomeDesktop(desktop: string | undefined): boolean {
 // LXQt, ...) ships a tray, so it is assumed to work even when the watcher check is inconclusive.
 export async function checkTraySupport(
     env: NodeJS.ProcessEnv = process.env,
-    exec: ExecFileFn = defaultExecFile
+    exec: ExecFileFn = defaultExecFile,
+    platform: NodeJS.Platform = process.platform
 ): Promise<TraySupport> {
+    // Windows (and macOS) always provide a notification area; the D-Bus check is Linux-only.
+    if (platform !== 'linux') {
+        return { available: true, reason: null };
+    }
     const watcher = await hasStatusNotifierWatcher(exec);
     if (watcher === true) {
         return { available: true, reason: null };

@@ -18,9 +18,12 @@
     "lint": "eslint src/ test/ --max-warnings=0",
     "test": "vitest run",
     "test:e2e": "npm run build && playwright test",
-    "dist": "npm run fetch-binaries && npm run build && electron-builder --linux AppImage deb --publish never",
+    "dist": "npm run check:tools && npm run fetch-binaries && npm run build && electron-builder --linux AppImage deb rpm pacman --publish never",
     "fetch-binaries": "node scripts/fetch-binaries.mjs",
-    "release": "npm run fetch-binaries && npm run build && electron-builder --linux AppImage deb --publish always"
+    "release": "npm run check:tools && npm run fetch-binaries && npm run build && electron-builder --linux AppImage deb rpm pacman --publish always",
+    "dist:win": "npm run fetch-binaries && npm run build && electron-builder --win nsis --x64 --publish never",
+    "release:win": "npm run fetch-binaries && npm run build && electron-builder --win nsis --x64 --publish always",
+    "check:tools": "node scripts/check-linux-tools.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",

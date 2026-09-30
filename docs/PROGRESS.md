@@ -29,6 +29,7 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 | 10.1 | 10 | Settings auto-save + one input per link (D-015) | 9.1 | src/renderer/hooks, SettingsPanel.tsx, UrlInput.tsx, appStore.ts | DONE | session-2026-09-30-a | Committed locally; needs a new version/release to reach installed apps |
 | 10.2 | 10 | Docs/code review fixes (D-016) | 10.1 | queueManager.ts, appUpdateService.ts, registerHandlers.ts, docs | DONE | session-2026-09-30-a | Quit cleanup, downloaded-state guard, openPath IPC removed, stale docs fixed |
 | 11.1 | 11 | Close to system tray + quit confirmation + single instance (D-017) | 10.2 | src/main/index.ts, trayAvailability.ts, trayManager.ts, windowClose.ts, electronTray.ts, SettingsPanel.tsx | DONE | session-2026-09-30-a | Verified on Cinnamon (SNI item + Show/Quit menu). KDE/XFCE/GNOME rely on the same protocol but were not run here |
+| 12.1 | 12 | Windows build + Fedora (rpm) + Arch (pacman) packages (D-018) | 11.1 | scripts/fetch-binaries.mjs, scripts/check-linux-tools.mjs, electron-builder.yml, .github/workflows, binaryResolver.ts, updater.ts, trayAvailability.ts | DONE | session-2026-09-30-a | Code + config + workflows done. Windows/rpm/pacman packages were not built or run here (see D-018) |
 
 ## Handoff notes
 - Project directory: `/home/lucas/projects/downloader`; remote `origin` = `https://github.com/monothread/cyber-downloader.git`.
@@ -43,6 +44,9 @@ Last updated: 2026-09-30 · All phases complete; code published to `github.com/m
 - yt-dlp args validated manually against the real yt-dlp (short download of the test video `jNQXAC9IVRw`).
 
 ## Pending / follow-ups
+- First real run of the **Release Windows** and **Release Linux** workflows: watch them for surprises (unsigned installer, rpm/pacman tooling, draft matching), then test the installer on a Windows 10/11 machine and the rpm/pacman on Fedora/Arch.
+- Windows: `yt-dlp --cookies-from-browser` can fail for Chromium-based browsers (Chrome/Edge) because of their newer cookie encryption; Firefox is more reliable. Not handled by the app.
+- Windows: the unit tests assume POSIX paths, so CI only type-checks and lints there; making them path-agnostic would allow running them on Windows too.
 - Tray: only Cinnamon was verified on a real desktop; check KDE, XFCE and GNOME (with and without the AppIndicator extension) when possible. The tray menu itself (right-click) cannot be clicked from the e2e tests.
 - Playlist downloads are one job and one history entry: the title and file shown are those of the last item, and the percentage restarts for every item.
 - `scripts/fetch-binaries.mjs` downloads the *latest* yt-dlp/ffmpeg/deno, so two builds of the same version can ship different binaries; pin versions if reproducible builds matter.

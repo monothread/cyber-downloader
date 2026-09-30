@@ -32,7 +32,8 @@ src/
     store/ (zustand)
 test/            # unit tests mirroring src
 test/e2e/        # Playwright-Electron (fake yt-dlp via stub)
-scripts/         # fetch-binaries.mjs
+scripts/         # fetch-binaries.mjs (per platform), check-linux-tools.mjs (rpm/pacman prerequisites)
+.github/workflows/  # release-linux.yml, release-windows.yml (manual, build and attach packages to the draft Release)
 resources/       # icon.png, THIRD_PARTY_NOTICES.md, bin/ (git-ignored)
 docs/
 ```
@@ -66,4 +67,15 @@ Neon cyan/magenta/yellow on a dark background, mono font, scanlines, glitch on t
 - e2e: `test/e2e/app.e2e-spec.ts` launches the real Electron app (run `npm run build` first) with a temporary `--user-data-dir` and `FAKE_YTDLP_LOG` to record the fake yt-dlp's argv and `PATH`.
 
 ## Bundled binaries
-`scripts/fetch-binaries.mjs` → `resources/bin/{yt-dlp,ffmpeg,ffprobe,deno,ffmpeg-GPLv3.txt}` (git-ignored). In dev the app uses `<appPath>/resources/bin`; packaged, `process.resourcesPath/bin`. See D-013.
+`scripts/fetch-binaries.mjs [--platform=linux|win32] [--out=<dir>] [--force]` → `resources/bin/` (git-ignored): `yt-dlp`, `ffmpeg`, `ffprobe`, `deno`, `ffmpeg-GPLv3.txt` on Linux, and the same with `.exe` on Windows. Every download is checked against the checksum its source publishes. In dev the app uses `<appPath>/resources/bin`; packaged, `process.resourcesPath/bin`. See D-013.
+
+## Platforms
+| OS | Package | Built by | Auto-update |
+|---|---|---|---|
+| Ubuntu/Debian and derivatives | `.deb` | `npm run release` locally or the "Release Linux" workflow | yes (package manager, asks for a password) |
+| Fedora | `.rpm` | same as above | yes (same mechanism) |
+| Arch Linux | `.pacman` | same as above | yes (same mechanism) |
+| Any Linux | `.AppImage` | same as above | yes (replaces its own file) |
+| Windows 10/11 x64 | NSIS `…-setup.exe` (per-user, one click) | the "Release Windows" workflow (`npm run release:win` on a Windows machine) | yes (electron-updater, `latest.yml`) |
+
+Platform differences live in small, injectable spots: `executableName`/`spawnEnv` in `binaryResolver.ts` (`.exe`, `Path` key), the yt-dlp asset name in `updater.ts`, and `checkTraySupport` (the D-Bus check only runs on Linux).

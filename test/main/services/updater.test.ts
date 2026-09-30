@@ -22,8 +22,10 @@ const BASE = 'https://github.com/yt-dlp/yt-dlp/releases/download/2026.09.01';
 const BINARY = Buffer.from('#!/bin/sh\necho new\n');
 const BINARY_HASH = createHash('sha256').update(BINARY).digest('hex');
 
-function makeResolver(userBinDir: string): BinaryResolver {
-    return new BinaryResolver({ bundledDir: '/nonexistent-bundled', userBinDir });
+function makeResolver(userBinDir: string, platform: NodeJS.Platform = 'linux'): BinaryResolver {
+    return new BinaryResolver({ bundledDir: '/nonexistent-bundled', userBinDir }, () => {
+        return false;
+    }, platform);
 }
 
 function makeDeps(overrides: Partial<UpdaterDependencies> = {}): UpdaterDependencies {
@@ -165,6 +167,39 @@ describe('updateYtdlp downloading the latest release', () => {
             })
         });
         await expect(updateYtdlp(DEFAULT_SETTINGS, makeResolver(makeTempDir()), deps)).resolves.toEqual({ ok: false, output: 'Update failed.' });
+    });
+});
+
+describe('updateYtdlp on other platforms', () => {
+    it('downloads yt-dlp.exe, verifies it against its own checksum line and installs it as yt-dlp.exe on Windows', async () => {
+        const dir = makeTempDir();
+        const deps = makeDeps({
+            fetchText: vi.fn(async (url: string) => {
+                return url === RELEASE_API ? JSON.stringify({ tag_name: '2026.09.01' }) : `deadbeef  yt-dlp_linux\n${BINARY_HASH}  yt-dlp.exe\n`;
+            })
+        });
+        const result = await updateYtdlp(DEFAULT_SETTINGS, makeResolver(dir, 'win32'), deps, 'win32');
+        expect(result).toEqual({ ok: true, output: 'Updated yt-dlp 2026.08.19 → 2026.09.01.' });
+        expect(deps.fetchBuffer).toHaveBeenCalledWith(`${BASE}/yt-dlp.exe`);
+        expect(readFileSync(join(dir, 'yt-dlp.exe'))).toEqual(BINARY);
+        expect(existsSync(join(dir, 'yt-dlp'))).toBe(false);
+    });
+
+    it('refuses the Windows asset when only the Linux checksum matches', async () => {
+        const dir = makeTempDir();
+        const deps = makeDeps();
+        const result = await updateYtdlp(DEFAULT_SETTINGS, makeResolver(dir, 'win32'), deps, 'win32');
+        expect(result).toEqual({ ok: false, output: 'Checksum verification failed. The download was discarded.' });
+        expect(existsSync(join(dir, 'yt-dlp.exe'))).toBe(false);
+    });
+
+    it('reports platforms without a known yt-dlp build', async () => {
+        const deps = makeDeps();
+        await expect(updateYtdlp(DEFAULT_SETTINGS, makeResolver(makeTempDir()), deps, 'darwin')).resolves.toEqual({
+            ok: false,
+            output: 'Updating yt-dlp is not supported on darwin.'
+        });
+        expect(deps.fetchText).not.toHaveBeenCalled();
     });
 });
 

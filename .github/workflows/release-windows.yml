@@ -1,0 +1,43 @@
+name: Release Windows
+
+# Builds the Windows installer on a real Windows runner and attaches it to the GitHub Release
+# of the version in package.json (creating the draft if the Linux release has not created it yet).
+# Run it manually from the Actions tab, before publishing the draft Release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check and lint
+        run: |
+          npm run typecheck
+          npm run lint
+
+      - name: Build the installer and upload it to the draft Release
+        run: npm run release:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Keep the installer as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            dist/*.exe
+            dist/latest.yml
+            dist/*.blockmap

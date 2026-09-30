@@ -100,3 +100,22 @@ describe('checkTraySupport', () => {
         expect(NO_TRAY_MESSAGE).toContain('closing the window quits the app');
     });
 });
+
+describe('checkTraySupport on other platforms', () => {
+    it.each(['win32', 'darwin'] as const)('is always available on %s without running gdbus', async (platform) => {
+        const exec = vi.fn(async () => {
+            return '(false,)';
+        });
+        await expect(checkTraySupport({ XDG_CURRENT_DESKTOP: 'GNOME' }, exec, platform)).resolves.toEqual({ available: true, reason: null });
+        expect(exec).not.toHaveBeenCalled();
+    });
+
+    it('still runs the D-Bus check on Linux', async () => {
+        const exec = vi.fn(async () => {
+            return '(false,)';
+        });
+        await checkTraySupport({ XDG_CURRENT_DESKTOP: 'GNOME' }, exec, 'linux');
+        expect(exec).toHaveBeenCalledWith('gdbus', WATCHER_CHECK_ARGS);
+    });
+});
+

@@ -7,7 +7,7 @@ import type { BinaryResolver } from './binaryResolver';
 const UPDATE_TIMEOUT_MS = 120000;
 const RELEASE_API_URL = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest';
 const RELEASE_DOWNLOAD_URL = 'https://github.com/yt-dlp/yt-dlp/releases/download';
-const ASSET_NAME = 'yt-dlp_linux';
+const ASSET_NAMES: Partial<Record<NodeJS.Platform, string>> = { linux: 'yt-dlp_linux', win32: 'yt-dlp.exe' };
 const CHECKSUMS_NAME = 'SHA2-256SUMS';
 const USER_AGENT = 'cyber-downloader';
 
@@ -64,7 +64,12 @@ async function readVersion(exec: UpdateExecFn, path: string): Promise<string | n
     return result.ok && result.output.length > 0 ? result.output.trim() : null;
 }
 
-async function downloadLatest(resolver: BinaryResolver, settings: Settings, deps: UpdaterDependencies): Promise<UpdateResult> {
+async function downloadLatest(
+    resolver: BinaryResolver,
+    settings: Settings,
+    deps: UpdaterDependencies,
+    assetName: string
+): Promise<UpdateResult> {
     const release = JSON.parse(await deps.fetchText(RELEASE_API_URL)) as { tag_name?: string };
     const tag = release.tag_name;
     if (!tag) {
@@ -75,8 +80,8 @@ async function downloadLatest(resolver: BinaryResolver, settings: Settings, deps
         return { ok: true, output: `yt-dlp is already up to date (${tag}).` };
     }
     const checksums = await deps.fetchText(`${RELEASE_DOWNLOAD_URL}/${tag}/${CHECKSUMS_NAME}`);
-    const expected = parseChecksum(checksums, ASSET_NAME);
-    const binary = await deps.fetchBuffer(`${RELEASE_DOWNLOAD_URL}/${tag}/${ASSET_NAME}`);
+    const expected = parseChecksum(checksums, assetName);
+    const binary = await deps.fetchBuffer(`${RELEASE_DOWNLOAD_URL}/${tag}/${assetName}`);
     if (expected === null || sha256(binary) !== expected) {
         return { ok: false, output: 'Checksum verification failed. The download was discarded.' };
     }
@@ -91,13 +96,18 @@ async function downloadLatest(resolver: BinaryResolver, settings: Settings, deps
 export async function updateYtdlp(
     settings: Settings,
     resolver: BinaryResolver,
-    deps: UpdaterDependencies = defaultUpdaterDependencies
+    deps: UpdaterDependencies = defaultUpdaterDependencies,
+    platform: NodeJS.Platform = process.platform
 ): Promise<UpdateResult> {
     if (settings.ytdlpPath.length > 0) {
         return deps.exec(settings.ytdlpPath, ['-U']);
     }
+    const assetName = ASSET_NAMES[platform];
+    if (!assetName) {
+        return { ok: false, output: `Updating yt-dlp is not supported on ${platform}.` };
+    }
     try {
-        return await downloadLatest(resolver, settings, deps);
+        return await downloadLatest(resolver, settings, deps, assetName);
     } catch (error) {
         return { ok: false, output: error instanceof Error ? error.message : 'Update failed.' };
     }

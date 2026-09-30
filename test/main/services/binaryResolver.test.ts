@@ -1,6 +1,6 @@
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import { BinaryResolver } from '@main/services/binaryResolver';
+import { BinaryResolver, executableName } from '@main/services/binaryResolver';
 
 const BUNDLED = '/app/resources/bin';
 const USER_BIN = '/data/bin';
@@ -78,3 +78,67 @@ describe('BinaryResolver.spawnEnv', () => {
         expect(makeResolver([]).spawnEnv()).toBe(process.env);
     });
 });
+
+describe('executableName', () => {
+    it('adds the .exe extension on Windows only', () => {
+        expect(executableName('yt-dlp', 'win32')).toBe('yt-dlp.exe');
+        expect(executableName('ffmpeg', 'win32')).toBe('ffmpeg.exe');
+        expect(executableName('yt-dlp', 'linux')).toBe('yt-dlp');
+        expect(executableName('yt-dlp', 'darwin')).toBe('yt-dlp');
+    });
+
+    it('defaults to the current platform', () => {
+        expect(executableName('yt-dlp')).toBe(process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+    });
+});
+
+describe('BinaryResolver on Windows', () => {
+    function makeWindowsResolver(existing: string[]): BinaryResolver {
+        return new BinaryResolver(
+            { bundledDir: BUNDLED, userBinDir: USER_BIN },
+            (path) => {
+                return existing.includes(path);
+            },
+            'win32'
+        );
+    }
+
+    it('looks for yt-dlp.exe in the user folder and the bundled folder', () => {
+        const userExe = join(USER_BIN, 'yt-dlp.exe');
+        const bundledExe = join(BUNDLED, 'yt-dlp.exe');
+        expect(makeWindowsResolver([userExe, bundledExe]).ytdlp(DEFAULT_SETTINGS)).toEqual({ path: userExe, source: 'updated' });
+        expect(makeWindowsResolver([bundledExe]).ytdlp(DEFAULT_SETTINGS)).toEqual({ path: bundledExe, source: 'bundled' });
+        expect(makeWindowsResolver([]).userYtdlpPath).toBe(join(USER_BIN, 'yt-dlp.exe'));
+    });
+
+    it('ignores extension-less files that would only exist on Linux', () => {
+        expect(makeWindowsResolver([join(BUNDLED, 'yt-dlp'), join(USER_BIN, 'yt-dlp')]).ytdlp(DEFAULT_SETTINGS)).toEqual({
+            path: 'yt-dlp',
+            source: 'system'
+        });
+    });
+
+    it('uses the bundled ffmpeg.exe and passes its folder as the location', () => {
+        const bundledExe = join(BUNDLED, 'ffmpeg.exe');
+        const resolver = makeWindowsResolver([bundledExe]);
+        expect(resolver.ffmpeg(DEFAULT_SETTINGS)).toEqual({ path: bundledExe, source: 'bundled' });
+        expect(resolver.ffmpegLocation(DEFAULT_SETTINGS)).toBe(BUNDLED);
+    });
+
+    it('falls back to the plain command names, which Windows resolves through PATHEXT', () => {
+        const resolver = makeWindowsResolver([]);
+        expect(resolver.ytdlp(DEFAULT_SETTINGS)).toEqual({ path: 'yt-dlp', source: 'system' });
+        expect(resolver.ffmpeg(DEFAULT_SETTINGS)).toEqual({ path: 'ffmpeg', source: 'system' });
+    });
+
+    it('extends the existing "Path" variable instead of adding a second PATH key', () => {
+        const env = makeWindowsResolver([BUNDLED]).spawnEnv({ Path: 'C:\\Windows', SystemRoot: 'C:\\Windows' });
+        expect(env).toEqual({ Path: `${BUNDLED}${delimiter}C:\\Windows`, SystemRoot: 'C:\\Windows' });
+        expect(Object.keys(env)).not.toContain('PATH');
+    });
+
+    it('creates PATH when the environment has none', () => {
+        expect(makeWindowsResolver([BUNDLED]).spawnEnv({})).toEqual({ PATH: BUNDLED });
+    });
+});
+

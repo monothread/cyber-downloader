@@ -17,3 +17,4 @@
 - Settings now auto-save (toggles/selects immediately, text/number 2 s after typing; no save button). Downloads use one input per link with an add button; long links are handled inside a non-resizable single-line input (D-015). Tests: 352 unit, 19 e2e.
 - Docs/code review: fixed leftovers (DownloadStatus name), added quit cleanup (running downloads are stopped when the app closes), guarded the downloaded-update state, removed the unused openPath IPC (D-016). Tests: 356 unit, 20 e2e.
 - Close to system tray (D-017): setting, SNI tray with Show/Quit menu, GNOME fallback with warning, quit confirmation with running downloads, single instance. Tests: 431 unit, 28 e2e. Version bumped to 0.2.0.
+- Windows build (NSIS + auto-update) via a GitHub Actions workflow, Fedora `.rpm` and Arch `.pacman` packages, per-platform `fetch-binaries` (D-018). Tests: 445 unit. Nothing Windows/rpm/pacman-specific could be executed on this Linux machine.

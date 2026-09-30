@@ -18,10 +18,24 @@ extraResources:
     to: THIRD_PARTY_NOTICES.md
 icon: resources/icon.png
 linux:
+  # One build must produce every Linux package: latest-linux.yml has to list all of them so that the
+  # in-app updater finds its own file type (AppImage, deb, rpm for Fedora, pacman for Arch).
   target:
     - AppImage
     - deb
+    - rpm
+    - pacman
   category: Network
   syncDesktopName: true
   maintainer: monothread <realrukasu@proton.me>
   synopsis: Cyberpunk desktop frontend for yt-dlp
+win:
+  target:
+    - target: nsis
+      arch: x64
+  icon: resources/icon.png
+nsis:
+  oneClick: true
+  perMachine: false
+  artifactName: cyber-downloader-${version}-setup.${ext}
+  deleteAppDataOnUninstall: false
