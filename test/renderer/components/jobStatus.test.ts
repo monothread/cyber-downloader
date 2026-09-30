@@ -1,5 +1,5 @@
 import type { DownloadError, ErrorCode } from '@shared/types';
-import { canFindStream, formatPercent, statusLabel } from '@renderer/components/jobStatus';
+import { canFindStream, formatBytes, formatDuration, formatPercent, statusLabel } from '@renderer/components/jobStatus';
 
 describe('statusLabel', () => {
     it('maps every status to its label', () => {
@@ -49,6 +49,59 @@ describe('canFindStream', () => {
 
     it('is false without an error', () => {
         expect(canFindStream(null)).toBe(false);
+    });
+});
+
+describe('statusLabel for live recordings', () => {
+    it('says RECORDING for a live job that is running', () => {
+        expect(statusLabel('running', true)).toBe('RECORDING');
+    });
+
+    it('keeps the other statuses for live jobs', () => {
+        expect(statusLabel('done', true)).toBe('COMPLETE');
+        expect(statusLabel('error', true)).toBe('FAILED');
+        expect(statusLabel('cancelled', true)).toBe('CANCELLED');
+        expect(statusLabel('queued', true)).toBe('QUEUED');
+    });
+
+    it('says DOWNLOADING for a running job that is not live', () => {
+        expect(statusLabel('running', false)).toBe('DOWNLOADING');
+        expect(statusLabel('running')).toBe('DOWNLOADING');
+    });
+});
+
+describe('formatDuration', () => {
+    it.each([
+        [0, '00:00'],
+        [5, '00:05'],
+        [59.9, '00:59'],
+        [60, '01:00'],
+        [754, '12:34'],
+        [3599, '59:59'],
+        [3600, '1:00:00'],
+        [3700, '1:01:40'],
+        [36000 + 61, '10:01:01'],
+        [-5, '00:00']
+    ])('formats %s seconds as %s', (seconds, expected) => {
+        expect(formatDuration(seconds)).toBe(expected);
+    });
+});
+
+describe('formatBytes', () => {
+    it.each([
+        [0, '0 B'],
+        [512, '512 B'],
+        [1023, '1023 B'],
+        [1024, '1.0 KiB'],
+        [1536, '1.5 KiB'],
+        [1048576, '1.0 MiB'],
+        [220200960, '210.0 MiB'],
+        [1073741824, '1.0 GiB'],
+        [5497558138880, '5.0 TiB'],
+        [1125899906842624, '1024.0 TiB'],
+        [-10, '0 B']
+    ])('formats %s bytes as %s', (bytes, expected) => {
+        expect(formatBytes(bytes)).toBe(expected);
     });
 });
 

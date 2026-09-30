@@ -8,6 +8,9 @@ export function QueueList() {
     const cancelJob = useAppStore((state) => {
         return state.cancelJob;
     });
+    const stopJob = useAppStore((state) => {
+        return state.stopJob;
+    });
     const retryJob = useAppStore((state) => {
         return state.retryJob;
     });
@@ -48,6 +51,9 @@ export function QueueList() {
                         job={job}
                         onCancel={(id) => {
                             void cancelJob(id);
+                        }}
+                        onStop={(id) => {
+                            void stopJob(id);
                         }}
                         onRetry={(id) => {
                             void retryJob(id);

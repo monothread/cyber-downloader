@@ -153,8 +153,8 @@ function bootstrap(): void {
         resolveFfmpegLocation: (settings) => {
             return resolver.ffmpegLocation(settings);
         },
-        startRun: (binary, args, onProgress) => {
-            return runYtdlp({ binary, args, onProgress, env: resolver.spawnEnv() });
+        startRun: (binary, args, onProgress, onInfo) => {
+            return runYtdlp({ binary, args, onProgress, onInfo, env: resolver.spawnEnv() });
         },
         addHistory: (entry) => {
             historyStore.add(entry);
@@ -216,9 +216,23 @@ function bootstrap(): void {
     trayManager = manager;
     void manager.sync(settingsStore.get().closeToTray);
 
-    app.on('before-quit', () => {
+    // Quitting asks live recordings to finish and gives them a moment to save their file before the app really exits.
+    let shutdownDone = false;
+    app.on('before-quit', (event) => {
         quitting = true;
-        queue.shutdown();
+        if (shutdownDone) {
+            return;
+        }
+        if (queue.hasLiveJobs()) {
+            event.preventDefault();
+            void queue.shutdown().then(() => {
+                shutdownDone = true;
+                app.quit();
+            });
+            return;
+        }
+        shutdownDone = true;
+        void queue.shutdown();
     });
 
     registerHandlers({

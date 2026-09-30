@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import type { DownloadError, ProgressInfo } from '@shared/types';
+import type { DownloadError, DownloadInfo, ProgressInfo } from '@shared/types';
 import { mapDownloadError, mapSpawnError } from './errorMapper';
-import { parseFileLine, parseProgressLine } from './progressParser';
+import { parseFileLine, parseInfoLine, parseProgressLine } from './progressParser';
 
 export type SpawnFn = (command: string, args: string[], env?: NodeJS.ProcessEnv) => ChildProcessWithoutNullStreams;
 
@@ -13,12 +13,15 @@ export type RunResult =
 export interface RunHandle {
     result: Promise<RunResult>;
     cancel: () => void;
+    // Asks yt-dlp to finish and keep what it has (Ctrl+C): how a live recording is ended without losing it.
+    stop: () => void;
 }
 
 export interface RunOptions {
     binary: string;
     args: string[];
     onProgress: (progress: ProgressInfo) => void;
+    onInfo?: (info: DownloadInfo) => void;
     env?: NodeJS.ProcessEnv;
     spawnFn?: SpawnFn;
 }
@@ -58,6 +61,11 @@ export function runYtdlp(options: RunOptions): RunHandle {
             options.onProgress(progress);
             return;
         }
+        const info = parseInfoLine(line);
+        if (info) {
+            options.onInfo?.(info);
+            return;
+        }
         filePath = parseFileLine(line) ?? filePath;
     });
 
@@ -91,6 +99,9 @@ export function runYtdlp(options: RunOptions): RunHandle {
         cancel: (): void => {
             cancelled = true;
             child.kill('SIGTERM');
+        },
+        stop: (): void => {
+            child.kill('SIGINT');
         }
     };
 }

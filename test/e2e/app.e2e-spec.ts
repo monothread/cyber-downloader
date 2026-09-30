@@ -766,6 +766,76 @@ function lastYtdlpCall(logPath: string, urlEnding: string): string[] {
     );
 }
 
+test.describe('live streams', () => {
+    test('records a live stream with time and size, then STOP & SAVE keeps the file', async () => {
+        const { page, downloadDir } = session;
+        await submitUrl(page, 'https://example.com/livestream');
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('RECORDING');
+        await expect(card.getByText('● LIVE')).toBeVisible();
+        await expect(card.getByRole('progressbar', { name: 'Recording a live stream' })).toHaveClass(/progress--live/);
+        await expect(card.getByText(/\d+(\.\d)? KiB/)).toBeVisible();
+        await expect(card.getByText(/^\d\d:\d\d$/)).toBeVisible();
+
+        await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+        await expect(card.locator('.badge')).toHaveText('COMPLETE');
+        await expect(card.getByRole('button', { name: 'SHOW FILE' })).toBeVisible();
+        expect(existsSync(join(downloadDir, 'Live Show [abc].mp4'))).toBe(true);
+        expect(existsSync(join(downloadDir, 'Live Show [abc].mp4.part'))).toBe(false);
+
+        await page.getByRole('button', { name: 'HISTORY' }).click();
+        await expect(page.locator('.history__item--done')).toHaveCount(1);
+    });
+
+    test('CANCEL on a live recording discards it instead of saving', async () => {
+        const { page } = session;
+        await submitUrl(page, 'https://example.com/livestream');
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('RECORDING');
+        await card.getByRole('button', { name: 'CANCEL' }).click();
+        await expect(card.locator('.badge')).toHaveText('CANCELLED');
+        await expect(card.getByRole('button', { name: 'STOP & SAVE' })).toHaveCount(0);
+    });
+
+    test('an ordinary download has no STOP & SAVE', async () => {
+        const { page } = session;
+        await submitUrl(page, 'https://example.com/slow');
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('DOWNLOADING');
+        await expect(card.getByRole('button', { name: 'STOP & SAVE' })).toHaveCount(0);
+        await card.getByRole('button', { name: 'CANCEL' }).click();
+    });
+
+    test('the live settings are saved and passed to yt-dlp', async () => {
+        const { page, userData, logPath } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Record live streams from the start').check();
+        await page.getByLabel('Wait for scheduled live streams to start').check();
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(userData)).toMatchObject({ liveFromStart: true, waitForLive: true });
+
+        await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+        await submitUrl(page, 'https://example.com/watch?v=live-settings');
+        await expect(page.getByTestId('job-card').locator('.badge')).toHaveText('COMPLETE');
+        const args = lastYtdlpCall(logPath, 'live-settings');
+        expect(args).toContain('--wait-for-video');
+        expect(args[args.indexOf('--wait-for-video') + 1]).toBe('30');
+        expect(args).toContain('--live-from-start');
+    });
+
+    test('live options are not passed by default', async () => {
+        const { page, logPath } = session;
+        await submitUrl(page, 'https://example.com/watch?v=live-default');
+        await expect(page.getByTestId('job-card').locator('.badge')).toHaveText('COMPLETE');
+        const args = lastYtdlpCall(logPath, 'live-default');
+        expect(args).not.toContain('--wait-for-video');
+        expect(args).not.toContain('--live-from-start');
+    });
+});
+
 test.describe('find stream', () => {
     let site: { server: Server; origin: string };
 

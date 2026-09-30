@@ -35,6 +35,8 @@ describe('sanitizeSettings', () => {
             jsRuntime: 'node:/usr/bin/node',
             checkUpdatesOnStart: false,
             closeToTray: true,
+            liveFromStart: true,
+            waitForLive: true,
             extraArgs: '--no-mtime'
         };
         expect(sanitizeSettings(valid)).toEqual(valid);
@@ -58,6 +60,8 @@ describe('sanitizeSettings', () => {
             useBrowserCookies: 'yes',
             checkUpdatesOnStart: 'no',
             closeToTray: 'yes',
+            liveFromStart: 1,
+            waitForLive: 'true',
             downloadDir: 5,
             maxTitleLength: '80',
             maxConcurrent: NaN
@@ -65,6 +69,8 @@ describe('sanitizeSettings', () => {
         expect(result.useBrowserCookies).toBe(false);
         expect(result.checkUpdatesOnStart).toBe(true);
         expect(result.closeToTray).toBe(false);
+        expect(result.liveFromStart).toBe(false);
+        expect(result.waitForLive).toBe(false);
         expect(result.downloadDir).toBe('');
         expect(result.maxTitleLength).toBe(80);
         expect(result.maxConcurrent).toBe(2);

@@ -6,6 +6,7 @@ export const IPC = {
     queueAdd: 'queue:add',
     queueList: 'queue:list',
     queueCancel: 'queue:cancel',
+    queueStop: 'queue:stop',
     queueRetry: 'queue:retry',
     queueRemove: 'queue:remove',
     queueClearFinished: 'queue:clear-finished',
@@ -62,5 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
     jsRuntime: '',
     checkUpdatesOnStart: true,
     closeToTray: false,
+    liveFromStart: false,
+    waitForLive: false,
     extraArgs: ''
 };

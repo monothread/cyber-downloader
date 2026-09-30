@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import type { Settings } from '@shared/types';
-import { FILE_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from '@main/services/progressParser';
+import { FILE_PRINT_TEMPLATE, INFO_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from '@main/services/progressParser';
 import { buildYtdlpArgs, escapeTitleForTemplate, splitArguments } from '@main/services/ytdlpArgsBuilder';
 
 const URL = 'https://example.com/watch?v=abc';
@@ -41,6 +41,8 @@ describe('buildYtdlpArgs', () => {
             PROGRESS_TEMPLATE,
             '--print',
             FILE_PRINT_TEMPLATE,
+            '--print',
+            INFO_PRINT_TEMPLATE,
             '-P',
             DEFAULT_DIR,
             '-o',
@@ -249,6 +251,44 @@ describe('buildYtdlpArgs with request extras (streams found on a page)', () => {
         expect(args).not.toContain('--referer');
         expect(args).not.toContain('--user-agent');
         expect(args).not.toContain('--add-header');
+    });
+});
+
+describe('buildYtdlpArgs for live streams', () => {
+    const build = (overrides: Partial<Settings>) => {
+        return buildYtdlpArgs(URL, { ...DEFAULT_SETTINGS, ...overrides }, DEFAULT_DIR);
+    };
+
+    it('adds no live options by default', () => {
+        const args = build({});
+        expect(args).not.toContain('--wait-for-video');
+        expect(args).not.toContain('--live-from-start');
+        expect(args).not.toContain('--downloader-args');
+    });
+
+    it('waits for a scheduled stream, checking every 30 seconds', () => {
+        const args = build({ waitForLive: true });
+        expect(args[args.indexOf('--wait-for-video') + 1]).toBe('30');
+        expect(args).not.toContain('--live-from-start');
+    });
+
+    it('records from the start through yt-dlp (YouTube, Twitch) and through ffmpeg (HLS)', () => {
+        const args = build({ liveFromStart: true });
+        expect(args).toContain('--live-from-start');
+        expect(args[args.indexOf('--downloader-args') + 1]).toBe('ffmpeg_i:-live_start_index 0');
+        expect(args).not.toContain('--wait-for-video');
+    });
+
+    it('combines both options and keeps them before the URL separator', () => {
+        const args = build({ waitForLive: true, liveFromStart: true });
+        expect(args).toEqual(expect.arrayContaining(['--wait-for-video', '30', '--live-from-start', '--downloader-args', 'ffmpeg_i:-live_start_index 0']));
+        expect(args.slice(-2)).toEqual(['--', URL]);
+    });
+
+    it('always asks yt-dlp to announce each download so live streams can be recognised', () => {
+        const args = build({});
+        const infoIndex = args.indexOf(INFO_PRINT_TEMPLATE);
+        expect(args[infoIndex - 1]).toBe('--print');
     });
 });
 

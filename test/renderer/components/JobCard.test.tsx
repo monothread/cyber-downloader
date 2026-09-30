@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 
 function renderCard(job: DownloadJob) {
-    const handlers = { onCancel: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onShowFile: vi.fn() };
+    const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onShowFile: vi.fn() };
     render(<JobCard job={job} {...handlers} />);
     return handlers;
 }
@@ -97,6 +97,60 @@ describe('JobCard', () => {
         expect(screen.getByText('CANCELLED')).toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'RETRY' }));
         expect(handlers.onRetry).toHaveBeenCalledWith('job-1');
+    });
+
+    describe('live recording', () => {
+        const live = (overrides: Partial<DownloadJob> = {}) => {
+            return makeJob({ status: 'running', live: true, percent: 0, title: 'Live Show', elapsedSeconds: 754, downloadedBytes: 220200960, speed: '1.2MiB/s', ...overrides });
+        };
+
+        it('shows that it is recording, for how long and how much was written, instead of a percentage', () => {
+            renderCard(live());
+            expect(screen.getByText('RECORDING')).toBeInTheDocument();
+            expect(screen.getByText('● LIVE')).toBeInTheDocument();
+            expect(screen.getByText('12:34')).toBeInTheDocument();
+            expect(screen.getByText('210.0 MiB')).toBeInTheDocument();
+            expect(screen.getByText('1.2MiB/s')).toBeInTheDocument();
+            expect(screen.queryByText('0.0%')).not.toBeInTheDocument();
+            expect(screen.queryByText('DOWNLOADING')).not.toBeInTheDocument();
+        });
+
+        it('uses an indeterminate progress bar without a percentage value', () => {
+            renderCard(live());
+            const bar = screen.getByRole('progressbar', { name: 'Recording a live stream' });
+            expect(bar).toHaveClass('progress--live');
+            expect(bar).not.toHaveAttribute('aria-valuenow');
+            expect(screen.queryByRole('progressbar', { name: 'Download progress' })).not.toBeInTheDocument();
+        });
+
+        it('offers STOP & SAVE, which finishes the recording, next to CANCEL', async () => {
+            const user = userEvent.setup();
+            const handlers = renderCard(live());
+            await user.click(screen.getByRole('button', { name: 'STOP & SAVE' }));
+            expect(handlers.onStop).toHaveBeenCalledWith('job-1');
+            expect(handlers.onCancel).not.toHaveBeenCalled();
+            await user.click(screen.getByRole('button', { name: 'CANCEL' }));
+            expect(handlers.onCancel).toHaveBeenCalledWith('job-1');
+        });
+
+        it('does not offer STOP & SAVE for an ordinary running download', () => {
+            renderCard(makeJob({ status: 'running', live: false }));
+            expect(screen.queryByRole('button', { name: 'STOP & SAVE' })).not.toBeInTheDocument();
+            expect(screen.getByText('DOWNLOADING')).toBeInTheDocument();
+        });
+
+        it('shows a finished recording like any completed download', () => {
+            renderCard(live({ status: 'done', percent: 100, filePath: '/d/Live Show.mp4' }));
+            expect(screen.getByText('COMPLETE')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'STOP & SAVE' })).not.toBeInTheDocument();
+            expect(screen.getByText('100.0%')).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'SHOW FILE' })).toBeInTheDocument();
+        });
+
+        it('does not offer STOP & SAVE while a live job is still queued', () => {
+            renderCard(live({ status: 'queued' }));
+            expect(screen.queryByRole('button', { name: 'STOP & SAVE' })).not.toBeInTheDocument();
+        });
     });
 
     describe('stream finder', () => {

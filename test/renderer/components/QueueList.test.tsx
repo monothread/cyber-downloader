@@ -62,4 +62,12 @@ describe('QueueList', () => {
         await user.click(within(cards[2] as HTMLElement).getByRole('button', { name: 'RETRY' }));
         expect(mock.api.retryJob).toHaveBeenCalledWith('cancelled');
     });
+
+    it('wires STOP & SAVE of a live recording to the API', async () => {
+        useAppStore.setState({ jobs: [makeJob({ id: 'live-1', status: 'running', live: true, elapsedSeconds: 5, downloadedBytes: 1024 })] });
+        render(<QueueList />);
+        await userEvent.setup().click(screen.getByRole('button', { name: 'STOP & SAVE' }));
+        expect(mock.api.stopJob).toHaveBeenCalledWith('live-1');
+        expect(mock.api.cancelJob).not.toHaveBeenCalled();
+    });
 });

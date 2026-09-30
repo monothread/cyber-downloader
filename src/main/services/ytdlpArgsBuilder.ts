@@ -1,7 +1,8 @@
 import type { Settings } from '@shared/types';
-import { FILE_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from './progressParser';
+import { FILE_PRINT_TEMPLATE, INFO_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from './progressParser';
 
 const FILENAME_BYTE_LIMIT = '240';
+const LIVE_WAIT_SECONDS = '30';
 
 // What a download found by the stream finder needs to reach the stream as the page itself would have.
 export interface RequestExtras {
@@ -47,6 +48,20 @@ export function escapeTitleForTemplate(title: string, maxLength: number): string
 function buildOutputTemplate(settings: Settings, extras: RequestExtras): string {
     const title = extras.title ? escapeTitleForTemplate(extras.title, settings.maxTitleLength) : '';
     return title.length > 0 ? `${title} [%(id)s].%(ext)s` : `%(title).${settings.maxTitleLength}s [%(id)s].%(ext)s`;
+}
+
+// Live streams. "From the start" is honoured where the site allows it: yt-dlp's own option (YouTube, Twitch) and, for
+// HLS recorded through ffmpeg, starting at the first segment the playlist still offers (the whole broadcast when the
+// broadcaster keeps it, as in DVR/EVENT playlists).
+function buildLiveArgs(settings: Settings): string[] {
+    const args: string[] = [];
+    if (settings.waitForLive) {
+        args.push('--wait-for-video', LIVE_WAIT_SECONDS);
+    }
+    if (settings.liveFromStart) {
+        args.push('--live-from-start', '--downloader-args', 'ffmpeg_i:-live_start_index 0');
+    }
+    return args;
 }
 
 function buildRequestArgs(extras: RequestExtras): string[] {
@@ -127,6 +142,8 @@ export function buildYtdlpArgs(
         PROGRESS_TEMPLATE,
         '--print',
         FILE_PRINT_TEMPLATE,
+        '--print',
+        INFO_PRINT_TEMPLATE,
         '-P',
         downloadDir,
         '-o',
@@ -135,6 +152,7 @@ export function buildYtdlpArgs(
         FILENAME_BYTE_LIMIT,
         settings.downloadPlaylist ? '--yes-playlist' : '--no-playlist',
         ...buildFormatArgs(settings),
+        ...buildLiveArgs(settings),
         ...buildCookieArgs(settings),
         ...buildSubtitleArgs(settings),
         ...buildOptionalArgs(settings, ffmpegLocation),

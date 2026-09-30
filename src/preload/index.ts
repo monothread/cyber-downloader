@@ -28,6 +28,9 @@ const api: CyberApi = {
     cancelJob: (id) => {
         return ipcRenderer.invoke(IPC.queueCancel, id);
     },
+    stopJob: (id) => {
+        return ipcRenderer.invoke(IPC.queueStop, id);
+    },
     retryJob: (id) => {
         return ipcRenderer.invoke(IPC.queueRetry, id);
     },

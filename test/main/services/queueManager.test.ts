@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { DownloadError, DownloadJob, HistoryEntry, ProgressInfo, Settings } from '@shared/types';
-import { QueueManager } from '@main/services/queueManager';
+import type { DownloadError, DownloadInfo, DownloadJob, HistoryEntry, ProgressInfo, Settings } from '@shared/types';
+import { LIVE_TICK_MS, QueueManager } from '@main/services/queueManager';
 import { buildYtdlpArgs } from '@main/services/ytdlpArgsBuilder';
 import type { RunHandle, RunResult } from '@main/services/ytdlpRunner';
 
@@ -8,8 +8,14 @@ interface ControlledRun {
     binary: string;
     args: string[];
     onProgress: (progress: ProgressInfo) => void;
+    onInfo: (info: DownloadInfo) => void;
     resolve: (result: RunResult) => void;
     cancel: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+}
+
+function progress(overrides: Partial<ProgressInfo> = {}): ProgressInfo {
+    return { percent: 0, speed: '', eta: '', title: '', downloadedBytes: null, elapsedSeconds: null, live: false, ...overrides };
 }
 
 const DOWNLOAD_ERROR: DownloadError = { code: 'NETWORK', title: 'Network failure', hint: 'Check your connection and try again.', raw: 'boom' };
@@ -22,6 +28,7 @@ function setup(settings: Partial<Settings> = {}) {
     const onHistoryChanged = vi.fn();
     let counter = 0;
     let clock = 1000;
+    const fileSizes = new Map<string, number>();
     const currentSettings: Settings = { ...DEFAULT_SETTINGS, maxConcurrent: 2, ...settings };
     const queue = new QueueManager({
         getSettings: () => {
@@ -34,7 +41,10 @@ function setup(settings: Partial<Settings> = {}) {
         resolveFfmpegLocation: () => {
             return '/bundled/bin';
         },
-        startRun: (binary, args, onProgress): RunHandle => {
+        fileSize: (path) => {
+            return fileSizes.get(path) ?? null;
+        },
+        startRun: (binary, args, onProgress, onInfo): RunHandle => {
             let resolveResult: (result: RunResult) => void = () => {
                 return undefined;
             };
@@ -44,8 +54,11 @@ function setup(settings: Partial<Settings> = {}) {
             const cancel = vi.fn(() => {
                 resolveResult({ status: 'cancelled' });
             });
-            runs.push({ binary, args, onProgress, resolve: resolveResult, cancel });
-            return { result, cancel };
+            const stop = vi.fn(() => {
+                resolveResult({ status: 'done', filePath: '/dl/recorded.mp4' });
+            });
+            runs.push({ binary, args, onProgress, onInfo, resolve: resolveResult, cancel, stop });
+            return { result, cancel, stop };
         },
         addHistory: (entry) => {
             history.push(entry);
@@ -66,7 +79,10 @@ function setup(settings: Partial<Settings> = {}) {
             return clock;
         }
     });
-    return { queue, runs, updates, removed, history, onHistoryChanged, currentSettings };
+    const advanceClock = (milliseconds: number): void => {
+        clock += milliseconds;
+    };
+    return { queue, runs, updates, removed, history, onHistoryChanged, currentSettings, fileSizes, advanceClock };
 }
 
 async function flush(): Promise<void> {
@@ -104,7 +120,10 @@ describe('QueueManager.add', () => {
             filePath: null,
             error: null,
             createdAt: 1001,
-            pageUrl: null
+            pageUrl: null,
+            live: false,
+            elapsedSeconds: 0,
+            downloadedBytes: 0
         });
         expect(updates.map((job) => {
             return job.status;
@@ -153,15 +172,15 @@ describe('QueueManager progress and completion', () => {
     it('applies progress updates and keeps the last known title', () => {
         const { queue, runs } = setup();
         queue.add(URL_A);
-        runs[0]?.onProgress({ percent: 42.5, speed: '1MiB/s', eta: '00:10', title: 'My Video' });
-        runs[0]?.onProgress({ percent: 50, speed: '2MiB/s', eta: '00:05', title: '' });
+        runs[0]?.onProgress(progress({ percent: 42.5, speed: '1MiB/s', eta: '00:10', title: 'My Video' }));
+        runs[0]?.onProgress(progress({ percent: 50, speed: '2MiB/s', eta: '00:05', title: '' }));
         expect(queue.list()[0]).toMatchObject({ percent: 50, speed: '2MiB/s', eta: '00:05', title: 'My Video' });
     });
 
     it('marks a job done, records history and notifies', async () => {
         const { queue, runs, history, onHistoryChanged } = setup();
         queue.add(URL_A);
-        runs[0]?.onProgress({ percent: 90, speed: '1MiB/s', eta: '00:01', title: 'My Video' });
+        runs[0]?.onProgress(progress({ percent: 90, speed: '1MiB/s', eta: '00:01', title: 'My Video' }));
         runs[0]?.resolve({ status: 'done', filePath: '/dl/My Video.mp4' });
         await flush();
         expect(queue.list()[0]).toMatchObject({ status: 'done', percent: 100, speed: '', eta: '', filePath: '/dl/My Video.mp4', error: null });
@@ -230,7 +249,7 @@ describe('QueueManager.retry', () => {
     it('requeues a failed job and restarts it with a clean state', async () => {
         const { queue, runs } = setup();
         queue.add(URL_A);
-        runs[0]?.onProgress({ percent: 30, speed: '1MiB/s', eta: '00:10', title: 'T' });
+        runs[0]?.onProgress(progress({ percent: 30, speed: '1MiB/s', eta: '00:10', title: 'T' }));
         runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
         await flush();
         queue.retry('job-1');
@@ -474,6 +493,217 @@ describe('QueueManager.getJob', () => {
 
     it('returns undefined for unknown ids', () => {
         expect(setup().queue.getJob('nope')).toBeUndefined();
+    });
+});
+
+describe('QueueManager live recordings', () => {
+    const LIVE_FILE = '/dl/Live Show [abc].mp4';
+    const liveInfo = { live: true, filePath: LIVE_FILE };
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('marks a job as live when yt-dlp announces a live stream', () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A);
+        expect(queue.getJob('job-1')?.live).toBe(false);
+        runs[0]?.onInfo(liveInfo);
+        expect(queue.getJob('job-1')).toMatchObject({ live: true, status: 'running', elapsedSeconds: 0, downloadedBytes: 0 });
+    });
+
+    it('does not mark ordinary downloads as live', () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo({ live: false, filePath: '/dl/v.mp4' });
+        vi.advanceTimersByTime(LIVE_TICK_MS * 3);
+        expect(queue.getJob('job-1')).toMatchObject({ live: false, elapsedSeconds: 0 });
+    });
+
+    it('counts the recording time and reads the size of the partial file every second', () => {
+        const { queue, runs, fileSizes, updates, advanceClock } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        fileSizes.set(`${LIVE_FILE}.part`, 5000);
+        advanceClock(3000);
+        vi.advanceTimersByTime(LIVE_TICK_MS);
+        expect(queue.getJob('job-1')).toMatchObject({ elapsedSeconds: 3, downloadedBytes: 5000 });
+        fileSizes.set(`${LIVE_FILE}.part`, 9000);
+        advanceClock(2000);
+        vi.advanceTimersByTime(LIVE_TICK_MS);
+        expect(queue.getJob('job-1')).toMatchObject({ elapsedSeconds: 5, downloadedBytes: 9000 });
+        expect(updates.at(-1)).toMatchObject({ id: 'job-1', live: true, elapsedSeconds: 5, downloadedBytes: 9000 });
+    });
+
+    it('falls back to the finished file when there is no partial file, and keeps the last size when neither exists', () => {
+        const { queue, runs, fileSizes } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        fileSizes.set(LIVE_FILE, 777);
+        vi.advanceTimersByTime(LIVE_TICK_MS);
+        expect(queue.getJob('job-1')?.downloadedBytes).toBe(777);
+        fileSizes.clear();
+        vi.advanceTimersByTime(LIVE_TICK_MS);
+        expect(queue.getJob('job-1')?.downloadedBytes).toBe(777);
+    });
+
+    it('starts a single ticker even if the stream is announced twice', () => {
+        const { queue, runs, updates } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        runs[0]?.onInfo(liveInfo);
+        const before = updates.length;
+        vi.advanceTimersByTime(LIVE_TICK_MS);
+        expect(updates.length - before).toBe(1);
+    });
+
+    it('uses the numbers reported by yt-dlp at the end of a live recording', () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A);
+        runs[0]?.onProgress(progress({ percent: 100, live: true, downloadedBytes: 648600, elapsedSeconds: 16 }));
+        expect(queue.getJob('job-1')).toMatchObject({ live: true, downloadedBytes: 648600, elapsedSeconds: 16 });
+    });
+
+    it('does not let the reported elapsed time override the live ticker', () => {
+        const { queue, runs, advanceClock } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        advanceClock(4000);
+        vi.advanceTimersByTime(LIVE_TICK_MS);
+        runs[0]?.onProgress(progress({ live: true, elapsedSeconds: 1 }));
+        expect(queue.getJob('job-1')?.elapsedSeconds).toBe(4);
+    });
+
+    it('stops ticking when the recording ends', async () => {
+        const { queue, runs, updates } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        runs[0]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        await vi.advanceTimersByTimeAsync(0);
+        const before = updates.length;
+        vi.advanceTimersByTime(LIVE_TICK_MS * 5);
+        expect(updates.length).toBe(before);
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'done', live: true, filePath: LIVE_FILE });
+    });
+
+    it('stops ticking when the job is removed', () => {
+        const { queue, runs, updates } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        queue.remove('job-1');
+        const before = updates.length;
+        vi.advanceTimersByTime(LIVE_TICK_MS * 3);
+        expect(updates.length).toBe(before);
+    });
+
+    it('stop asks the running live recording to finish and completes it with its file', async () => {
+        const { queue, runs, history } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        queue.stop('job-1');
+        expect(runs[0]?.stop).toHaveBeenCalledTimes(1);
+        expect(runs[0]?.cancel).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: '/dl/recorded.mp4' });
+        expect(history).toHaveLength(1);
+    });
+
+    it('stop ignores jobs that are not live, not running or unknown', async () => {
+        const { queue, runs } = setup({ maxConcurrent: 1 });
+        queue.add(URL_A);
+        queue.add(URL_B);
+        queue.stop('job-1');
+        queue.stop('job-2');
+        queue.stop('missing');
+        expect(runs[0]?.stop).not.toHaveBeenCalled();
+        runs[0]?.onInfo(liveInfo);
+        runs[0]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        await vi.advanceTimersByTimeAsync(0);
+        queue.stop('job-1');
+        expect(runs[0]?.stop).not.toHaveBeenCalled();
+    });
+
+    it('cancel still discards a live recording', async () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        queue.cancel('job-1');
+        expect(runs[0]?.cancel).toHaveBeenCalledTimes(1);
+        expect(runs[0]?.stop).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.getJob('job-1')?.status).toBe('cancelled');
+    });
+
+    it('resets the live fields when a failed recording is retried', async () => {
+        const { queue, runs, fileSizes } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        fileSizes.set(`${LIVE_FILE}.part`, 100);
+        vi.advanceTimersByTime(LIVE_TICK_MS);
+        runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        await vi.advanceTimersByTimeAsync(0);
+        queue.retry('job-1');
+        expect(queue.getJob('job-1')).toMatchObject({ live: false, elapsedSeconds: 0, downloadedBytes: 0, status: 'running' });
+    });
+
+    it('reports whether a live recording is running', async () => {
+        const { queue, runs } = setup();
+        expect(queue.hasLiveJobs()).toBe(false);
+        queue.add(URL_A);
+        expect(queue.hasLiveJobs()).toBe(false);
+        runs[0]?.onInfo(liveInfo);
+        expect(queue.hasLiveJobs()).toBe(true);
+        runs[0]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.hasLiveJobs()).toBe(false);
+    });
+
+    describe('shutdown', () => {
+        it('asks live recordings to finish and waits for them, cancelling everything else', async () => {
+            const { queue, runs } = setup({ maxConcurrent: 3 });
+            queue.add(URL_A);
+            queue.add(URL_B);
+            runs[0]?.onInfo(liveInfo);
+            const shutdown = queue.shutdown();
+            await vi.advanceTimersByTimeAsync(0);
+            await shutdown;
+            expect(runs[0]?.stop).toHaveBeenCalledTimes(1);
+            expect(runs[0]?.cancel).not.toHaveBeenCalled();
+            expect(runs[1]?.cancel).toHaveBeenCalledTimes(1);
+            expect(runs[1]?.stop).not.toHaveBeenCalled();
+        });
+
+        it('does not wait forever for a recording that never finishes', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+            runs[0]?.onInfo(liveInfo);
+            runs[0]?.stop.mockImplementation(() => {
+                return undefined;
+            });
+            let finished = false;
+            const shutdown = queue.shutdown(5000).then(() => {
+                finished = true;
+            });
+            await vi.advanceTimersByTimeAsync(4999);
+            expect(finished).toBe(false);
+            await vi.advanceTimersByTimeAsync(1);
+            await shutdown;
+            expect(finished).toBe(true);
+        });
+
+        it('resolves immediately when there are no live recordings and starts nothing new afterwards', async () => {
+            const { queue, runs } = setup({ maxConcurrent: 1 });
+            queue.add(URL_A);
+            queue.add(URL_B);
+            await queue.shutdown();
+            expect(runs[0]?.cancel).toHaveBeenCalledTimes(1);
+            await vi.advanceTimersByTimeAsync(0);
+            expect(runs).toHaveLength(1);
+        });
     });
 });
 

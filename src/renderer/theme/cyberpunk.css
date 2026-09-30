@@ -431,3 +431,14 @@ body::after {
 .stream-candidate__url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stream-candidate__meta { color: var(--muted); font-size: 11px; }
 .stream-candidate__kind { color: var(--magenta); flex-shrink: 0; }
+
+.progress--live .progress__bar {
+    width: 100%;
+    background: repeating-linear-gradient(45deg, var(--red) 0 10px, var(--magenta) 10px 20px);
+    box-shadow: 0 0 10px var(--red);
+    background-size: 28px 28px;
+    animation: live-stripes 0.9s linear infinite;
+}
+.job__live { color: var(--red); font-weight: 700; letter-spacing: 1px; }
+@keyframes live-stripes { from { background-position: 0 0; } to { background-position: 28px 0; } }
+@media (prefers-reduced-motion: reduce) { .progress--live .progress__bar { animation: none; } }

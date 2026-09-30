@@ -8,8 +8,8 @@ const STATUS_LABELS: Record<JobStatus, string> = {
     cancelled: 'CANCELLED'
 };
 
-export function statusLabel(status: JobStatus): string {
-    return STATUS_LABELS[status];
+export function statusLabel(status: JobStatus, live = false): string {
+    return live && status === 'running' ? 'RECORDING' : STATUS_LABELS[status];
 }
 
 export function formatPercent(percent: number): string {
@@ -25,4 +25,24 @@ export function canFindStream(error: DownloadError | null, pageUrl: string | nul
         return false;
     }
     return STREAM_SEARCH_CODES.includes(error.code) || (error.code === 'FORBIDDEN' && pageUrl !== null);
+}
+
+export function formatDuration(totalSeconds: number): string {
+    const seconds = Math.max(0, Math.floor(totalSeconds));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const rest = String(seconds % 60).padStart(2, '0');
+    return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${rest}` : `${String(minutes).padStart(2, '0')}:${rest}`;
+}
+
+const SIZE_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+
+export function formatBytes(bytes: number): string {
+    let value = Math.max(0, bytes);
+    let unit = 0;
+    while (value >= 1024 && unit < SIZE_UNITS.length - 1) {
+        value /= 1024;
+        unit += 1;
+    }
+    return unit === 0 ? `${Math.round(value)} B` : `${value.toFixed(1)} ${SIZE_UNITS[unit]}`;
 }

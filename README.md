@@ -73,6 +73,7 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 - Optional "keep running in the system tray" (KDE, XFCE, Cinnamon, MATE, LXQt and GNOME with the AppIndicator extension); right-click the tray icon to quit
 - Title length limit so long titles never break the file name
 - Friendly error banner with technical details on demand
+- Live streams: recording time and size, **STOP & SAVE** to finish and keep the file, optional waiting for scheduled lives and recording from the start (when the source still offers it)
 - **Find stream**: when yt-dlp does not understand a page, scan it (and, if needed, watch it in a hidden browser window) for the video stream and pick one to download
 - Self-updating app: checks GitHub Releases, one click to download and one to restart into the new version
 - Update yt-dlp from the UI (downloads the latest verified release into the app data folder)

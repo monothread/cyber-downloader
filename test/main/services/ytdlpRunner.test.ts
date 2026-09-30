@@ -1,4 +1,4 @@
-import type { ProgressInfo } from '@shared/types';
+import type { DownloadInfo, ProgressInfo } from '@shared/types';
 import { createLineSplitter, defaultSpawn, runYtdlp } from '@main/services/ytdlpRunner';
 import { createFakeChild } from '../../helpers/fakeChild';
 
@@ -26,12 +26,13 @@ describe('createLineSplitter', () => {
 });
 
 describe('runYtdlp', () => {
-    function start(): { fake: ReturnType<typeof createFakeChild>; spawnFn: ReturnType<typeof vi.fn>; progress: ProgressInfo[]; run: ReturnType<typeof runYtdlp> } {
+    function start(): { fake: ReturnType<typeof createFakeChild>; spawnFn: ReturnType<typeof vi.fn>; progress: ProgressInfo[]; infos: DownloadInfo[]; run: ReturnType<typeof runYtdlp> } {
         const fake = createFakeChild();
         const spawnFn = vi.fn(() => {
             return fake.child;
         });
         const progress: ProgressInfo[] = [];
+        const infos: DownloadInfo[] = [];
         const run = runYtdlp({
             binary: 'yt-dlp',
             args: ['--newline', 'https://x.com/v'],
@@ -39,9 +40,12 @@ describe('runYtdlp', () => {
             spawnFn,
             onProgress: (info) => {
                 progress.push(info);
+            },
+            onInfo: (info) => {
+                infos.push(info);
             }
         });
-        return { fake, spawnFn, progress, run };
+        return { fake, spawnFn, progress, infos, run };
     }
 
     it('spawns the binary with the exact arguments and environment', () => {
@@ -51,7 +55,7 @@ describe('runYtdlp', () => {
 
     it('reports progress and resolves done with the file path', async () => {
         const { fake, progress, run } = start();
-        fake.stdout.write('CYBERPROG|  10.0%|1MiB/s|00:09|Title\nCYBERPROG| 100.0%|2MiB/s|00:00|Title\n');
+        fake.stdout.write('CYBERPROG|  10.0%|1MiB/s|00:09|1000|1.5|False|Title\nCYBERPROG| 100.0%|2MiB/s|00:00|2000|3.5|False|Title\n');
         fake.stdout.write('CYBERFILE|/d/Title [id].mp4\n');
         await new Promise((resolve) => {
             setImmediate(resolve);
@@ -59,8 +63,8 @@ describe('runYtdlp', () => {
         fake.emitter.emit('close', 0);
         await expect(run.result).resolves.toEqual({ status: 'done', filePath: '/d/Title [id].mp4' });
         expect(progress).toEqual([
-            { percent: 10, speed: '1MiB/s', eta: '00:09', title: 'Title' },
-            { percent: 100, speed: '2MiB/s', eta: '00:00', title: 'Title' }
+            { percent: 10, speed: '1MiB/s', eta: '00:09', title: 'Title', downloadedBytes: 1000, elapsedSeconds: 1.5, live: false },
+            { percent: 100, speed: '2MiB/s', eta: '00:00', title: 'Title', downloadedBytes: 2000, elapsedSeconds: 3.5, live: false }
         ]);
     });
 
@@ -110,6 +114,69 @@ describe('runYtdlp', () => {
                 raw: 'spawn yt-dlp ENOENT'
             }
         });
+    });
+
+    it('reports the start of each download, telling whether it is live and where the file goes', async () => {
+        const { fake, progress, infos, run } = start();
+        fake.stdout.write('CYBERINFO|True|/d/Live [x].mp4\nCYBERPROG|NA|1MiB/s|NA|10|1.0|True|Live\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        fake.emitter.emit('close', 0);
+        await run.result;
+        expect(infos).toEqual([{ live: true, filePath: '/d/Live [x].mp4' }]);
+        expect(progress).toHaveLength(1);
+        expect(progress[0]?.live).toBe(true);
+    });
+
+    it('does not report an info line that has no path', async () => {
+        const { fake, infos, run } = start();
+        fake.stdout.write('CYBERINFO|True|\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        fake.emitter.emit('close', 0);
+        await run.result;
+        expect(infos).toEqual([]);
+    });
+
+    it('works without an info listener', async () => {
+        const fake = createFakeChild();
+        const run = runYtdlp({ binary: 'yt-dlp', args: [], spawnFn: () => {return fake.child}, onProgress: () => {return undefined} });
+        fake.stdout.write('CYBERINFO|True|/d/v.mp4\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        fake.emitter.emit('close', 0);
+        await expect(run.result).resolves.toEqual({ status: 'done', filePath: null });
+    });
+
+    it('stop sends SIGINT so yt-dlp finishes and keeps the recording, which then completes normally', async () => {
+        const { fake, run } = start();
+        fake.stdout.write('CYBERINFO|True|/d/Live.mp4\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        run.stop();
+        expect(fake.kill).toHaveBeenCalledWith('SIGINT');
+        fake.stdout.write('CYBERFILE|/d/Live.mp4\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        fake.emitter.emit('close', 0);
+        await expect(run.result).resolves.toEqual({ status: 'done', filePath: '/d/Live.mp4' });
+    });
+
+    it('stop is not a cancellation: a failure after it is still reported as an error', async () => {
+        const { fake, run } = start();
+        run.stop();
+        fake.stderr.write('ERROR: Interrupted by user\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        fake.emitter.emit('close', 1);
+        const result = await run.result;
+        expect(result.status).toBe('error');
     });
 
     it('kills the process with SIGTERM and resolves cancelled', async () => {

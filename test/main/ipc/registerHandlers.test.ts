@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 const JOB: DownloadJob = {
-    id: 'j1', url: 'https://x.com/a', status: 'queued', title: null, percent: 0, speed: '', eta: '', filePath: null, error: null, createdAt: 1, pageUrl: null
+    id: 'j1', url: 'https://x.com/a', status: 'queued', title: null, percent: 0, speed: '', eta: '', filePath: null, error: null, createdAt: 1, pageUrl: null, live: false, elapsedSeconds: 0, downloadedBytes: 0
 };
 
 function setup() {
@@ -57,6 +57,7 @@ function setup() {
         }),
         getJob: vi.fn(),
         cancel: vi.fn(),
+        stop: vi.fn(),
         retry: vi.fn(),
         remove: vi.fn(),
         clearFinished: vi.fn()
@@ -106,7 +107,7 @@ describe('registerHandlers', () => {
         const { handlers } = setup();
         expect([...handlers.keys()].sort()).toEqual(
             [
-                IPC.settingsGet, IPC.settingsSave, IPC.queueAdd, IPC.queueList, IPC.queueCancel, IPC.queueRetry, IPC.queueRemove,
+                IPC.settingsGet, IPC.settingsSave, IPC.queueAdd, IPC.queueList, IPC.queueCancel, IPC.queueStop, IPC.queueRetry, IPC.queueRemove,
                 IPC.queueClearFinished, IPC.historyList, IPC.historyClear, IPC.binariesCheck, IPC.ytdlpUpdate, IPC.appUpdateGet, IPC.appUpdateCheck, IPC.appUpdateDownload, IPC.appUpdateInstall, IPC.traySupport, IPC.streamFind, IPC.streamCancel, IPC.streamDownload, IPC.dialogChooseDir,
                 IPC.shellShowItem
             ].sort()
@@ -231,6 +232,13 @@ describe('registerHandlers', () => {
         expect(queue.cancel).toHaveBeenCalledWith('j1');
         expect(queue.retry).toHaveBeenCalledWith('j2');
         expect(queue.remove).toHaveBeenCalledWith('j3');
+    });
+
+    it('stops a live recording by id, keeping what was recorded', () => {
+        const { call, queue } = setup();
+        call(IPC.queueStop, 'j1');
+        call(IPC.queueStop, 42);
+        expect(queue.stop.mock.calls).toEqual([['j1'], ['']]);
     });
 
     it('clears finished jobs', () => {

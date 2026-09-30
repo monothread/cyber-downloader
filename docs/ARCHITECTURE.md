@@ -55,6 +55,9 @@ On `before-quit` the main process calls `queue.shutdown()`: every running yt-dlp
 ## Stream finder
 Failed job (`UNKNOWN`/`OUTDATED`) → **FIND STREAM** → `stream:find` (main: `StreamFinder.find`) → stage events (`event:stream-progress`: scanning → watching) → candidate list in the job card → **DOWNLOAD** → `stream:download` → `QueueManager.add(url, { referer, userAgent, cookie, title })` → the usual `ytdlpRunner` flow. Request details (referer, cookies) never reach the renderer. See D-019.
 
+## Live streams
+yt-dlp prints `CYBERINFO|<is_live>|<file>` before downloading → `QueueManager.applyInfo` marks the job `live` and starts a ticker that derives `elapsedSeconds` (own clock) and `downloadedBytes` (size of `<file>.part`). `queue:stop` (**STOP & SAVE**) → `QueueManager.stop` → SIGINT (file kept); cancel stays SIGTERM. `before-quit` awaits `QueueManager.shutdown()` when live jobs exist. See D-025.
+
 ## Feature → yt-dlp args (`ytdlpArgsBuilder`)
 | Feature | Args |
 |---|---|
@@ -67,6 +70,7 @@ Failed job (`UNKNOWN`/`OUTDATED`) → **FIND STREAM** → `stream:find` (main: `
 | Playlist | `--yes-playlist` / `--no-playlist` |
 | Subtitles | `--write-subs --sub-langs <..> [--embed-subs]` |
 | Progress | `--newline --progress-template "download:CYBERPROG\|%(progress._percent_str)s\|..."` plus `--print after_move:CYBERFILE\|%(filepath)s` |
+| Live streams | `--wait-for-video 30` (wait setting); `--live-from-start --downloader-args ffmpeg_i:-live_start_index 0` (from-start setting); `--print before_dl:CYBERINFO\|%(is_live)s\|%(filename)s` always |
 | Extras | rate limit, concurrency, custom paths, JS runtime, extra args |
 | Stream found on a page | `--referer <page>`, `--user-agent <UA used to find it>`, `--add-header Cookie:<cookies seen>`, `--force-ipv4/--force-ipv6` when the address is bound to an IP, file named from the page title |
 

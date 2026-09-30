@@ -38,7 +38,7 @@ function type(label: string, value: string): void {
 describe('SettingsPanel layout', () => {
     it('renders every section with the stored values', () => {
         render(<SettingsPanel />);
-        ['OUTPUT', 'QUALITY & FORMAT', 'BROWSER COOKIES', 'PLAYLISTS & SUBTITLES', 'ADVANCED', 'WINDOW', 'APP UPDATES'].forEach((legend) => {
+        ['OUTPUT', 'QUALITY & FORMAT', 'LIVE STREAMS', 'BROWSER COOKIES', 'PLAYLISTS & SUBTITLES', 'ADVANCED', 'WINDOW', 'APP UPDATES'].forEach((legend) => {
             expect(screen.getByText(legend)).toBeInTheDocument();
         });
         expect(screen.getByLabelText('Download folder')).toHaveValue('');
@@ -75,7 +75,9 @@ describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
         ['Download whole playlist', 'downloadPlaylist'],
         ['Download subtitles', 'writeSubtitles'],
         ['Embed subtitles in the video', 'embedSubtitles'],
-        ['Keep running in the system tray when the window is closed', 'closeToTray']
+        ['Keep running in the system tray when the window is closed', 'closeToTray'],
+        ['Record live streams from the start', 'liveFromStart'],
+        ['Wait for scheduled live streams to start', 'waitForLive']
     ] as const)('saves right away when "%s" is toggled', async (label, key) => {
         render(<SettingsPanel />);
         fireEvent.click(screen.getByLabelText(label));
@@ -300,6 +302,23 @@ describe('SettingsPanel system tray', () => {
         fireEvent.click(screen.getByLabelText(TRAY_LABEL));
         await flushPromises();
         expect(screen.getByRole('alert')).toHaveTextContent('No system tray was detected.');
+    });
+});
+
+describe('SettingsPanel live streams', () => {
+    it('are off by default and explain what they do', () => {
+        render(<SettingsPanel />);
+        expect(screen.getByLabelText('Record live streams from the start')).not.toBeChecked();
+        expect(screen.getByLabelText('Wait for scheduled live streams to start')).not.toBeChecked();
+        expect(screen.getByText(/keeps the past part of the stream available \(DVR\)/)).toBeInTheDocument();
+        expect(screen.getByText('Keeps checking every 30 seconds until the stream goes live. Cancel to stop waiting.')).toBeInTheDocument();
+    });
+
+    it('reflect the stored values', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, liveFromStart: true, waitForLive: true } });
+        render(<SettingsPanel />);
+        expect(screen.getByLabelText('Record live streams from the start')).toBeChecked();
+        expect(screen.getByLabelText('Wait for scheduled live streams to start')).toBeChecked();
     });
 });
 

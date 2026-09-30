@@ -1,19 +1,21 @@
 import type { DownloadJob } from '@shared/types';
 import { useAppStore } from '../store/appStore';
 import { ErrorBanner } from './ErrorBanner';
-import { canFindStream, formatPercent, statusLabel } from './jobStatus';
+import { canFindStream, formatBytes, formatDuration, formatPercent, statusLabel } from './jobStatus';
 import { StreamFinder } from './StreamFinder';
 
 interface JobCardProps {
     job: DownloadJob;
     onCancel: (id: string) => void;
+    onStop: (id: string) => void;
     onRetry: (id: string) => void;
     onRemove: (id: string) => void;
     onShowFile: (path: string) => void;
 }
 
-export function JobCard({ job, onCancel, onRetry, onRemove, onShowFile }: JobCardProps) {
+export function JobCard({ job, onCancel, onStop, onRetry, onRemove, onShowFile }: JobCardProps) {
     const isActive = job.status === 'queued' || job.status === 'running';
+    const isRecording = job.live && job.status === 'running';
     const canRetry = job.status === 'error' || job.status === 'cancelled';
     const searchOpen = useAppStore((state) => {
         return state.streamSearches[job.id] !== undefined;
@@ -27,20 +29,34 @@ export function JobCard({ job, onCancel, onRetry, onRemove, onShowFile }: JobCar
                 <h3 className="job__title" title={job.title ?? job.url}>
                     {job.title ?? job.url}
                 </h3>
-                <span className={`badge badge--${job.status}`}>{statusLabel(job.status)}</span>
+                <span className={`badge badge--${job.status}`}>{statusLabel(job.status, job.live)}</span>
             </header>
-            <div
-                className="progress"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(job.percent)}
-                aria-label="Download progress"
-            >
-                <div className="progress__bar" style={{ width: `${job.percent}%` }} />
-            </div>
+            {isRecording ? (
+                <div className="progress progress--live" role="progressbar" aria-label="Recording a live stream">
+                    <div className="progress__bar" />
+                </div>
+            ) : (
+                <div
+                    className="progress"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(job.percent)}
+                    aria-label="Download progress"
+                >
+                    <div className="progress__bar" style={{ width: `${job.percent}%` }} />
+                </div>
+            )}
             <div className="job__meta">
-                <span>{formatPercent(job.percent)}</span>
+                {isRecording ? (
+                    <>
+                        <span className="job__live">● LIVE</span>
+                        <span>{formatDuration(job.elapsedSeconds)}</span>
+                        <span>{formatBytes(job.downloadedBytes)}</span>
+                    </>
+                ) : (
+                    <span>{formatPercent(job.percent)}</span>
+                )}
                 {job.speed && <span>{job.speed}</span>}
                 {job.eta && <span>ETA {job.eta}</span>}
             </div>
@@ -62,6 +78,17 @@ export function JobCard({ job, onCancel, onRetry, onRemove, onShowFile }: JobCar
             )}
             <StreamFinder jobId={job.id} />
             <div className="job__actions">
+                {isRecording && (
+                    <button
+                        type="button"
+                        className="btn btn--small btn--primary"
+                        onClick={() => {
+                            onStop(job.id);
+                        }}
+                    >
+                        STOP & SAVE
+                    </button>
+                )}
                 {isActive && (
                     <button
                         type="button"

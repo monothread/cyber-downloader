@@ -25,6 +25,8 @@ export interface Settings {
     jsRuntime: string;
     checkUpdatesOnStart: boolean;
     closeToTray: boolean;
+    liveFromStart: boolean;
+    waitForLive: boolean;
     extraArgs: string;
 }
 
@@ -60,6 +62,9 @@ export interface DownloadJob {
     error: DownloadError | null;
     createdAt: number;
     pageUrl: string | null;
+    live: boolean;
+    elapsedSeconds: number;
+    downloadedBytes: number;
 }
 
 export interface ProgressInfo {
@@ -67,6 +72,14 @@ export interface ProgressInfo {
     speed: string;
     eta: string;
     title: string;
+    downloadedBytes: number | null;
+    elapsedSeconds: number | null;
+    live: boolean;
+}
+
+export interface DownloadInfo {
+    live: boolean;
+    filePath: string;
 }
 
 export interface HistoryEntry {
@@ -159,6 +172,7 @@ export interface CyberApi {
     addDownload: (url: string) => Promise<AddJobResult>;
     listJobs: () => Promise<DownloadJob[]>;
     cancelJob: (id: string) => Promise<void>;
+    stopJob: (id: string) => Promise<void>;
     retryJob: (id: string) => Promise<void>;
     removeJob: (id: string) => Promise<void>;
     clearFinished: () => Promise<void>;

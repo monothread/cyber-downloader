@@ -149,6 +149,26 @@ export function SettingsPanel() {
             </fieldset>
 
             <fieldset className="panel">
+                <legend>LIVE STREAMS</legend>
+                <ToggleField
+                    label="Record live streams from the start"
+                    checked={draft.liveFromStart}
+                    hint="Works when the broadcaster keeps the past part of the stream available (DVR); otherwise it starts from the oldest part still offered."
+                    onChange={(value) => {
+                        change('liveFromStart', value);
+                    }}
+                />
+                <ToggleField
+                    label="Wait for scheduled live streams to start"
+                    checked={draft.waitForLive}
+                    hint="Keeps checking every 30 seconds until the stream goes live. Cancel to stop waiting."
+                    onChange={(value) => {
+                        change('waitForLive', value);
+                    }}
+                />
+            </fieldset>
+
+            <fieldset className="panel">
                 <legend>BROWSER COOKIES</legend>
                 <ToggleField
                     label="Use cookies from my browser"

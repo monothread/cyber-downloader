@@ -44,6 +44,9 @@ export function createMockApi(): MockApiHandle {
         cancelJob: vi.fn(async () => {
             return undefined;
         }),
+        stopJob: vi.fn(async () => {
+            return undefined;
+        }),
         retryJob: vi.fn(async () => {
             return undefined;
         }),
@@ -165,6 +168,9 @@ export function makeJob(overrides: Partial<DownloadJob> = {}): DownloadJob {
         error: null,
         createdAt: 1,
         pageUrl: null,
+        live: false,
+        elapsedSeconds: 0,
+        downloadedBytes: 0,
         ...overrides
     };
 }

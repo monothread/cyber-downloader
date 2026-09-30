@@ -133,6 +133,21 @@ describe('useAppStore queue actions', () => {
     });
 });
 
+describe('useAppStore live recordings', () => {
+    it('asks the main process to stop a live recording and keep it', async () => {
+        await useAppStore.getState().stopJob('live-1');
+        expect(mock.api.stopJob).toHaveBeenCalledWith('live-1');
+        expect(mock.api.cancelJob).not.toHaveBeenCalled();
+    });
+
+    it('shows the elapsed time and size pushed while recording', async () => {
+        await useAppStore.getState().init();
+        mock.emitJobUpdate(makeJob({ id: 'live-1', live: true, elapsedSeconds: 3, downloadedBytes: 2048 }));
+        mock.emitJobUpdate(makeJob({ id: 'live-1', live: true, elapsedSeconds: 4, downloadedBytes: 4096 }));
+        expect(useAppStore.getState().jobs).toEqual([makeJob({ id: 'live-1', live: true, elapsedSeconds: 4, downloadedBytes: 4096 })]);
+    });
+});
+
 describe('useAppStore history', () => {
     it('refreshes the history from the API', async () => {
         mock.api.listHistory.mockResolvedValueOnce([HISTORY_ENTRY]);
