@@ -102,7 +102,9 @@ function isPresent(...names) {
 function extractZip(archivePath, destination) {
     mkdirSync(destination, { recursive: true });
     if (process.platform === 'win32') {
-        execFileSync('tar', ['-xf', archivePath, '-C', destination]);
+        // The "tar" first in PATH may be Git for Windows' GNU tar, which cannot read zip files; Windows' own bsdtar can.
+        const systemTar = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
+        execFileSync(existsSync(systemTar) ? systemTar : 'tar', ['-xf', archivePath, '-C', destination]);
         return;
     }
     execFileSync('unzip', ['-o', '-q', archivePath, '-d', destination]);
