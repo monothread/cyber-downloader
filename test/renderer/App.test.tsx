@@ -102,8 +102,36 @@ describe('App', () => {
 });
 
 describe('App theme', () => {
+    let prefersDark = false;
+    const listeners = new Set<() => void>();
+
+    beforeEach(() => {
+        prefersDark = false;
+        listeners.clear();
+        window.localStorage.clear();
+        Object.defineProperty(window, 'matchMedia', {
+            configurable: true,
+            writable: true,
+            value: (query: string) => {
+                return {
+                    media: query,
+                    get matches() {
+                        return prefersDark;
+                    },
+                    addEventListener: (_type: string, listener: () => void) => {
+                        listeners.add(listener);
+                    },
+                    removeEventListener: (_type: string, listener: () => void) => {
+                        listeners.delete(listener);
+                    }
+                };
+            }
+        });
+    });
+
     afterEach(() => {
         delete document.documentElement.dataset.theme;
+        Reflect.deleteProperty(window, 'matchMedia');
     });
 
     it.each(['cyberpunk', 'dark', 'light'] as const)('applies the %s theme from the stored settings', async (theme) => {
@@ -113,22 +141,69 @@ describe('App theme', () => {
         expect(document.documentElement.dataset.theme).toBe(theme);
     });
 
-    it('uses the cyberpunk theme by default', async () => {
+    it('uses device by default and follows a dark system', async () => {
+        prefersDark = true;
         render(<App />);
         await screen.findByLabelText('Link 1');
-        expect(document.documentElement.dataset.theme).toBe('cyberpunk');
+        expect(DEFAULT_SETTINGS.theme).toBe('device');
+        expect(document.documentElement.dataset.theme).toBe('dark');
     });
 
-    it('changes the theme as soon as it is chosen in the settings', async () => {
+    it('uses device by default and follows a light system', async () => {
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        expect(document.documentElement.dataset.theme).toBe('light');
+    });
+
+    it('follows the system when it switches between light and dark while open', async () => {
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        expect(document.documentElement.dataset.theme).toBe('light');
+        expect(listeners.size).toBe(1);
+        prefersDark = true;
+        act(() => {
+            listeners.forEach((listener) => {
+                listener();
+            });
+        });
+        expect(document.documentElement.dataset.theme).toBe('dark');
+    });
+
+    it.each(['cyberpunk', 'dark', 'light'] as const)('does not follow the system with the %s theme', async (theme) => {
+        mock.api.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS, theme });
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        expect(listeners.size).toBe(0);
+    });
+
+    it('stops following the system once a fixed theme is chosen', async () => {
         const user = userEvent.setup();
         render(<App />);
         await screen.findByLabelText('Link 1');
         await user.click(screen.getByRole('button', { name: 'SETTINGS' }));
-        await user.selectOptions(screen.getByLabelText('Theme'), 'light');
+        await user.selectOptions(screen.getByLabelText('Theme'), 'cyberpunk');
         await waitFor(() => {
-            expect(document.documentElement.dataset.theme).toBe('light');
+            expect(document.documentElement.dataset.theme).toBe('cyberpunk');
         });
-        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, theme: 'light' });
+        expect(listeners.size).toBe(0);
+    });
+
+    it('changes the theme as soon as it is chosen in the settings and saves it', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        await user.click(screen.getByRole('button', { name: 'SETTINGS' }));
+        await user.selectOptions(screen.getByLabelText('Theme'), 'dark');
+        await waitFor(() => {
+            expect(document.documentElement.dataset.theme).toBe('dark');
+        });
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, theme: 'dark' });
+    });
+
+    it('remembers the applied theme for the next start', async () => {
+        mock.api.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS, theme: 'cyberpunk' });
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        expect(window.localStorage.getItem('cyber-dl-theme')).toBe('cyberpunk');
     });
 });
-

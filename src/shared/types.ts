@@ -6,7 +6,7 @@ export interface LinkRequest {
     downloadDir: string | null;
 }
 
-export type ThemeName = 'cyberpunk' | 'dark' | 'light';
+export type ThemeName = 'device' | 'cyberpunk' | 'dark' | 'light';
 export type BrowserName = 'chrome' | 'firefox' | 'brave' | 'chromium' | 'edge' | 'opera' | 'vivaldi';
 export type MaxResolution = 'best' | '2160' | '1440' | '1080' | '720' | '480';
 

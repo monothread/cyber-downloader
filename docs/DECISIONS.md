@@ -132,10 +132,10 @@ New setting `jsRuntime` → `--js-runtimes <value>` (YouTube needs a JS runtime 
 - **Limit of "from the start":** it only works when the source still offers the earlier part (YouTube/Twitch through `--live-from-start`, or an HLS playlist kept as DVR/EVENT). A sliding-window playlist that has already dropped old segments cannot be recovered; the recording then begins at the oldest segment still available. The setting's text says so.
 - **Verified with:** a local HLS live simulator (event and sliding window) and the real yt-dlp + ffmpeg (SIGINT keeps a playable file, from-start gets the earlier segments of an event playlist), unit tests and e2e with the fake yt-dlp. Nothing was tested against any real site.
 
-## D-026 · 2026-09-30 · accepted — Themes: cyberpunk (default), dark and light
-- **What:** a `theme` setting (`cyberpunk` | `dark` | `light`, sanitized, default `cyberpunk`) chosen in Settings > APPEARANCE. It is saved with the other settings and read again when the app opens. `App` sets `data-theme` on `<html>`.
+## D-026 · 2026-09-30 · accepted — Themes: device (default), cyberpunk, dark and light
+- **What:** a `theme` setting (`device` | `cyberpunk` | `dark` | `light`, sanitized, default `device`) chosen in Settings > APPEARANCE & WINDOW. It is saved with the other settings and read again when the app opens. `device` follows the system light/dark mode (`prefers-color-scheme`) and changes live when the system does. `App` sets `data-theme` on `<html>` to the resolved theme (`resolveTheme.ts`); the last choice is also kept in `localStorage` so the first paint already uses it.
 - **How:** every colour, glow, scanline and corner cut in `cyberpunk.css` is a CSS variable; `themes.css` overrides them for `dark` and `light` (plain system font, no glow, no scanlines, no glitch, rounded corners). Adding another theme is a new block of variables.
-- **Known limit:** the page shows the default theme for a moment before the stored settings arrive from the main process.
+- **Known limit:** on the very first run the page may show the system theme for a moment before the stored settings arrive from the main process.
 
 ## D-027 · 2026-09-30 · accepted — Windows: process tree kill, STOP & SAVE by salvage, diagnostics
 - **Problem:** on Windows `child.kill('SIGINT')` does not send Ctrl+C, it terminates the process, and killing yt-dlp alone leaves the ffmpeg it started running. Verified on Linux by killing yt-dlp with SIGKILL during a recording: the ffmpeg kept writing and held the pipe open.
@@ -146,4 +146,4 @@ New setting `jsRuntime` → `--js-runtimes <value>` (YouTube needs a JS runtime 
 
 ## D-028 · 2026-09-30 · accepted — Folder per download
 - Each link row has a FOLDER button (native folder dialog, `queue:add` takes an optional absolute folder). The choice replaces `-P` for that download only (`RequestExtras.downloadDir`), is kept when the job is retried and is shown under the row ("Saving to: …") with a button to go back to the default. Relative or non-string folders are ignored in the main process. Not implemented: moving a finished file.
-- The yt-dlp update button moved from the header to Settings > YT-DLP (which also shows the installed version); the settings panels are wider (two columns of at least 440 px) with more padding so texts wrap less.
+- The yt-dlp update button moved from the header to Settings > YT-DLP (which also shows the installed version); the settings panels are wider (two columns of at least 440 px) with more padding so texts wrap less. The panels were regrouped (Appearance & Window, Output, Quality, Playlists, Live, Cookies, yt-dlp, App updates, and Advanced full width in two columns) so each row holds two panels of the same height and every panel has the same width.

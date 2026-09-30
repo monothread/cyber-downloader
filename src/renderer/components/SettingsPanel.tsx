@@ -30,9 +30,10 @@ function formatResolution(resolution: MaxResolution): string {
 }
 
 const THEME_LABELS: Record<ThemeName, string> = {
+    device: 'Device (follows the system)',
     cyberpunk: 'Cyberpunk (neon)',
-    dark: 'Dark (simple)',
-    light: 'Light (simple)'
+    dark: 'Dark',
+    light: 'Light'
 };
 
 function formatTheme(theme: ThemeName): string {
@@ -92,17 +93,31 @@ export function SettingsPanel() {
             </p>
 
             <fieldset className="panel">
-                <legend>APPEARANCE</legend>
+                <legend>APPEARANCE & WINDOW</legend>
                 <SelectField
                     label="Theme"
                     value={draft.theme}
                     options={THEMES}
                     formatOption={formatTheme}
-                    hint="Saved and restored the next time the app opens."
+                    hint="Device follows the light or dark mode of your system. Saved and restored the next time the app opens."
                     onChange={(value) => {
                         change('theme', value);
                     }}
                 />
+            
+                <ToggleField
+                    label="Keep running in the system tray when the window is closed"
+                    checked={draft.closeToTray}
+                    hint="Downloads keep going in the background. Right-click the tray icon to quit completely."
+                    onChange={(value) => {
+                        change('closeToTray', value);
+                    }}
+                />
+                {trayWarning && (
+                    <p className="field__warning" role="alert">
+                        {trayWarning}
+                    </p>
+                )}
             </fieldset>
 
             <fieldset className="panel">
@@ -183,6 +198,39 @@ export function SettingsPanel() {
             </fieldset>
 
             <fieldset className="panel">
+                <legend>PLAYLISTS & SUBTITLES</legend>
+                <ToggleField
+                    label="Download whole playlist"
+                    checked={draft.downloadPlaylist}
+                    onChange={(value) => {
+                        change('downloadPlaylist', value);
+                    }}
+                />
+                <ToggleField
+                    label="Download subtitles"
+                    checked={draft.writeSubtitles}
+                    onChange={(value) => {
+                        change('writeSubtitles', value);
+                    }}
+                />
+                <TextField
+                    label="Subtitle languages"
+                    value={draft.subtitleLangs}
+                    hint="Comma separated, e.g. en,pt"
+                    onChange={(value) => {
+                        edit('subtitleLangs', value);
+                    }}
+                />
+                <ToggleField
+                    label="Embed subtitles in the video"
+                    checked={draft.embedSubtitles}
+                    onChange={(value) => {
+                        change('embedSubtitles', value);
+                    }}
+                />
+            </fieldset>
+
+            <fieldset className="panel">
                 <legend>LIVE STREAMS</legend>
                 <ToggleField
                     label="Record live streams from the start"
@@ -230,39 +278,6 @@ export function SettingsPanel() {
             </fieldset>
 
             <fieldset className="panel">
-                <legend>PLAYLISTS & SUBTITLES</legend>
-                <ToggleField
-                    label="Download whole playlist"
-                    checked={draft.downloadPlaylist}
-                    onChange={(value) => {
-                        change('downloadPlaylist', value);
-                    }}
-                />
-                <ToggleField
-                    label="Download subtitles"
-                    checked={draft.writeSubtitles}
-                    onChange={(value) => {
-                        change('writeSubtitles', value);
-                    }}
-                />
-                <TextField
-                    label="Subtitle languages"
-                    value={draft.subtitleLangs}
-                    hint="Comma separated, e.g. en,pt"
-                    onChange={(value) => {
-                        edit('subtitleLangs', value);
-                    }}
-                />
-                <ToggleField
-                    label="Embed subtitles in the video"
-                    checked={draft.embedSubtitles}
-                    onChange={(value) => {
-                        change('embedSubtitles', value);
-                    }}
-                />
-            </fieldset>
-
-            <fieldset className="panel">
                 <legend>YT-DLP</legend>
                 <p className="update-status" aria-live="polite">
                     {binaries?.ytdlp.found ? `Installed version: ${binaries.ytdlp.version ?? 'unknown'}` : 'yt-dlp was not found.'}
@@ -283,6 +298,33 @@ export function SettingsPanel() {
             </fieldset>
 
             <fieldset className="panel">
+                <legend>APP UPDATES</legend>
+                <p className="update-status" aria-live="polite">
+                    {updateSummary(appUpdate)}
+                </p>
+                <div className="field-row">
+                    <button
+                        type="button"
+                        className="btn btn--small"
+                        disabled={updateInProgress}
+                        onClick={() => {
+                            void checkAppUpdate();
+                        }}
+                    >
+                        CHECK FOR UPDATES
+                    </button>
+                    <UpdateActions />
+                </div>
+                <ToggleField
+                    label="Check for updates on startup"
+                    checked={draft.checkUpdatesOnStart}
+                    onChange={(value) => {
+                        change('checkUpdatesOnStart', value);
+                    }}
+                />
+            </fieldset>
+
+            <fieldset className="panel panel--wide">
                 <legend>ADVANCED</legend>
                 <NumberField
                     label="Simultaneous downloads"
@@ -332,50 +374,6 @@ export function SettingsPanel() {
                     hint="Passed as-is to yt-dlp, including options that run commands (e.g. --exec). Only use arguments you trust."
                     onChange={(value) => {
                         edit('extraArgs', value);
-                    }}
-                />
-            </fieldset>
-
-            <fieldset className="panel">
-                <legend>WINDOW</legend>
-                <ToggleField
-                    label="Keep running in the system tray when the window is closed"
-                    checked={draft.closeToTray}
-                    hint="Downloads keep going in the background. Right-click the tray icon to quit completely."
-                    onChange={(value) => {
-                        change('closeToTray', value);
-                    }}
-                />
-                {trayWarning && (
-                    <p className="field__warning" role="alert">
-                        {trayWarning}
-                    </p>
-                )}
-            </fieldset>
-
-            <fieldset className="panel">
-                <legend>APP UPDATES</legend>
-                <p className="update-status" aria-live="polite">
-                    {updateSummary(appUpdate)}
-                </p>
-                <div className="field-row">
-                    <button
-                        type="button"
-                        className="btn btn--small"
-                        disabled={updateInProgress}
-                        onClick={() => {
-                            void checkAppUpdate();
-                        }}
-                    >
-                        CHECK FOR UPDATES
-                    </button>
-                    <UpdateActions />
-                </div>
-                <ToggleField
-                    label="Check for updates on startup"
-                    checked={draft.checkUpdatesOnStart}
-                    onChange={(value) => {
-                        change('checkUpdatesOnStart', value);
                     }}
                 />
             </fieldset>

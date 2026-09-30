@@ -7,6 +7,7 @@ import { Toast } from './components/Toast';
 import { UpdateBanner } from './components/UpdateBanner';
 import { UrlInput } from './components/UrlInput';
 import { useAppStore, type Tab } from './store/appStore';
+import { applyTheme, DARK_SCHEME_QUERY, rememberTheme } from './theme/resolveTheme';
 
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
     { id: 'downloads', label: 'DOWNLOADS' },
@@ -33,7 +34,19 @@ export function App() {
     });
 
     useEffect(() => {
-        document.documentElement.dataset.theme = theme;
+        applyTheme(theme);
+        rememberTheme(theme);
+        if (theme !== 'device' || typeof window.matchMedia !== 'function') {
+            return undefined;
+        }
+        const query = window.matchMedia(DARK_SCHEME_QUERY);
+        const follow = (): void => {
+            applyTheme('device');
+        };
+        query.addEventListener('change', follow);
+        return () => {
+            query.removeEventListener('change', follow);
+        };
     }, [theme]);
 
     useEffect(() => {

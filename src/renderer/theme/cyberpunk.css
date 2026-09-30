@@ -341,7 +341,9 @@ body::after {
 
 .empty { color: var(--muted); text-align: center; padding: 32px 0; letter-spacing: 2px; }
 
-.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 18px; align-items: start; }
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 18px; align-items: stretch; }
+.panel.panel--wide { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); column-gap: 18px; align-content: start; }
+.panel.panel--wide > legend { grid-column: 1 / -1; }
 
 .panel {
     background: var(--panel);

@@ -100,15 +100,15 @@ describe('sanitizeSettings', () => {
 });
 
 describe('sanitizeSettings theme', () => {
-    it.each(['cyberpunk', 'dark', 'light'])('keeps the %s theme', (theme) => {
+    it.each(['device', 'cyberpunk', 'dark', 'light'])('keeps the %s theme', (theme) => {
         expect(sanitizeSettings({ theme }).theme).toBe(theme);
     });
 
-    it('defaults to cyberpunk when it is missing, unknown or not a string', () => {
-        expect(DEFAULT_SETTINGS.theme).toBe('cyberpunk');
-        expect(sanitizeSettings({}).theme).toBe('cyberpunk');
-        expect(sanitizeSettings({ theme: 'solarized' }).theme).toBe('cyberpunk');
-        expect(sanitizeSettings({ theme: 3 }).theme).toBe('cyberpunk');
+    it('defaults to device when it is missing, unknown or not a string', () => {
+        expect(DEFAULT_SETTINGS.theme).toBe('device');
+        expect(sanitizeSettings({}).theme).toBe('device');
+        expect(sanitizeSettings({ theme: 'solarized' }).theme).toBe('device');
+        expect(sanitizeSettings({ theme: 3 }).theme).toBe('device');
     });
 });
 

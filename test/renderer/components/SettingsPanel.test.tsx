@@ -38,7 +38,7 @@ function type(label: string, value: string): void {
 describe('SettingsPanel layout', () => {
     it('renders every section with the stored values', () => {
         render(<SettingsPanel />);
-        ['APPEARANCE', 'OUTPUT', 'QUALITY & FORMAT', 'LIVE STREAMS', 'BROWSER COOKIES', 'PLAYLISTS & SUBTITLES', 'YT-DLP', 'ADVANCED', 'WINDOW', 'APP UPDATES'].forEach((legend) => {
+        ['APPEARANCE & WINDOW', 'OUTPUT', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'APP UPDATES', 'ADVANCED'].forEach((legend) => {
             expect(screen.getByText(legend)).toBeInTheDocument();
         });
         expect(screen.getByLabelText('Download folder')).toHaveValue('');
@@ -323,23 +323,24 @@ describe('SettingsPanel live streams', () => {
 });
 
 describe('SettingsPanel theme', () => {
-    it('offers the three themes, cyberpunk being the default', () => {
+    it('offers device, cyberpunk, dark and light, device being the default', () => {
         render(<SettingsPanel />);
         const select = screen.getByLabelText('Theme') as HTMLSelectElement;
-        expect(select).toHaveValue('cyberpunk');
+        expect(select).toHaveValue('device');
         expect(
             Array.from(select.options).map((option) => {
                 return [option.value, option.textContent];
             })
         ).toEqual([
+            ['device', 'Device (follows the system)'],
             ['cyberpunk', 'Cyberpunk (neon)'],
-            ['dark', 'Dark (simple)'],
-            ['light', 'Light (simple)']
+            ['dark', 'Dark'],
+            ['light', 'Light']
         ]);
-        expect(screen.getByText('Saved and restored the next time the app opens.')).toBeInTheDocument();
+        expect(screen.getByText('Device follows the light or dark mode of your system. Saved and restored the next time the app opens.')).toBeInTheDocument();
     });
 
-    it.each(['dark', 'light'] as const)('saves right away when %s is chosen', async (theme) => {
+    it.each(['cyberpunk', 'dark', 'light'] as const)('saves right away when %s is chosen', async (theme) => {
         render(<SettingsPanel />);
         fireEvent.change(screen.getByLabelText('Theme'), { target: { value: theme } });
         await flushPromises();

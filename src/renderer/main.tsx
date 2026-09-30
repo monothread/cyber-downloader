@@ -4,6 +4,9 @@ import { App } from './App';
 import { BridgeMissing } from './components/BridgeMissing';
 import './theme/cyberpunk.css';
 import './theme/themes.css';
+import { applyTheme, rememberedTheme } from './theme/resolveTheme';
+
+applyTheme(rememberedTheme());
 
 const container = document.getElementById('root');
 if (container) {

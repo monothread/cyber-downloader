@@ -393,20 +393,33 @@ test.describe('themes', () => {
         });
     }
 
-    test('cyberpunk is the default theme', async () => {
+    test('device is the default theme and follows the system light or dark mode', async () => {
         const { page } = session;
-        await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
-        expect(await backgroundOf(page)).toBe(BACKGROUNDS.cyberpunk);
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+        expect(await backgroundOf(page)).toBe(BACKGROUNDS.dark);
+        await page.emulateMedia({ colorScheme: 'light' });
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+        expect(await backgroundOf(page)).toBe(BACKGROUNDS.light);
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect(page.getByLabel('Theme')).toHaveValue('device');
+    });
+
+    test('offers device, cyberpunk, dark and light', async () => {
+        const { page } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        const options = await page.getByLabel('Theme').locator('option').allTextContents();
+        expect(options).toEqual(['Device (follows the system)', 'Cyberpunk (neon)', 'Dark', 'Light']);
     });
 
     test('choosing a theme changes the look right away and saves it', async () => {
         const { page, userData } = session;
         await page.getByRole('button', { name: 'SETTINGS' }).click();
-        await page.getByLabel('Theme').selectOption('light');
-        await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-        expect(await backgroundOf(page)).toBe(BACKGROUNDS.light);
+        await page.getByLabel('Theme').selectOption('cyberpunk');
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
+        expect(await backgroundOf(page)).toBe(BACKGROUNDS.cyberpunk);
         await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
-        expect(readSettings(userData).theme).toBe('light');
+        expect(readSettings(userData).theme).toBe('cyberpunk');
 
         await page.getByLabel('Theme').selectOption('dark');
         await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -414,6 +427,15 @@ test.describe('themes', () => {
         await expect.poll(() => {
             return readSettings(userData).theme;
         }).toBe('dark');
+    });
+
+    test('a fixed theme ignores the system mode', async () => {
+        const { page } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Theme').selectOption('light');
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+        expect(await backgroundOf(page)).toBe(BACKGROUNDS.light);
     });
 
     test('the simple themes have no scanlines and no glow on the logo', async () => {
@@ -432,7 +454,7 @@ test.describe('themes', () => {
     test('the chosen theme is still there after closing and opening the app again', async () => {
         const { page, app, userData, downloadDir } = session;
         await page.getByRole('button', { name: 'SETTINGS' }).click();
-        await page.getByLabel('Theme').selectOption('light');
+        await page.getByLabel('Theme').selectOption('cyberpunk');
         await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
         await app.close();
 
@@ -443,14 +465,50 @@ test.describe('themes', () => {
         try {
             const reopenedPage = await reopened.firstWindow();
             await reopenedPage.waitForSelector('.logo');
-            await expect(reopenedPage.locator('html')).toHaveAttribute('data-theme', 'light');
-            expect(await backgroundOf(reopenedPage)).toBe(BACKGROUNDS.light);
+            await expect(reopenedPage.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
+            expect(await backgroundOf(reopenedPage)).toBe(BACKGROUNDS.cyberpunk);
             await reopenedPage.getByRole('button', { name: 'SETTINGS' }).click();
-            await expect(reopenedPage.getByLabel('Theme')).toHaveValue('light');
-            expect(readSettings(userData)).toMatchObject({ theme: 'light', downloadDir });
+            await expect(reopenedPage.getByLabel('Theme')).toHaveValue('cyberpunk');
+            expect(readSettings(userData)).toMatchObject({ theme: 'cyberpunk', downloadDir });
         } finally {
             await reopened.close();
         }
+    });
+});
+
+test.describe('settings layout', () => {
+    test('the panels have the same width and the panels of a row have the same height', async () => {
+        const { page } = session;
+        await page.setViewportSize({ width: 1100, height: 900 });
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        const boxes = await page.locator('.settings .panel').evaluateAll((panels) => {
+            return panels.map((panel) => {
+                const rect = panel.getBoundingClientRect();
+                return { legend: panel.querySelector('legend')?.textContent ?? '', wide: panel.classList.contains('panel--wide'), top: Math.round(rect.top + window.scrollY), width: Math.round(rect.width), height: Math.round(rect.height) };
+            });
+        });
+        expect(boxes.map((box) => {
+            return box.legend;
+        })).toEqual(['APPEARANCE & WINDOW', 'OUTPUT', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'APP UPDATES', 'ADVANCED']);
+        const regular = boxes.filter((box) => {
+            return !box.wide;
+        });
+        expect(new Set(regular.map((box) => {
+            return box.width;
+        })).size).toBe(1);
+        const rows = new Map<number, number[]>();
+        regular.forEach((box) => {
+            rows.set(box.top, [...(rows.get(box.top) ?? []), box.height]);
+        });
+        expect(rows.size).toBe(4);
+        rows.forEach((heights) => {
+            expect(heights).toHaveLength(2);
+            expect(heights[0]).toBe(heights[1]);
+        });
+        const advanced = boxes.find((box) => {
+            return box.wide;
+        });
+        expect(advanced?.width).toBeGreaterThan((regular[0]?.width ?? 0) * 1.8);
     });
 });
 
