@@ -1,24 +1,24 @@
-# Workflow multi-sessão / multi-agente
+# Multi-session / multi-agent workflow
 
-## Ao iniciar
-1. Ler `PROGRESS.md` (achar tarefas `TODO` sem dependência pendente).
-2. Ler `DECISIONS.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`.
-3. Reservar a tarefa: mudar status para `DOING` e preencher `Dono` (ex.: `sessão-2026-09-30-a`).
+## When starting
+1. Read `PROGRESS.md` (find `TODO` tasks with no pending dependency).
+2. Read `DECISIONS.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`.
+3. Claim the task: set its status to `DOING` and fill in `Owner` (e.g. `session-2026-09-30-a`).
 
-## Durante
-- Trabalhar em uma tarefa por vez; respeitar os arquivos listados na tarefa para evitar conflito entre agentes paralelos.
-- Tarefas de fases diferentes só rodam em paralelo se não compartilham arquivos (coluna `Arquivos`).
-- Decisão nova ou mudança de rumo → nova entrada em `DECISIONS.md`.
-- Erro yt-dlp novo mapeado → `ERRORS.md`.
+## While working
+- Work on one task at a time; respect the files listed in the task to avoid conflicts between parallel agents.
+- Tasks from different phases can only run in parallel if they do not share files (`Files` column).
+- New decision or change of direction → new entry in `DECISIONS.md`.
+- New yt-dlp error mapped → `ERRORS.md`.
 
-## Ao terminar
-1. Rodar verificações de `CONVENTIONS.md` (tsc, eslint, vitest).
-2. Marcar tarefa `DONE` em `PROGRESS.md` + nota de handoff (o que foi feito, o que falta, armadilhas).
-3. Acrescentar entrada em `LOG.md` (data, dono, resumo, arquivos).
+## When finishing
+1. Run the checks from `CONVENTIONS.md` (tsc, eslint, vitest).
+2. Mark the task `DONE` in `PROGRESS.md` with a handoff note (what was done, what is missing, pitfalls).
+3. Append an entry to `LOG.md` (date, owner, summary, files).
 
-## Status permitidos
-`TODO` · `DOING` · `BLOCKED` (explicar) · `DONE`
+## Allowed statuses
+`TODO` · `DOING` · `BLOCKED` (explain why) · `DONE`
 
-## Paralelização sugerida
-- Fase 2: `ytdlpArgsBuilder`, `progressParser`, `errorMapper`, stores são independentes → agentes distintos.
-- Fase 4: componentes de UI independentes após Fase 3 (contrato do preload fechado).
+## Suggested parallelization
+- Phase 2: `ytdlpArgsBuilder`, `progressParser`, `errorMapper` and the stores are independent → separate agents.
+- Phase 4: UI components are independent once Phase 3 is done (preload contract closed).

@@ -1,55 +1,60 @@
-# Arquitetura
+# Architecture
 
-## Estrutura de pastas
+## Folder structure
 ```
 src/
-  shared/        types.ts (Settings, DownloadJob, DownloadStatus, HistoryEntry, IpcChannels), constants.ts
+  shared/        types.ts (Settings, DownloadJob, DownloadStatus, HistoryEntry, ...), constants.ts (IPC channels, defaults), url.ts
   main/
-    index.ts                    # janela, ciclo de vida
-    ipc/registerHandlers.ts     # canais tipados
+    index.ts                    # window, lifecycle, wiring
+    ipc/registerHandlers.ts     # typed IPC channels
     services/
-      binaryResolver.ts         # onde está cada binário (custom > atualizado > embutido > sistema)
-      binaryLocator.ts          # probe de versão dos binários resolvidos
-      ytdlpArgsBuilder.ts       # Settings + URL -> string[] (função pura)
-      ytdlpRunner.ts            # spawn, progresso, cancelamento
-      progressParser.ts         # parse de --progress-template
+      binaryResolver.ts         # where each binary lives (custom > updated > bundled > system)
+      binaryLocator.ts          # version probe of the resolved binaries
+      ytdlpArgsBuilder.ts       # Settings + URL -> string[] (pure function)
+      ytdlpRunner.ts            # spawn, progress, cancellation
+      progressParser.ts         # parses the --progress-template output
       errorMapper.ts            # stderr -> { code, title, hint, raw }
-      queueManager.ts           # fila + concorrência
+      queueManager.ts           # queue + concurrency
       jsonStore.ts / settingsSanitizer.ts / settingsStore.ts / historyStore.ts
-      updater.ts                # atualiza yt-dlp (download verificado p/ userData/bin)
-  preload/index.ts              # contextBridge com API tipada
+      updater.ts                # updates yt-dlp (verified download into userData/bin)
+      appUpdateService.ts       # app self-update state machine (electron-updater)
+      electronUpdater.ts        # thin adapter around electron-updater's autoUpdater
+  preload/index.ts              # contextBridge with a typed API
   renderer/
     App.tsx, theme/cyberpunk.css
-    components/ UrlInput, QueueList, JobCard, SettingsPanel, HistoryList, ErrorBanner, BinaryStatus
+    components/ UrlInput, QueueList, JobCard, SettingsPanel, HistoryList, ErrorBanner, BinaryStatus,
+                Toast, UpdateBanner, UpdateActions, fields
     store/ (zustand)
-test/            # unit espelhando src
-test/e2e/        # Playwright-Electron (yt-dlp fake via stub)
+test/            # unit tests mirroring src
+test/e2e/        # Playwright-Electron (fake yt-dlp via stub)
+scripts/         # fetch-binaries.mjs
+resources/       # icon.png, THIRD_PARTY_NOTICES.md, bin/ (git-ignored)
 docs/
 ```
 
-## Fluxo
-Renderer (React) → `window.api` (preload, tipado) → IPC → `registerHandlers` → `queueManager` → `ytdlpRunner` (spawn) → eventos de progresso/erro/fim → IPC push → store Zustand → UI.
+## Flow
+Renderer (React) → `window.api` (preload, typed) → IPC → `registerHandlers` → `queueManager` → `ytdlpRunner` (spawn) → progress/error/finish events → IPC push → Zustand store → UI.
 
-## Feature → args do yt-dlp (`ytdlpArgsBuilder`)
+## Feature → yt-dlp args (`ytdlpArgsBuilder`)
 | Feature | Args |
 |---|---|
-| Pasta padrão | `-P <dir>` (fallback `~/Downloads`) |
-| Cookies do browser | `--cookies-from-browser <browser>[:perfil]` (opcional, off por padrão) |
-| Melhor áudio+vídeo | `-f "bv*+ba/b"`; teto: `bv*[height<=N]+ba/b` |
-| Formato de saída | `--merge-output-format mp4\|mkv\|webm` |
-| Só áudio | `-x --audio-format mp3\|m4a\|opus [--audio-quality]` |
-| Tamanho do título | `-o "%(title).{N}s [%(id)s].%(ext)s" --trim-filenames` |
+| Default folder | `-P <dir>` (fallback `~/Downloads`) |
+| Browser cookies | `--cookies-from-browser <browser>[:profile]` (optional, off by default) |
+| Best audio + video | `-f "bv*+ba/b"`; capped: `bv*[height<=N]+ba/b[height<=N]` |
+| Output format | `--merge-output-format mp4\|mkv\|webm` |
+| Audio only | `-x --audio-format mp3\|m4a\|opus` |
+| Title length | `-o "%(title).{N}s [%(id)s].%(ext)s" --trim-filenames 240` |
 | Playlist | `--yes-playlist` / `--no-playlist` |
-| Legendas | `--write-subs --sub-langs <..> [--embed-subs]` |
-| Progresso | `--newline --progress-template "download:%(progress._percent_str)s\|%(progress._speed_str)s\|%(progress._eta_str)s"` |
-| Extras | limite de banda, concorrência, caminhos custom, args extras |
+| Subtitles | `--write-subs --sub-langs <..> [--embed-subs]` |
+| Progress | `--newline --progress-template "download:CYBERPROG\|%(progress._percent_str)s\|..."` plus `--print after_move:CYBERFILE\|%(filepath)s` |
+| Extras | rate limit, concurrency, custom paths, JS runtime, extra args |
 
-## Tema
-Neon ciano/magenta/amarelo sobre fundo escuro, fonte mono, scanlines, glitch em títulos, bordas com glow. Erros em vermelho neon.
+## Theme
+Neon cyan/magenta/yellow on a dark background, mono font, scanlines, glitch on titles, glowing borders. Errors in neon red.
 
-## Testes
-- Unit: `test/main/**`, `test/renderer/**`, `test/shared/**`; helpers em `test/helpers/` (`mockApi.ts`, `fakeChild.ts`, `tempDir.ts`).
-- e2e: `test/e2e/app.e2e-spec.ts` lança o Electron real (`npm run build` antes) com `--user-data-dir` temporário e `FAKE_YTDLP_LOG` para registrar argv do yt-dlp falso.
+## Tests
+- Unit: `test/main/**`, `test/renderer/**`, `test/shared/**`; helpers in `test/helpers/` (`mockApi.ts`, `fakeChild.ts`, `tempDir.ts`).
+- e2e: `test/e2e/app.e2e-spec.ts` launches the real Electron app (run `npm run build` first) with a temporary `--user-data-dir` and `FAKE_YTDLP_LOG` to record the fake yt-dlp's argv and `PATH`.
 
-## Binários embutidos
-`scripts/fetch-binaries.mjs` → `resources/bin/{yt-dlp,ffmpeg,ffprobe,deno,ffmpeg-GPLv3.txt}` (git-ignored). Em dev o app usa `<appPath>/resources/bin`; empacotado, `process.resourcesPath/bin`. Ver D-013.
+## Bundled binaries
+`scripts/fetch-binaries.mjs` → `resources/bin/{yt-dlp,ffmpeg,ffprobe,deno,ffmpeg-GPLv3.txt}` (git-ignored). In dev the app uses `<appPath>/resources/bin`; packaged, `process.resourcesPath/bin`. See D-013.

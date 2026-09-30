@@ -1,24 +1,24 @@
-# Cyber Downloader — Documentação
+# Cyber Downloader — Documentation
 
-App desktop Linux (Electron + React + TypeScript) que encapsula o `yt-dlp`, com tema cyberpunk.
+Linux desktop app (Electron + React + TypeScript) that wraps `yt-dlp`, with a cyberpunk theme.
 
-## Comece por aqui (sessões/agentes novos)
-1. Leia `PROGRESS.md` — estado atual e próxima tarefa.
-2. Leia `DECISIONS.md` — decisões já tomadas (não reabra sem motivo).
-3. Leia `ARCHITECTURE.md` e `CONVENTIONS.md` antes de escrever código.
-4. Siga `WORKFLOW.md` (protocolo de handoff) ao começar e ao terminar.
+## Start here (new sessions/agents)
+1. Read `PROGRESS.md` — current state and next task.
+2. Read `DECISIONS.md` — decisions already made (do not reopen them without a reason).
+3. Read `ARCHITECTURE.md` and `CONVENTIONS.md` before writing code.
+4. Follow `WORKFLOW.md` (handoff protocol) when starting and finishing.
 
-## Índice
-| Arquivo | Conteúdo |
+## Index
+| File | Contents |
 |---|---|
-| `PROGRESS.md` | Checklist por fase/tarefa, status, dono, notas de handoff |
-| `DECISIONS.md` | Registro de decisões (ADR leve), com contexto e consequências |
-| `ARCHITECTURE.md` | Estrutura de pastas, módulos, fluxo IPC, mapeamento feature → args do yt-dlp |
-| `CONVENTIONS.md` | Padrões de código, testes, lint, commits |
-| `WORKFLOW.md` | Como retomar trabalho, dividir tarefas entre agentes, atualizar docs |
-| `ERRORS.md` | Catálogo de erros do yt-dlp e mensagens amigáveis |
-| `RELEASING.md` | Como publicar uma versão e como o app se atualiza |
-| `LOG.md` | Diário cronológico de sessões (append-only) |
+| `PROGRESS.md` | Checklist per phase/task, status, owner, handoff notes |
+| `DECISIONS.md` | Decision log (lightweight ADR) with context and consequences |
+| `ARCHITECTURE.md` | Folder structure, modules, IPC flow, feature → yt-dlp args mapping |
+| `CONVENTIONS.md` | Code, test, lint and commit standards |
+| `WORKFLOW.md` | How to resume work, split tasks between agents, update docs |
+| `ERRORS.md` | Catalog of yt-dlp errors and friendly messages |
+| `RELEASING.md` | How to publish a version and how the app updates itself |
+| `LOG.md` | Chronological session diary (append-only) |
 
-## Regra de ouro
-Toda sessão termina com `PROGRESS.md` e `LOG.md` atualizados. Decisão nova → entrada em `DECISIONS.md`.
+## Golden rule
+Every session ends with `PROGRESS.md` and `LOG.md` updated. A new decision means a new entry in `DECISIONS.md`.

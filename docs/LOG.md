@@ -1,14 +1,15 @@
-# Diário de sessões (append-only)
+# Session diary (append-only)
 
-## 2026-09-30 · sessão-2026-09-30-a
-- Plano aprovado (Electron + React, yt-dlp do sistema, escopo completo).
-- Ambiente verificado: Node 22.23.2, npm 10.9.8, yt-dlp 2026.08.19, ffmpeg presente.
-- Criada a pasta `docs/` (README, DECISIONS, ARCHITECTURE, CONVENTIONS, WORKFLOW, PROGRESS, ERRORS, LOG).
-- `npm install` inicialmente interrompido; depois autorizado ("pode continuar todo o desenvolvimento").
-- Implementado: scaffold, tipos compartilhados, serviços do main (args builder, parser, error mapper, runner, queue, stores, binaries, updater), IPC + preload, UI React cyberpunk completa, testes unit (216) e e2e (9).
-- Binário do Electron baixado via `node node_modules/electron/install.js` (o postinstall não havia baixado).
-- Download de teste real com yt-dlp (vídeo curto) para validar o formato de saída; arquivo removido.
-- Restante: gerar artefatos de empacotamento (aguarda confirmação).
-- Pendências resolvidas: setting `jsRuntime`, aviso em extraArgs, ícone `resources/icon.png`, `npm run dist` (AppImage + deb em `dist/`). Git deixado de fora a pedido.
-- Binários embutidos (D-013): BinaryResolver, updater com download verificado, fetch-binaries.mjs, notices de licença, testes (243 unit, 11 e2e). Pacotes regerados (AppImage 256 MB, deb 210 MB).
-- Auto-atualização (D-014): electron-updater + GitHub Releases, UI e testes (294 unit, 13 e2e); artefatos agora `cyber-downloader-<versão>.{AppImage,deb}`; `docs/RELEASING.md` criado.
+## 2026-09-30 · session-2026-09-30-a
+- Plan approved (Electron + React, system yt-dlp, full scope).
+- Environment checked: Node 22.23.2, npm 10.9.8, yt-dlp 2026.08.19, ffmpeg present.
+- Created the `docs/` folder (README, DECISIONS, ARCHITECTURE, CONVENTIONS, WORKFLOW, PROGRESS, ERRORS, LOG).
+- `npm install` was first interrupted, then authorized ("go ahead with the whole development").
+- Implemented: scaffold, shared types, main-process services (args builder, parser, error mapper, runner, queue, stores, binaries, updater), IPC + preload, the full cyberpunk React UI, unit tests (216) and e2e tests (9).
+- Electron binary downloaded with `node node_modules/electron/install.js` (the postinstall had not fetched it).
+- Real yt-dlp test download (short video) to validate the output format; file removed.
+- Pending issues resolved: `jsRuntime` setting, warning on extra args, `resources/icon.png` icon, `npm run dist` (AppImage + deb in `dist/`).
+- Bundled binaries (D-013): BinaryResolver, updater with verified download, fetch-binaries.mjs, license notices, tests (243 unit, 11 e2e). Packages rebuilt (AppImage 256 MB, deb 210 MB).
+- App self-update (D-014): electron-updater + GitHub Releases, UI and tests (294 unit, 13 e2e); artifacts now `cyber-downloader-<version>.{AppImage,deb}`; `docs/RELEASING.md` created.
+- Git: repository initialized, code pushed to `monothread/cyber-downloader` on `main` (rebased on top of the GitHub-created LICENSE commit, no force push). MIT `LICENSE` kept from the remote.
+- Docs translated to English.
