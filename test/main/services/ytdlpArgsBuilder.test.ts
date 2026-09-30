@@ -292,3 +292,25 @@ describe('buildYtdlpArgs for live streams', () => {
     });
 });
 
+describe('buildYtdlpArgs with a folder chosen for one download', () => {
+    it('uses that folder instead of the one in the settings', () => {
+        const args = buildYtdlpArgs(URL, { ...DEFAULT_SETTINGS, downloadDir: '/from/settings' }, DEFAULT_DIR, null, { downloadDir: '/only/this' });
+        expect(args[args.indexOf('-P') + 1]).toBe('/only/this');
+    });
+
+    it('uses that folder instead of the default one when the settings have none', () => {
+        const args = buildYtdlpArgs(URL, { ...DEFAULT_SETTINGS, downloadDir: '' }, DEFAULT_DIR, null, { downloadDir: '/only/this' });
+        expect(args[args.indexOf('-P') + 1]).toBe('/only/this');
+    });
+
+    it('keeps the folder from the settings when no folder is chosen', () => {
+        const args = buildYtdlpArgs(URL, { ...DEFAULT_SETTINGS, downloadDir: '/from/settings' }, DEFAULT_DIR, null, {});
+        expect(args[args.indexOf('-P') + 1]).toBe('/from/settings');
+    });
+
+    it('falls back to the default folder when neither is set', () => {
+        const args = buildYtdlpArgs(URL, { ...DEFAULT_SETTINGS, downloadDir: '' }, DEFAULT_DIR, null);
+        expect(args[args.indexOf('-P') + 1]).toBe(DEFAULT_DIR);
+    });
+});
+

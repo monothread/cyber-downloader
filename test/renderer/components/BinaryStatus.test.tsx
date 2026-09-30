@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen } from '@testing-library/react';
 import { BinaryStatus } from '@renderer/components/BinaryStatus';
 import { useAppStore } from '@renderer/store/appStore';
-import { installMockApi, type MockApiHandle } from '../../helpers/mockApi';
+import { installMockApi } from '../../helpers/mockApi';
 
-let mock: MockApiHandle;
 const initial = useAppStore.getState();
 
 beforeEach(() => {
-    mock = installMockApi();
+    installMockApi();
     useAppStore.setState({ ...initial, binaries: null, updating: false, notice: null });
 });
 
@@ -47,17 +45,8 @@ describe('BinaryStatus', () => {
         expect(screen.getByText('ffmpeg')).toHaveClass('chip--ok');
     });
 
-    it('updates yt-dlp when the button is clicked', async () => {
+    it('no longer has the yt-dlp update button (it lives in the settings)', () => {
         render(<BinaryStatus />);
-        await userEvent.setup().click(screen.getByRole('button', { name: 'UPDATE YT-DLP' }));
-        await waitFor(() => {
-            expect(mock.api.updateYtdlp).toHaveBeenCalledTimes(1);
-        });
-    });
-
-    it('disables the button while updating', () => {
-        useAppStore.setState({ updating: true });
-        render(<BinaryStatus />);
-        expect(screen.getByRole('button', { name: 'UPDATING…' })).toBeDisabled();
+        expect(screen.queryByRole('button')).not.toBeInTheDocument();
     });
 });

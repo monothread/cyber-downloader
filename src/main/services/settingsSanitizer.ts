@@ -7,6 +7,7 @@ import {
     MIN_CONCURRENT,
     MIN_TITLE_LENGTH,
     RESOLUTIONS,
+    THEMES,
     VIDEO_CONTAINERS
 } from '@shared/constants';
 import type { Settings } from '@shared/types';
@@ -66,6 +67,7 @@ export function sanitizeSettings(input: unknown): Settings {
         closeToTray: pickBoolean(raw.closeToTray, defaults.closeToTray),
         liveFromStart: pickBoolean(raw.liveFromStart, defaults.liveFromStart),
         waitForLive: pickBoolean(raw.waitForLive, defaults.waitForLive),
+        theme: pickEnum(raw.theme, THEMES, defaults.theme),
         extraArgs: pickString(raw.extraArgs, defaults.extraArgs)
     };
 }

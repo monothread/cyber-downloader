@@ -203,3 +203,107 @@ describe('UrlInput audio toggle', () => {
         });
     });
 });
+
+describe('UrlInput folder for one link', () => {
+    it('offers a folder button on every row, unmarked by default', () => {
+        render(<UrlInput />);
+        const button = screen.getByRole('button', { name: 'Choose folder for link 1' });
+        expect(button).toHaveTextContent('FOLDER');
+        expect(button).toHaveClass('btn--ghost');
+        expect(button).toHaveAttribute('title', 'Save this link in another folder');
+        expect(screen.queryByText(/Saving to:/)).not.toBeInTheDocument();
+    });
+
+    it('shows the chosen folder and sends it together with the link', async () => {
+        const user = userEvent.setup();
+        mock.api.chooseDirectory.mockResolvedValueOnce('/media/special');
+        mock.api.addDownload.mockResolvedValue({ ok: true, job: null, message: null });
+        render(<UrlInput />);
+        await user.type(link(1), 'https://a.com/v');
+        await user.click(screen.getByRole('button', { name: 'Choose folder for link 1' }));
+        expect(await screen.findByText('Saving to: /media/special')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Choose folder for link 1' })).toHaveClass('btn--hot');
+        expect(screen.getByRole('button', { name: 'Choose folder for link 1' })).toHaveAttribute('title', '/media/special');
+        await submit();
+        await waitFor(() => {
+            expect(mock.api.addDownload).toHaveBeenCalledTimes(1);
+        });
+        expect(mock.api.addDownload).toHaveBeenCalledWith('https://a.com/v', '/media/special');
+    });
+
+    it('keeps the choice of each row separate', async () => {
+        const user = userEvent.setup();
+        mock.api.chooseDirectory.mockResolvedValueOnce('/media/second');
+        mock.api.addDownload.mockResolvedValue({ ok: true, job: null, message: null });
+        render(<UrlInput />);
+        await user.type(link(1), 'https://a.com/1');
+        await user.click(screen.getByRole('button', { name: '+ ADD LINK' }));
+        await user.type(link(2), 'https://a.com/2');
+        await user.click(screen.getByRole('button', { name: 'Choose folder for link 2' }));
+        await screen.findByText('Saving to: /media/second');
+        expect(screen.getAllByText(/Saving to:/)).toHaveLength(1);
+        await submit();
+        await waitFor(() => {
+            expect(mock.api.addDownload).toHaveBeenCalledTimes(2);
+        });
+        expect(mock.api.addDownload.mock.calls).toEqual([['https://a.com/1'], ['https://a.com/2', '/media/second']]);
+    });
+
+    it('keeps the row unchanged when the folder dialog is cancelled', async () => {
+        const user = userEvent.setup();
+        mock.api.chooseDirectory.mockResolvedValueOnce(null);
+        render(<UrlInput />);
+        await user.click(screen.getByRole('button', { name: 'Choose folder for link 1' }));
+        await waitFor(() => {
+            expect(mock.api.chooseDirectory).toHaveBeenCalledTimes(1);
+        });
+        expect(screen.queryByText(/Saving to:/)).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Choose folder for link 1' })).toHaveClass('btn--ghost');
+    });
+
+    it('goes back to the default folder when the choice is cleared', async () => {
+        const user = userEvent.setup();
+        mock.api.chooseDirectory.mockResolvedValueOnce('/media/special');
+        mock.api.addDownload.mockResolvedValue({ ok: true, job: null, message: null });
+        render(<UrlInput />);
+        await user.type(link(1), 'https://a.com/v');
+        await user.click(screen.getByRole('button', { name: 'Choose folder for link 1' }));
+        await screen.findByText('Saving to: /media/special');
+        await user.click(screen.getByRole('button', { name: 'Use the default folder for link 1' }));
+        expect(screen.queryByText(/Saving to:/)).not.toBeInTheDocument();
+        await submit();
+        await waitFor(() => {
+            expect(mock.api.addDownload).toHaveBeenCalledTimes(1);
+        });
+        expect(mock.api.addDownload).toHaveBeenCalledWith('https://a.com/v');
+    });
+
+    it('keeps the folder on a link that failed so it can be corrected and sent again', async () => {
+        const user = userEvent.setup();
+        mock.api.chooseDirectory.mockResolvedValueOnce('/media/special');
+        mock.api.addDownload.mockResolvedValueOnce({ ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' });
+        render(<UrlInput />);
+        await user.type(link(1), 'nope');
+        await user.click(screen.getByRole('button', { name: 'Choose folder for link 1' }));
+        await screen.findByText('Saving to: /media/special');
+        await submit();
+        expect(await screen.findByText('Invalid URL. Use an http(s) link.')).toBeInTheDocument();
+        expect(screen.getByText('Saving to: /media/special')).toBeInTheDocument();
+    });
+
+    it('starts the next row without a folder after a successful submit', async () => {
+        const user = userEvent.setup();
+        mock.api.chooseDirectory.mockResolvedValueOnce('/media/special');
+        mock.api.addDownload.mockResolvedValue({ ok: true, job: null, message: null });
+        render(<UrlInput />);
+        await user.type(link(1), 'https://a.com/v');
+        await user.click(screen.getByRole('button', { name: 'Choose folder for link 1' }));
+        await screen.findByText('Saving to: /media/special');
+        await submit();
+        await waitFor(() => {
+            expect(link(1)).toHaveValue('');
+        });
+        expect(screen.queryByText(/Saving to:/)).not.toBeInTheDocument();
+    });
+});
+

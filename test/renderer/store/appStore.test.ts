@@ -99,12 +99,24 @@ describe('useAppStore.addUrls', () => {
     it('adds each URL separately and returns the results in order', async () => {
         mock.api.addDownload.mockResolvedValueOnce({ ok: true, job: null, message: null });
         mock.api.addDownload.mockResolvedValueOnce({ ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' });
-        const results = await useAppStore.getState().addUrls(['https://a.com', 'nope']);
+        const results = await useAppStore.getState().addUrls([
+            { url: 'https://a.com', downloadDir: null },
+            { url: 'nope', downloadDir: null }
+        ]);
         expect(mock.api.addDownload.mock.calls).toEqual([['https://a.com'], ['nope']]);
         expect(results).toEqual([
             { ok: true, job: null, message: null },
             { ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' }
         ]);
+    });
+
+    it('sends the folder chosen for a link along with its URL', async () => {
+        mock.api.addDownload.mockResolvedValue({ ok: true, job: null, message: null });
+        await useAppStore.getState().addUrls([
+            { url: 'https://a.com', downloadDir: '/media/videos' },
+            { url: 'https://b.com', downloadDir: null }
+        ]);
+        expect(mock.api.addDownload.mock.calls).toEqual([['https://a.com', '/media/videos'], ['https://b.com']]);
     });
 
     it('does not call the API and returns nothing for an empty list', async () => {
@@ -114,7 +126,7 @@ describe('useAppStore.addUrls', () => {
 
     it('does not set a notice; feedback is shown by the caller', async () => {
         mock.api.addDownload.mockResolvedValueOnce({ ok: false, job: null, message: 'bad' });
-        await useAppStore.getState().addUrls(['nope']);
+        await useAppStore.getState().addUrls([{ url: 'nope', downloadDir: null }]);
         expect(useAppStore.getState().notice).toBeNull();
     });
 });

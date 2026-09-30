@@ -368,10 +368,158 @@ test('audio-only quick toggle switches to audio extraction', async () => {
     expect(args).toEqual(expect.arrayContaining(['-x', '--audio-format', 'mp3', '-f', 'ba/b']));
 });
 
-test('updating yt-dlp shows the command output in a notice', async () => {
+test('the yt-dlp update button is in the settings, not in the header', async () => {
     const { page } = session;
+    await expect(page.getByRole('button', { name: 'UPDATE YT-DLP' })).toHaveCount(0);
+    await expect(page.locator('.binary-status').getByRole('button')).toHaveCount(0);
+    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await expect(page.getByRole('button', { name: 'UPDATE YT-DLP' })).toBeVisible();
+    await expect(page.getByText('Installed version: fake-1.0')).toBeVisible();
+});
+
+test('updating yt-dlp from the settings shows the command output in a notice', async () => {
+    const { page } = session;
+    await page.getByRole('button', { name: 'SETTINGS' }).click();
     await page.getByRole('button', { name: 'UPDATE YT-DLP' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Fake yt-dlp is up to date' })).toBeVisible();
+});
+
+test.describe('themes', () => {
+    const BACKGROUNDS: Record<string, string> = { cyberpunk: 'rgb(7, 6, 15)', dark: 'rgb(22, 24, 29)', light: 'rgb(243, 244, 247)' };
+
+    async function backgroundOf(page: Page): Promise<string> {
+        return page.evaluate(() => {
+            return getComputedStyle(document.body).backgroundColor;
+        });
+    }
+
+    test('cyberpunk is the default theme', async () => {
+        const { page } = session;
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
+        expect(await backgroundOf(page)).toBe(BACKGROUNDS.cyberpunk);
+    });
+
+    test('choosing a theme changes the look right away and saves it', async () => {
+        const { page, userData } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Theme').selectOption('light');
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+        expect(await backgroundOf(page)).toBe(BACKGROUNDS.light);
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(userData).theme).toBe('light');
+
+        await page.getByLabel('Theme').selectOption('dark');
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+        expect(await backgroundOf(page)).toBe(BACKGROUNDS.dark);
+        await expect.poll(() => {
+            return readSettings(userData).theme;
+        }).toBe('dark');
+    });
+
+    test('the simple themes have no scanlines and no glow on the logo', async () => {
+        const { page } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Theme').selectOption('dark');
+        const style = await page.evaluate(() => {
+            return {
+                scanlines: getComputedStyle(document.body, '::after').backgroundImage,
+                logoGlow: getComputedStyle(document.querySelector('.logo') as Element).textShadow
+            };
+        });
+        expect(style).toEqual({ scanlines: 'none', logoGlow: 'none' });
+    });
+
+    test('the chosen theme is still there after closing and opening the app again', async () => {
+        const { page, app, userData, downloadDir } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Theme').selectOption('light');
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        await app.close();
+
+        const reopened = await electron.launch({
+            args: [ROOT, '--no-sandbox', `--user-data-dir=${userData}`],
+            env: { ...process.env, FAKE_YTDLP_LOG: session.logPath }
+        });
+        try {
+            const reopenedPage = await reopened.firstWindow();
+            await reopenedPage.waitForSelector('.logo');
+            await expect(reopenedPage.locator('html')).toHaveAttribute('data-theme', 'light');
+            expect(await backgroundOf(reopenedPage)).toBe(BACKGROUNDS.light);
+            await reopenedPage.getByRole('button', { name: 'SETTINGS' }).click();
+            await expect(reopenedPage.getByLabel('Theme')).toHaveValue('light');
+            expect(readSettings(userData)).toMatchObject({ theme: 'light', downloadDir });
+        } finally {
+            await reopened.close();
+        }
+    });
+});
+
+test.describe('folder for one download', () => {
+    async function stubFolderDialog(own: Session, folder: string | null): Promise<void> {
+        await own.app.evaluate(({ dialog }, chosen) => {
+            dialog.showOpenDialog = (async () => {
+                return { canceled: chosen === null, filePaths: chosen === null ? [] : [chosen] };
+            }) as unknown as typeof dialog.showOpenDialog;
+        }, folder);
+    }
+
+    test('sends one link to the chosen folder and keeps the others in the settings folder', async () => {
+        const { page, logPath, downloadDir } = session;
+        const otherFolder = join(downloadDir, '..', 'other-place');
+        await stubFolderDialog(session, otherFolder);
+
+        await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/watch?v=first');
+        await page.getByRole('button', { name: '+ ADD LINK' }).click();
+        await page.getByLabel('Link 2', { exact: true }).fill('https://example.com/watch?v=second');
+        await page.getByRole('button', { name: 'Choose folder for link 2' }).click();
+        await expect(page.getByText(`Saving to: ${otherFolder}`)).toBeVisible();
+        await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(2);
+        const pathOf = (args: string[]): string => {
+            return args[args.indexOf('-P') + 1] ?? '';
+        };
+        expect(pathOf(lastYtdlpCall(logPath, 'v=first'))).toBe(downloadDir);
+        expect(pathOf(lastYtdlpCall(logPath, 'v=second'))).toBe(otherFolder);
+    });
+
+    test('keeps the chosen folder when the download is retried', async () => {
+        const { page, logPath } = session;
+        const otherFolder = join(session.downloadDir, '..', 'retry-place');
+        await stubFolderDialog(session, otherFolder);
+        await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/fail');
+        await page.getByRole('button', { name: 'Choose folder for link 1' }).click();
+        await expect(page.getByText(`Saving to: ${otherFolder}`)).toBeVisible();
+        await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+        const banner = page.getByRole('alert').filter({ hasText: 'Video unavailable' });
+        await expect(banner).toBeVisible();
+        await banner.getByRole('button', { name: 'RETRY' }).click();
+        await expect.poll(() => {
+            return readCalls(logPath).filter((call) => {
+                return call.at(-1)?.endsWith('/fail');
+            }).length;
+        }).toBe(2);
+        const folders = readCalls(logPath)
+            .filter((call) => {
+                return call.at(-1)?.endsWith('/fail');
+            })
+            .map((call) => {
+                return call[call.indexOf('-P') + 1];
+            });
+        expect(folders).toEqual([otherFolder, otherFolder]);
+    });
+
+    test('a cancelled folder dialog leaves the link on the default folder', async () => {
+        const { page, logPath, downloadDir } = session;
+        await stubFolderDialog(session, null);
+        await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/watch?v=plain');
+        await page.getByRole('button', { name: 'Choose folder for link 1' }).click();
+        await expect(page.getByText(/Saving to:/)).toHaveCount(0);
+        await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        const args = lastYtdlpCall(logPath, 'v=plain');
+        expect(args[args.indexOf('-P') + 1]).toBe(downloadDir);
+    });
 });
 
 test('app updates are reported as unsupported outside the installed app', async () => {

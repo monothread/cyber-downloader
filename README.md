@@ -70,6 +70,8 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 - Cookies from your browser (chrome, firefox, brave, chromium, edge, opera, vivaldi)
 - Default download folder, playlists, subtitles, speed limit, parallel downloads
 - Settings are saved automatically as you change them
+- Three themes (cyberpunk, dark, light) in Settings > APPEARANCE
+- A FOLDER button on each link to send that download to another folder
 - Optional "keep running in the system tray" (KDE, XFCE, Cinnamon, MATE, LXQt and GNOME with the AppIndicator extension); right-click the tray icon to quit
 - Title length limit so long titles never break the file name
 - Friendly error banner with technical details on demand

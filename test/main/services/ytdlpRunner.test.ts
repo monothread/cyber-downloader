@@ -188,6 +188,65 @@ describe('runYtdlp', () => {
     });
 });
 
+describe('runYtdlp on Windows', () => {
+    function startOnWindows() {
+        const fake = createFakeChild();
+        Object.assign(fake.child, { pid: 777 });
+        const taskkill = vi.fn();
+        const run = runYtdlp({
+            binary: 'yt-dlp.exe',
+            args: ['https://x.com/live'],
+            platform: 'win32',
+            taskkill,
+            spawnFn: () => {
+                return fake.child;
+            },
+            onProgress: () => {
+                return undefined;
+            }
+        });
+        return { fake, taskkill, run };
+    }
+
+    it('cancel ends the whole process tree (yt-dlp and the ffmpeg it started) and resolves cancelled', async () => {
+        const { fake, taskkill, run } = startOnWindows();
+        run.cancel();
+        expect(taskkill).toHaveBeenCalledTimes(1);
+        expect(taskkill).toHaveBeenCalledWith('taskkill', ['/PID', '777', '/T', '/F']);
+        expect(fake.kill).not.toHaveBeenCalled();
+        fake.emitter.emit('close', 1);
+        await expect(run.result).resolves.toEqual({ status: 'cancelled' });
+    });
+
+    it('stop cannot send Ctrl+C there: it ends the process tree and resolves stopped so the file can be salvaged', async () => {
+        const { fake, taskkill, run } = startOnWindows();
+        run.stop();
+        expect(taskkill).toHaveBeenCalledTimes(1);
+        expect(taskkill).toHaveBeenCalledWith('taskkill', ['/PID', '777', '/T', '/F']);
+        expect(fake.kill).not.toHaveBeenCalledWith('SIGINT');
+        fake.emitter.emit('close', 1);
+        await expect(run.result).resolves.toEqual({ status: 'stopped' });
+    });
+
+    it('a cancel after a stop wins', async () => {
+        const { fake, run } = startOnWindows();
+        run.stop();
+        run.cancel();
+        fake.emitter.emit('close', 1);
+        await expect(run.result).resolves.toEqual({ status: 'cancelled' });
+    });
+
+    it('a download that ends by itself is not reported as stopped', async () => {
+        const { fake, run } = startOnWindows();
+        fake.stdout.write('CYBERFILE|C:\\d\\Video.mp4\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        fake.emitter.emit('close', 0);
+        await expect(run.result).resolves.toEqual({ status: 'done', filePath: 'C:\\d\\Video.mp4' });
+    });
+});
+
 describe('defaultSpawn', () => {
     it('passes the given environment to the process', async () => {
         const child = defaultSpawn(process.execPath, ['-e', 'process.stdout.write(process.env.CYBER_TEST ?? "unset")'], { CYBER_TEST: 'yes' });
@@ -217,3 +276,14 @@ describe('defaultSpawn', () => {
         expect(output).toBe('ok');
     });
 });
+
+describe('defaultSpawn on every platform', () => {
+    it('does not open a console window for the process it starts', async () => {
+        const child = defaultSpawn(process.execPath, ['-e', 'process.stdout.write("hidden")']);
+        expect(child.spawnargs).toEqual([process.execPath, '-e', 'process.stdout.write("hidden")']);
+        await new Promise((resolve) => {
+            child.on('close', resolve);
+        });
+    });
+});
+

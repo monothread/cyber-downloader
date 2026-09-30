@@ -100,3 +100,35 @@ describe('App', () => {
         });
     });
 });
+
+describe('App theme', () => {
+    afterEach(() => {
+        delete document.documentElement.dataset.theme;
+    });
+
+    it.each(['cyberpunk', 'dark', 'light'] as const)('applies the %s theme from the stored settings', async (theme) => {
+        mock.api.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS, theme });
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        expect(document.documentElement.dataset.theme).toBe(theme);
+    });
+
+    it('uses the cyberpunk theme by default', async () => {
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        expect(document.documentElement.dataset.theme).toBe('cyberpunk');
+    });
+
+    it('changes the theme as soon as it is chosen in the settings', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        await user.click(screen.getByRole('button', { name: 'SETTINGS' }));
+        await user.selectOptions(screen.getByLabelText('Theme'), 'light');
+        await waitFor(() => {
+            expect(document.documentElement.dataset.theme).toBe('light');
+        });
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, theme: 'light' });
+    });
+});
+

@@ -214,6 +214,21 @@ describe('registerHandlers', () => {
         expect(queue.add).toHaveBeenCalledWith('https://x.com/a');
     });
 
+    it('adds a download into the folder chosen for it', () => {
+        const { call, queue } = setup();
+        expect(call(IPC.queueAdd, 'https://x.com/a', '/media/videos')).toEqual({ ok: true, job: JOB, message: null });
+        expect(queue.add).toHaveBeenCalledWith('https://x.com/a', { downloadDir: '/media/videos' });
+    });
+
+    it.each([['an empty folder', ''], ['a relative folder', 'videos/here'], ['a non-string folder', 42], ['no folder', undefined]])(
+        'ignores %s and downloads to the settings folder',
+        (_name, folder) => {
+            const { call, queue } = setup();
+            call(IPC.queueAdd, 'https://x.com/a', folder);
+            expect(queue.add).toHaveBeenCalledWith('https://x.com/a');
+        }
+    );
+
     it('coerces non-string URLs to an empty string', () => {
         const { call, queue } = setup();
         call(IPC.queueAdd, 42);

@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import { IPC } from '@shared/constants';
 import type {
     AddJobResult,
@@ -53,7 +54,11 @@ export function registerHandlers(deps: HandlerDependencies): void {
         deps.onSettingsSaved(saved);
         return saved;
     });
-    ipcMain.handle(IPC.queueAdd, (_event, url) => {
+    ipcMain.handle(IPC.queueAdd, (_event, url, downloadDir) => {
+        const directory = asString(downloadDir);
+        if (directory.length > 0 && isAbsolute(directory)) {
+            return queue.add(asString(url), { downloadDir: directory });
+        }
         return queue.add(asString(url));
     });
     ipcMain.handle(IPC.queueList, () => {

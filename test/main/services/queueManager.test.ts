@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import type { DownloadError, DownloadInfo, DownloadJob, HistoryEntry, ProgressInfo, Settings } from '@shared/types';
-import { LIVE_TICK_MS, QueueManager } from '@main/services/queueManager';
+import { LIVE_TICK_MS, QueueManager, type QueueDependencies } from '@main/services/queueManager';
 import { buildYtdlpArgs } from '@main/services/ytdlpArgsBuilder';
 import type { RunHandle, RunResult } from '@main/services/ytdlpRunner';
 
@@ -20,7 +20,7 @@ function progress(overrides: Partial<ProgressInfo> = {}): ProgressInfo {
 
 const DOWNLOAD_ERROR: DownloadError = { code: 'NETWORK', title: 'Network failure', hint: 'Check your connection and try again.', raw: 'boom' };
 
-function setup(settings: Partial<Settings> = {}) {
+function setup(settings: Partial<Settings> = {}, extraDeps: Partial<QueueDependencies> = {}) {
     const runs: ControlledRun[] = [];
     const updates: DownloadJob[] = [];
     const removed: string[] = [];
@@ -70,6 +70,7 @@ function setup(settings: Partial<Settings> = {}) {
             removed.push(id);
         },
         onHistoryChanged,
+        ...extraDeps,
         generateId: () => {
             counter += 1;
             return `job-${counter}`;
@@ -704,6 +705,141 @@ describe('QueueManager live recordings', () => {
             await vi.advanceTimersByTimeAsync(0);
             expect(runs).toHaveLength(1);
         });
+    });
+});
+
+describe('QueueManager with a recording that was ended by killing yt-dlp (Windows)', () => {
+    const LIVE_FILE = 'C:\\dl\\Live Show [abc].mp4';
+    const liveInfo = { live: true, filePath: LIVE_FILE };
+
+    function startLive(salvage: QueueDependencies['salvageRecording']) {
+        const context = setup({}, salvage ? { salvageRecording: salvage } : {});
+        context.queue.add(URL_A);
+        context.runs[0]?.onInfo(liveInfo);
+        return context;
+    }
+
+    it('salvages the partial file and completes the job with the saved file', async () => {
+        const salvage = vi.fn<(path: string) => Promise<string | null>>().mockResolvedValue(LIVE_FILE);
+        const { queue, runs, history, onHistoryChanged } = startLive(salvage);
+        runs[0]?.resolve({ status: 'stopped' });
+        await flush();
+        expect(salvage).toHaveBeenCalledTimes(1);
+        expect(salvage).toHaveBeenCalledWith(LIVE_FILE);
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'done', percent: 100, filePath: LIVE_FILE, error: null, live: true });
+        expect(history).toEqual([
+            { id: 'job-1', url: URL_A, title: URL_A, filePath: LIVE_FILE, status: 'done', errorTitle: null, finishedAt: expect.any(Number) }
+        ]);
+        expect(onHistoryChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails with a clear error when the partial file cannot be saved', async () => {
+        const { queue, runs, history } = startLive(async () => {
+            return null;
+        });
+        runs[0]?.resolve({ status: 'stopped' });
+        await flush();
+        const job = queue.getJob('job-1');
+        expect(job?.status).toBe('error');
+        expect(job?.filePath).toBeNull();
+        expect(job?.error).toEqual({
+            code: 'UNKNOWN',
+            title: 'The recording could not be saved',
+            hint: 'The stream was stopped, but the partial file could not be converted. A file ending in .part may still be in the download folder.',
+            raw: 'ffmpeg could not copy the partial recording into the final file.'
+        });
+        expect(history).toHaveLength(1);
+        expect(history[0]).toMatchObject({ status: 'error', errorTitle: 'The recording could not be saved' });
+    });
+
+    it('fails the same way when salvaging throws', async () => {
+        const { queue, runs } = startLive(async () => {
+            throw new Error('ffmpeg crashed');
+        });
+        runs[0]?.resolve({ status: 'stopped' });
+        await flush();
+        expect(queue.getJob('job-1')?.status).toBe('error');
+    });
+
+    it('fails when there is no way to salvage', async () => {
+        const { queue, runs } = startLive(undefined);
+        runs[0]?.resolve({ status: 'stopped' });
+        await flush();
+        expect(queue.getJob('job-1')?.status).toBe('error');
+    });
+
+    it('fails when yt-dlp never said where the recording was written', async () => {
+        const salvage = vi.fn<(path: string) => Promise<string | null>>().mockResolvedValue(LIVE_FILE);
+        const { queue, runs } = setup({}, { salvageRecording: salvage });
+        queue.add(URL_A);
+        runs[0]?.resolve({ status: 'stopped' });
+        await flush();
+        expect(salvage).not.toHaveBeenCalled();
+        expect(queue.getJob('job-1')?.status).toBe('error');
+    });
+
+    it('starts the next queued job once the recording has been saved', async () => {
+        const { queue, runs } = setup({ maxConcurrent: 1 }, {
+            salvageRecording: async () => {
+                return LIVE_FILE;
+            }
+        });
+        queue.add(URL_A);
+        queue.add(URL_B);
+        runs[0]?.onInfo(liveInfo);
+        expect(runs).toHaveLength(1);
+        runs[0]?.resolve({ status: 'stopped' });
+        await flush();
+        expect(runs).toHaveLength(2);
+        expect(runs[1]?.args.at(-1)).toBe(URL_B);
+    });
+
+    it('shutdown waits for the recording to be saved before it resolves', async () => {
+        let finishSalvage: (path: string) => void = () => {
+            return undefined;
+        };
+        const { queue, runs } = setup({}, {
+            salvageRecording: () => {
+                return new Promise<string | null>((resolve) => {
+                    finishSalvage = resolve;
+                });
+            }
+        });
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        runs[0]?.stop.mockImplementation(() => {
+            runs[0]?.resolve({ status: 'stopped' });
+        });
+        let shutdownDone = false;
+        const shutdown = queue.shutdown(60000).then(() => {
+            shutdownDone = true;
+        });
+        await flush();
+        expect(shutdownDone).toBe(false);
+        finishSalvage(LIVE_FILE);
+        await shutdown;
+        expect(shutdownDone).toBe(true);
+    });
+});
+
+describe('QueueManager with a folder chosen for one download', () => {
+    it('downloads into that folder and keeps it when the job is retried', () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A, { downloadDir: '/media/special' });
+        expect(runs[0]?.args[(runs[0]?.args.indexOf('-P') ?? 0) + 1]).toBe('/media/special');
+        runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        return flush().then(() => {
+            queue.retry('job-1');
+            expect(runs).toHaveLength(2);
+            expect(runs[1]?.args[(runs[1]?.args.indexOf('-P') ?? 0) + 1]).toBe('/media/special');
+        });
+    });
+
+    it('uses the settings folder for the other downloads', () => {
+        const { queue, runs } = setup({ downloadDir: '/from/settings' });
+        queue.add(URL_A, { downloadDir: '/media/special' });
+        queue.add(URL_B);
+        expect(runs[1]?.args[(runs[1]?.args.indexOf('-P') ?? 0) + 1]).toBe('/from/settings');
     });
 });
 

@@ -5,13 +5,15 @@ interface LinkRow {
     id: number;
     value: string;
     error: string | null;
+    // Folder chosen for this link only; null uses the folder from the settings.
+    directory: string | null;
 }
 
 export const EMPTY_LINKS_MESSAGE = 'Paste at least one video URL.';
 const GENERIC_ADD_ERROR = 'Could not add the download.';
 
 function createRow(id: number): LinkRow {
-    return { id, value: '', error: null };
+    return { id, value: '', error: null, directory: null };
 }
 
 export function UrlInput() {
@@ -27,6 +29,9 @@ export function UrlInput() {
     const saveSettings = useAppStore((state) => {
         return state.saveSettings;
     });
+    const chooseDirectory = useAppStore((state) => {
+        return state.chooseDirectory;
+    });
 
     function newRow(): LinkRow {
         const row = createRow(nextId.current);
@@ -40,6 +45,21 @@ export function UrlInput() {
                 return row.id === id ? { ...row, value, error: null } : row;
             });
         });
+    }
+
+    function setRowDirectory(id: number, directory: string | null): void {
+        setRows((previous) => {
+            return previous.map((row) => {
+                return row.id === id ? { ...row, directory } : row;
+            });
+        });
+    }
+
+    async function chooseRowDirectory(id: number): Promise<void> {
+        const directory = await chooseDirectory();
+        if (directory) {
+            setRowDirectory(id, directory);
+        }
     }
 
     function addRow(): void {
@@ -73,7 +93,7 @@ export function UrlInput() {
         }
         const results = await addUrls(
             filled.map((row) => {
-                return row.value.trim();
+                return { url: row.value.trim(), downloadDir: row.directory };
             })
         );
         const failed = filled.flatMap((row, index) => {
@@ -112,6 +132,17 @@ export function UrlInput() {
                                         updateRow(row.id, event.target.value);
                                     }}
                                 />
+                                <button
+                                    type="button"
+                                    className={`btn btn--small ${row.directory ? 'btn--hot' : 'btn--ghost'}`}
+                                    aria-label={`Choose folder for link ${index + 1}`}
+                                    title={row.directory ?? 'Save this link in another folder'}
+                                    onClick={() => {
+                                        void chooseRowDirectory(row.id);
+                                    }}
+                                >
+                                    FOLDER
+                                </button>
                                 {rows.length > 1 && (
                                     <button
                                         type="button"
@@ -125,6 +156,21 @@ export function UrlInput() {
                                     </button>
                                 )}
                             </div>
+                            {row.directory && (
+                                <p className="link-row__folder">
+                                    <span title={row.directory}>Saving to: {row.directory}</span>
+                                    <button
+                                        type="button"
+                                        className="btn btn--small btn--ghost"
+                                        aria-label={`Use the default folder for link ${index + 1}`}
+                                        onClick={() => {
+                                            setRowDirectory(row.id, null);
+                                        }}
+                                    >
+                                        ✕
+                                    </button>
+                                </p>
+                            )}
                             {row.error && (
                                 <p className="link-row__error" role="alert">
                                     {row.error}

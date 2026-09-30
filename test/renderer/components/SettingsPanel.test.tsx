@@ -38,7 +38,7 @@ function type(label: string, value: string): void {
 describe('SettingsPanel layout', () => {
     it('renders every section with the stored values', () => {
         render(<SettingsPanel />);
-        ['OUTPUT', 'QUALITY & FORMAT', 'LIVE STREAMS', 'BROWSER COOKIES', 'PLAYLISTS & SUBTITLES', 'ADVANCED', 'WINDOW', 'APP UPDATES'].forEach((legend) => {
+        ['APPEARANCE', 'OUTPUT', 'QUALITY & FORMAT', 'LIVE STREAMS', 'BROWSER COOKIES', 'PLAYLISTS & SUBTITLES', 'YT-DLP', 'ADVANCED', 'WINDOW', 'APP UPDATES'].forEach((legend) => {
             expect(screen.getByText(legend)).toBeInTheDocument();
         });
         expect(screen.getByLabelText('Download folder')).toHaveValue('');
@@ -319,6 +319,76 @@ describe('SettingsPanel live streams', () => {
         render(<SettingsPanel />);
         expect(screen.getByLabelText('Record live streams from the start')).toBeChecked();
         expect(screen.getByLabelText('Wait for scheduled live streams to start')).toBeChecked();
+    });
+});
+
+describe('SettingsPanel theme', () => {
+    it('offers the three themes, cyberpunk being the default', () => {
+        render(<SettingsPanel />);
+        const select = screen.getByLabelText('Theme') as HTMLSelectElement;
+        expect(select).toHaveValue('cyberpunk');
+        expect(
+            Array.from(select.options).map((option) => {
+                return [option.value, option.textContent];
+            })
+        ).toEqual([
+            ['cyberpunk', 'Cyberpunk (neon)'],
+            ['dark', 'Dark (simple)'],
+            ['light', 'Light (simple)']
+        ]);
+        expect(screen.getByText('Saved and restored the next time the app opens.')).toBeInTheDocument();
+    });
+
+    it.each(['dark', 'light'] as const)('saves right away when %s is chosen', async (theme) => {
+        render(<SettingsPanel />);
+        fireEvent.change(screen.getByLabelText('Theme'), { target: { value: theme } });
+        await flushPromises();
+        expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, theme });
+    });
+
+    it('reflects the stored theme', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, theme: 'light' } });
+        render(<SettingsPanel />);
+        expect(screen.getByLabelText('Theme')).toHaveValue('light');
+    });
+});
+
+describe('SettingsPanel yt-dlp update', () => {
+    const BINARIES = {
+        ytdlp: { found: true, path: '/data/bin/yt-dlp', version: '2026.08.19', source: 'updated' as const },
+        ffmpeg: { found: true, path: '/app/bin/ffmpeg', version: '7.0', source: 'bundled' as const }
+    };
+
+    it('shows the installed version and the update button', () => {
+        useAppStore.setState({ binaries: BINARIES, updating: false });
+        render(<SettingsPanel />);
+        expect(screen.getByText('Installed version: 2026.08.19')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'UPDATE YT-DLP' })).toBeEnabled();
+    });
+
+    it('says when the version is unknown or yt-dlp was not found', () => {
+        useAppStore.setState({ binaries: { ...BINARIES, ytdlp: { ...BINARIES.ytdlp, version: null } } });
+        const { unmount } = render(<SettingsPanel />);
+        expect(screen.getByText('Installed version: unknown')).toBeInTheDocument();
+        unmount();
+        useAppStore.setState({ binaries: { ...BINARIES, ytdlp: { ...BINARIES.ytdlp, found: false } } });
+        render(<SettingsPanel />);
+        expect(screen.getByText('yt-dlp was not found.')).toBeInTheDocument();
+    });
+
+    it('updates yt-dlp when the button is clicked', async () => {
+        useAppStore.setState({ binaries: BINARIES, updating: false });
+        render(<SettingsPanel />);
+        fireEvent.click(screen.getByRole('button', { name: 'UPDATE YT-DLP' }));
+        await flushPromises();
+        expect(mock.api.updateYtdlp).toHaveBeenCalledTimes(1);
+    });
+
+    it('disables the button and says it is updating', () => {
+        useAppStore.setState({ binaries: BINARIES, updating: true });
+        render(<SettingsPanel />);
+        expect(screen.getByRole('button', { name: 'UPDATING…' })).toBeDisabled();
     });
 });
 

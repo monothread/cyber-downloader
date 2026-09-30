@@ -13,6 +13,8 @@ export interface QueueDependencies {
     startRun: (binary: string, args: string[], onProgress: (progress: ProgressInfo) => void, onInfo: (info: DownloadInfo) => void) => RunHandle;
     // Size of a file on disk, or null when it does not exist (used to show how much of a live stream is recorded).
     fileSize?: (path: string) => number | null;
+    // Turns the partial file of a recording that was ended by killing yt-dlp into the final file; returns its path.
+    salvageRecording?: (filePath: string) => Promise<string | null>;
     addHistory: (entry: HistoryEntry) => void;
     onJobUpdate: (job: DownloadJob) => void;
     onJobRemoved: (id: string) => void;
@@ -32,6 +34,13 @@ function defaultFileSize(path: string): number | null {
     }
 }
 
+const SALVAGE_FAILED_ERROR: DownloadError = {
+    code: 'UNKNOWN',
+    title: 'The recording could not be saved',
+    hint: 'The stream was stopped, but the partial file could not be converted. A file ending in .part may still be in the download folder.',
+    raw: 'ffmpeg could not copy the partial recording into the final file.'
+};
+
 const FINISHED_STATUSES: ReadonlyArray<DownloadJob['status']> = ['done', 'error', 'cancelled'];
 
 function isFinished(job: DownloadJob): boolean {
@@ -42,6 +51,8 @@ export class QueueManager {
     private readonly jobs: DownloadJob[] = [];
     private readonly handles = new Map<string, RunHandle>();
     private readonly extras = new Map<string, RequestExtras>();
+    private readonly salvaging = new Set<Promise<void>>();
+    private readonly livePaths = new Map<string, string>();
     private readonly tickers = new Map<string, ReturnType<typeof setInterval>>();
     private closed = false;
     private readonly generateId: () => string;
@@ -92,7 +103,9 @@ export class QueueManager {
         });
         if (waiting.length > 0) {
             await Promise.race([
-                Promise.allSettled(waiting),
+                Promise.allSettled(waiting).then(() => {
+                    return Promise.allSettled([...this.salvaging]);
+                }),
                 new Promise((resolve) => {
                     setTimeout(resolve, timeoutMs);
                 })
@@ -227,6 +240,13 @@ export class QueueManager {
         this.handles.set(job.id, handle);
         void handle.result.then((result) => {
             this.handles.delete(job.id);
+            if (result.status === 'stopped') {
+                const salvage = this.finishStopped(job).finally(() => {
+                    this.salvaging.delete(salvage);
+                });
+                this.salvaging.add(salvage);
+                return;
+            }
             this.finish(job, result);
         });
     }
@@ -238,6 +258,7 @@ export class QueueManager {
             return;
         }
         job.live = true;
+        this.livePaths.set(job.id, info.filePath);
         const startedAt = this.now();
         const tick = (): void => {
             job.elapsedSeconds = Math.round((this.now() - startedAt) / 1000);
@@ -268,6 +289,20 @@ export class QueueManager {
         job.eta = progress.eta;
         job.title = progress.title.length > 0 ? progress.title : job.title;
         this.emit(job);
+    }
+
+    private async finishStopped(job: DownloadJob): Promise<void> {
+        this.stopTicker(job.id);
+        const livePath = this.livePaths.get(job.id);
+        this.livePaths.delete(job.id);
+        const saved = livePath && this.deps.salvageRecording ? await this.deps.salvageRecording(livePath).catch(() => {
+            return null;
+        }) : null;
+        if (saved) {
+            this.finish(job, { status: 'done', filePath: saved });
+            return;
+        }
+        this.finish(job, { status: 'error', error: SALVAGE_FAILED_ERROR });
     }
 
     private finish(job: DownloadJob, result: RunResult): void {

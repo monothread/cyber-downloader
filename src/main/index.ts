@@ -2,12 +2,15 @@ import { join } from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import { IPC } from '@shared/constants';
 import { registerHandlers } from './ipc/registerHandlers';
+import { createDiagnosticLog, type DiagnosticLog } from './services/diagnosticLog';
+import { attachWindowDiagnostics } from './services/windowDiagnostics';
 import { AppUpdateService } from './services/appUpdateService';
 import { BinaryResolver } from './services/binaryResolver';
 import { sniffStreams } from './services/browserSniffer';
 import { createElectronTray } from './services/electronTray';
 import { getElectronUpdater } from './services/electronUpdater';
 import { HistoryStore } from './services/historyStore';
+import { salvageRecording } from './services/recordingSalvage';
 import { QueueManager } from './services/queueManager';
 import { SettingsStore } from './services/settingsStore';
 import { defaultFetchPage, scanPage } from './services/pageScanner';
@@ -30,6 +33,16 @@ let mainWindow: BrowserWindow | null = null;
 let trayManager: TrayManager | null = null;
 let requestQuit: (() => Promise<boolean>) | null = null;
 let quitting = false;
+let diagnosticLog: DiagnosticLog | null = null;
+let bridgeWarningShown = false;
+
+function warnAboutMissingBridge(reason: string): void {
+    if (bridgeWarningShown) {
+        return;
+    }
+    bridgeWarningShown = true;
+    dialog.showErrorBox('CYBER//DL could not start its interface', `${reason}\n\nDetails were saved to:\n${diagnosticLog?.path ?? 'the diagnostic log'}`);
+}
 
 function iconPath(): string {
     return join(app.getAppPath(), 'resources', 'icon.png');
@@ -97,6 +110,9 @@ function createWindow(): BrowserWindow {
         return { action: 'deny' };
     });
     window.on('close', handleWindowClose);
+    if (diagnosticLog) {
+        attachWindowDiagnostics(window.webContents, diagnosticLog, { onBridgeMissing: warnAboutMissingBridge });
+    }
     if (process.env.ELECTRON_RENDERER_URL) {
         void window.loadURL(process.env.ELECTRON_RENDERER_URL);
     } else {
@@ -152,6 +168,9 @@ function bootstrap(): void {
         },
         resolveFfmpegLocation: (settings) => {
             return resolver.ffmpegLocation(settings);
+        },
+        salvageRecording: (filePath) => {
+            return salvageRecording({ ffmpegBinary: resolver.ffmpeg(settingsStore.get()).path, filePath });
         },
         startRun: (binary, args, onProgress, onInfo) => {
             return runYtdlp({ binary, args, onProgress, onInfo, env: resolver.spawnEnv() });
@@ -274,6 +293,7 @@ if (!app.requestSingleInstanceLock()) {
         if (process.platform === 'win32') {
             app.setAppUserModelId(APP_ID);
         }
+        diagnosticLog = createDiagnosticLog(join(app.getPath('userData'), 'diagnostic.log'));
         applyContentSecurityPolicy();
         bootstrap();
         mainWindow = createWindow();

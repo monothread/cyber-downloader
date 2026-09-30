@@ -10,6 +10,8 @@ export interface RequestExtras {
     userAgent?: string;
     cookie?: string;
     title?: string;
+    // Folder for this download only; replaces the one in the settings.
+    downloadDir?: string;
     // Force the IP family the address is bound to.
     ipFamily?: 4 | 6;
     // The page the stream was found on; used to look for a fresh address, never passed to yt-dlp.
@@ -132,7 +134,7 @@ export function buildYtdlpArgs(
     ffmpegLocation: string | null = null,
     extras: RequestExtras = {}
 ): string[] {
-    const downloadDir = settings.downloadDir.length > 0 ? settings.downloadDir : defaultDownloadDir;
+    const downloadDir = extras.downloadDir ?? (settings.downloadDir.length > 0 ? settings.downloadDir : defaultDownloadDir);
     return [
         '--newline',
         '--no-colors',

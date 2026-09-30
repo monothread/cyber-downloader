@@ -1,0 +1,96 @@
+/* Simple themes. The default (cyberpunk) lives in :root of cyberpunk.css. */
+
+:root[data-theme='dark'] {
+    --bg: #16181d;
+    --panel: #1e2128;
+    --panel-2: #262a33;
+    --line: #363b47;
+    --text: #e6e8ec;
+    --muted: #9097a6;
+    --cyan: #6ea8fe;
+    --magenta: #b39bf5;
+    --yellow: #f4c152;
+    --red: #f57c7c;
+    --green: #5fd38d;
+    --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --input-bg: #14161b;
+    --code-bg: #121419;
+    --on-accent: #111318;
+    --glow: none;
+    --glow-strong: none;
+    --glow-hot: none;
+    --glow-red: none;
+    --glow-yellow: none;
+    --glow-inset: none;
+    --text-glow: none;
+    --logo-glow: none;
+    --tint-cyan: rgba(110, 168, 254, 0.08);
+    --tint-red: rgba(245, 124, 124, 0.1);
+    --tint-yellow: rgba(244, 193, 82, 0.1);
+    --toast-error-text: #ffd9d9;
+    --body-bg: var(--bg);
+    --scanlines: none;
+    --cut: 0px;
+    color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+    --bg: #f3f4f7;
+    --panel: #ffffff;
+    --panel-2: #eef0f4;
+    --line: #d5d9e1;
+    --text: #1f2430;
+    --muted: #5f6878;
+    --cyan: #2158d8;
+    --magenta: #6d3fd1;
+    --yellow: #a15c07;
+    --red: #c62b2b;
+    --green: #1d7d43;
+    --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --input-bg: #ffffff;
+    --code-bg: #eef0f4;
+    --on-accent: #ffffff;
+    --glow: none;
+    --glow-strong: none;
+    --glow-hot: none;
+    --glow-red: none;
+    --glow-yellow: none;
+    --glow-inset: none;
+    --text-glow: none;
+    --logo-glow: none;
+    --tint-cyan: rgba(33, 88, 216, 0.07);
+    --tint-red: rgba(198, 43, 43, 0.08);
+    --tint-yellow: rgba(161, 92, 7, 0.09);
+    --toast-error-text: #7a1616;
+    --body-bg: var(--bg);
+    --scanlines: none;
+    --cut: 0px;
+    color-scheme: light;
+}
+
+:root[data-theme='dark'] .logo,
+:root[data-theme='light'] .logo {
+    letter-spacing: 2px;
+}
+
+:root[data-theme='dark'] .logo::before,
+:root[data-theme='dark'] .logo::after,
+:root[data-theme='light'] .logo::before,
+:root[data-theme='light'] .logo::after {
+    display: none;
+}
+
+:root[data-theme='dark'] .btn,
+:root[data-theme='light'] .btn {
+    border-radius: 6px;
+    letter-spacing: 1px;
+}
+
+:root[data-theme='dark'] .input,
+:root[data-theme='light'] .input,
+:root[data-theme='dark'] .panel,
+:root[data-theme='light'] .panel,
+:root[data-theme='dark'] .url-input,
+:root[data-theme='light'] .url-input {
+    border-radius: 6px;
+}

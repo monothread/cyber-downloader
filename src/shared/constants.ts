@@ -1,4 +1,4 @@
-import type { AudioFormat, BrowserName, MaxResolution, Settings, VideoContainer } from './types';
+import type { AudioFormat, BrowserName, MaxResolution, Settings, ThemeName, VideoContainer } from './types';
 
 export const IPC = {
     settingsGet: 'settings:get',
@@ -35,6 +35,7 @@ export const BROWSERS: readonly BrowserName[] = ['chrome', 'firefox', 'brave', '
 export const RESOLUTIONS: readonly MaxResolution[] = ['best', '2160', '1440', '1080', '720', '480'];
 export const VIDEO_CONTAINERS: readonly VideoContainer[] = ['mp4', 'mkv', 'webm'];
 export const AUDIO_FORMATS: readonly AudioFormat[] = ['mp3', 'm4a', 'opus'];
+export const THEMES: readonly ThemeName[] = ['cyberpunk', 'dark', 'light'];
 
 export const MIN_TITLE_LENGTH = 20;
 export const MAX_TITLE_LENGTH = 200;
@@ -65,5 +66,6 @@ export const DEFAULT_SETTINGS: Settings = {
     closeToTray: false,
     liveFromStart: false,
     waitForLive: false,
+    theme: 'cyberpunk',
     extraArgs: ''
 };

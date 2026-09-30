@@ -28,6 +28,14 @@ export function App() {
         return state.binaries !== null;
     });
 
+    const theme = useAppStore((state) => {
+        return state.settings.theme;
+    });
+
+    useEffect(() => {
+        document.documentElement.dataset.theme = theme;
+    }, [theme]);
+
     useEffect(() => {
         let dispose: (() => void) | null = null;
         let cancelled = false;

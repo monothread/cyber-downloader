@@ -21,26 +21,10 @@ export function BinaryStatus() {
     const binaries = useAppStore((state) => {
         return state.binaries;
     });
-    const updating = useAppStore((state) => {
-        return state.updating;
-    });
-    const updateYtdlp = useAppStore((state) => {
-        return state.updateYtdlp;
-    });
     return (
         <div className="binary-status">
             <BinaryChip label="yt-dlp" info={binaries?.ytdlp} />
             <BinaryChip label="ffmpeg" info={binaries?.ffmpeg} />
-            <button
-                type="button"
-                className="btn btn--small"
-                disabled={updating}
-                onClick={() => {
-                    void updateYtdlp();
-                }}
-            >
-                {updating ? 'UPDATING…' : 'UPDATE YT-DLP'}
-            </button>
         </div>
     );
 }

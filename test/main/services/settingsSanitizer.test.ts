@@ -37,6 +37,7 @@ describe('sanitizeSettings', () => {
             closeToTray: true,
             liveFromStart: true,
             waitForLive: true,
+            theme: 'light',
             extraArgs: '--no-mtime'
         };
         expect(sanitizeSettings(valid)).toEqual(valid);
@@ -97,3 +98,17 @@ describe('sanitizeSettings', () => {
         expect(sanitizeSettings({ rateLimit: 10 }).rateLimit).toBe('');
     });
 });
+
+describe('sanitizeSettings theme', () => {
+    it.each(['cyberpunk', 'dark', 'light'])('keeps the %s theme', (theme) => {
+        expect(sanitizeSettings({ theme }).theme).toBe(theme);
+    });
+
+    it('defaults to cyberpunk when it is missing, unknown or not a string', () => {
+        expect(DEFAULT_SETTINGS.theme).toBe('cyberpunk');
+        expect(sanitizeSettings({}).theme).toBe('cyberpunk');
+        expect(sanitizeSettings({ theme: 'solarized' }).theme).toBe('cyberpunk');
+        expect(sanitizeSettings({ theme: 3 }).theme).toBe('cyberpunk');
+    });
+});
+

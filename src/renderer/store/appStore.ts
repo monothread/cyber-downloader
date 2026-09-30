@@ -6,6 +6,7 @@ import type {
     BinariesStatus,
     DownloadJob,
     HistoryEntry,
+    LinkRequest,
     Settings,
     StreamCandidate,
     StreamFindStage,
@@ -44,7 +45,7 @@ export interface AppState {
     setTab: (tab: Tab) => void;
     setNotice: (notice: Notice | null) => void;
     init: () => Promise<() => void>;
-    addUrls: (urls: string[]) => Promise<AddJobResult[]>;
+    addUrls: (links: LinkRequest[]) => Promise<AddJobResult[]>;
     cancelJob: (id: string) => Promise<void>;
     stopJob: (id: string) => Promise<void>;
     retryJob: (id: string) => Promise<void>;
@@ -156,10 +157,10 @@ export const useAppStore = create<AppState>((set, get) => {
             };
         },
 
-        addUrls: (urls) => {
+        addUrls: (links) => {
             return Promise.all(
-                urls.map((url) => {
-                    return window.api.addDownload(url);
+                links.map((link) => {
+                    return link.downloadDir ? window.api.addDownload(link.url, link.downloadDir) : window.api.addDownload(link.url);
                 })
             );
         },

@@ -1,5 +1,12 @@
 export type VideoContainer = 'mp4' | 'mkv' | 'webm';
 export type AudioFormat = 'mp3' | 'm4a' | 'opus';
+// A link to download, optionally into a folder other than the one in the settings.
+export interface LinkRequest {
+    url: string;
+    downloadDir: string | null;
+}
+
+export type ThemeName = 'cyberpunk' | 'dark' | 'light';
 export type BrowserName = 'chrome' | 'firefox' | 'brave' | 'chromium' | 'edge' | 'opera' | 'vivaldi';
 export type MaxResolution = 'best' | '2160' | '1440' | '1080' | '720' | '480';
 
@@ -27,6 +34,7 @@ export interface Settings {
     closeToTray: boolean;
     liveFromStart: boolean;
     waitForLive: boolean;
+    theme: ThemeName;
     extraArgs: string;
 }
 
@@ -169,7 +177,7 @@ export interface StreamFindProgress {
 export interface CyberApi {
     getSettings: () => Promise<Settings>;
     saveSettings: (settings: Settings) => Promise<Settings>;
-    addDownload: (url: string) => Promise<AddJobResult>;
+    addDownload: (url: string, downloadDir?: string) => Promise<AddJobResult>;
     listJobs: () => Promise<DownloadJob[]>;
     cancelJob: (id: string) => Promise<void>;
     stopJob: (id: string) => Promise<void>;

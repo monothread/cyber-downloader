@@ -6,10 +6,11 @@ import {
     MIN_CONCURRENT,
     MIN_TITLE_LENGTH,
     RESOLUTIONS,
+    THEMES,
     VIDEO_CONTAINERS
 } from '@shared/constants';
 import { useEffect } from 'react';
-import type { MaxResolution } from '@shared/types';
+import type { MaxResolution, ThemeName } from '@shared/types';
 import { useAutoSaveSettings, type SaveStatus } from '../hooks/useAutoSaveSettings';
 import { useAppStore } from '../store/appStore';
 import { NumberField, SelectField, TextField, ToggleField } from './fields';
@@ -28,6 +29,16 @@ function formatResolution(resolution: MaxResolution): string {
     return resolution === 'best' ? 'Best available' : `Up to ${resolution}p`;
 }
 
+const THEME_LABELS: Record<ThemeName, string> = {
+    cyberpunk: 'Cyberpunk (neon)',
+    dark: 'Dark (simple)',
+    light: 'Light (simple)'
+};
+
+function formatTheme(theme: ThemeName): string {
+    return THEME_LABELS[theme];
+}
+
 export function SettingsPanel() {
     const stored = useAppStore((state) => {
         return state.settings;
@@ -43,6 +54,15 @@ export function SettingsPanel() {
     });
     const checkAppUpdate = useAppStore((state) => {
         return state.checkAppUpdate;
+    });
+    const binaries = useAppStore((state) => {
+        return state.binaries;
+    });
+    const updatingYtdlp = useAppStore((state) => {
+        return state.updating;
+    });
+    const updateYtdlp = useAppStore((state) => {
+        return state.updateYtdlp;
     });
     const traySupport = useAppStore((state) => {
         return state.traySupport;
@@ -70,6 +90,20 @@ export function SettingsPanel() {
             <p className={`save-status save-status--${status}`} aria-live="polite">
                 {SAVE_STATUS_TEXT[status]}
             </p>
+
+            <fieldset className="panel">
+                <legend>APPEARANCE</legend>
+                <SelectField
+                    label="Theme"
+                    value={draft.theme}
+                    options={THEMES}
+                    formatOption={formatTheme}
+                    hint="Saved and restored the next time the app opens."
+                    onChange={(value) => {
+                        change('theme', value);
+                    }}
+                />
+            </fieldset>
 
             <fieldset className="panel">
                 <legend>OUTPUT</legend>
@@ -226,6 +260,26 @@ export function SettingsPanel() {
                         change('embedSubtitles', value);
                     }}
                 />
+            </fieldset>
+
+            <fieldset className="panel">
+                <legend>YT-DLP</legend>
+                <p className="update-status" aria-live="polite">
+                    {binaries?.ytdlp.found ? `Installed version: ${binaries.ytdlp.version ?? 'unknown'}` : 'yt-dlp was not found.'}
+                </p>
+                <div className="field-row">
+                    <button
+                        type="button"
+                        className="btn btn--small"
+                        disabled={updatingYtdlp}
+                        onClick={() => {
+                            void updateYtdlp();
+                        }}
+                    >
+                        {updatingYtdlp ? 'UPDATING…' : 'UPDATE YT-DLP'}
+                    </button>
+                </div>
+                <span className="field__hint">Downloads the latest yt-dlp into the app data folder. Sites change often, so update it when a download suddenly stops working.</span>
             </fieldset>
 
             <fieldset className="panel">
