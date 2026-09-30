@@ -1,6 +1,6 @@
 {
   "name": "cyber-downloader",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Cyberpunk desktop frontend for yt-dlp",
   "main": "out/main/index.js",
   "author": {
