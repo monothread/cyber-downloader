@@ -13,3 +13,4 @@
 - App self-update (D-014): electron-updater + GitHub Releases, UI and tests (294 unit, 13 e2e); artifacts now `cyber-downloader-<version>.{AppImage,deb}`; `docs/RELEASING.md` created.
 - Git: repository initialized, code pushed to `monothread/cyber-downloader` on `main` (rebased on top of the GitHub-created LICENSE commit, no force push). MIT `LICENSE` kept from the remote.
 - Docs translated to English.
+- Fixed the EPIPE crash when the AppImage is launched without a terminal (updater logger off + stdio error guard). Version bumped to 0.1.1 to test the auto-update from 0.1.0.
