@@ -23,6 +23,30 @@ export interface SniffResult {
     error: string | null;
 }
 
+// Runs inside the top page: finds the biggest player-like element (video, iframe or a "player" container) and scrolls
+// it into view, because lazy players only load and arm themselves once they are on screen.
+const SCROLL_TO_PLAYER_SCRIPT = `(() => {
+  let best = null;
+  let bestArea = 0;
+  document.querySelectorAll('video, iframe, [class*="player" i], [id*="player" i]').forEach((element) => {
+    const rect = element.getBoundingClientRect();
+    const area = rect.width * rect.height;
+    if (rect.width >= 200 && rect.height >= 100 && area > bestArea) { best = element; bestArea = area; }
+  });
+  if (best) { best.scrollIntoView({ block: 'center', inline: 'center' }); }
+})();`;
+
+// Runs inside EVERY frame (including iframes of other origins, through webFrameMain) with user activation:
+// starts the videos and clicks what sits in the middle of the frame, which is where a play overlay usually is.
+const FRAME_PLAY_SCRIPT = `(() => {
+  document.querySelectorAll('video').forEach((video) => { video.muted = true; const started = video.play(); if (started && started.catch) { started.catch(() => {}); } });
+  const middle = document.elementFromPoint(Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2));
+  if (middle) {
+    ['pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach((type) => { try { middle.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window })); } catch (e) {} });
+    try { middle.click(); } catch (e) {}
+  }
+})();`;
+
 // Runs inside the page: starts every <video> (muted, so autoplay rules allow it) and presses the usual play buttons.
 const PLAY_SCRIPT = `(() => {
   document.querySelectorAll('video').forEach((video) => { video.muted = true; const started = video.play(); if (started && started.catch) { started.catch(() => {}); } });
@@ -72,6 +96,8 @@ export async function sniffStreams(pageUrl: string, signal: AbortSignal): Promis
         ...VIEWPORT,
         webPreferences: {
             session: ses,
+            // Rendered off-screen instead of merely hidden: players wait for a *visible* page before they start.
+            offscreen: true,
             sandbox: true,
             contextIsolation: true,
             nodeIntegration: false,
@@ -112,6 +138,11 @@ export async function sniffStreams(pageUrl: string, signal: AbortSignal): Promis
 
     const contents = window.webContents;
     contents.setAudioMuted(true);
+    // An off-screen page only keeps producing frames, and so keeps its layout and scroll state current, while they are consumed.
+    contents.on('paint', () => {
+        return undefined;
+    });
+    contents.setFrameRate(15);
     contents.setWindowOpenHandler(() => {
         return { action: 'deny' };
     });
@@ -127,13 +158,24 @@ export async function sniffStreams(pageUrl: string, signal: AbortSignal): Promis
         contents.sendInputEvent({ type: 'mouseDown', ...point, button: 'left', clickCount: 1 });
         contents.sendInputEvent({ type: 'mouseUp', ...point, button: 'left', clickCount: 1 });
     };
-    const tryToPlay = (): void => {
-        if (!window.isDestroyed()) {
-            void contents.executeJavaScript(PLAY_SCRIPT, true).catch(() => {
-                return undefined;
-            });
-            clickCenter();
+    const tryToPlay = async (): Promise<void> => {
+        if (window.isDestroyed()) {
+            return;
         }
+        await contents.executeJavaScript(SCROLL_TO_PLAYER_SCRIPT, true).catch(() => {
+            return undefined;
+        });
+        await contents.executeJavaScript(PLAY_SCRIPT, true).catch(() => {
+            return undefined;
+        });
+        await Promise.all(
+            contents.mainFrame.framesInSubtree.map((frame) => {
+                return frame.executeJavaScript(FRAME_PLAY_SCRIPT, true).catch(() => {
+                    return undefined;
+                });
+            })
+        );
+        clickCenter();
     };
 
     let loadError: string | null = null;
@@ -145,7 +187,11 @@ export async function sniffStreams(pageUrl: string, signal: AbortSignal): Promis
         contents.once('did-finish-load', () => {
             pageLoaded = true;
             PLAY_ATTEMPT_DELAYS_MS.forEach((delay) => {
-                timers.push(setTimeout(tryToPlay, delay));
+                timers.push(
+                    setTimeout(() => {
+                        void tryToPlay();
+                    }, delay)
+                );
             });
         });
         contents.once('did-fail-load', (_event, _code, description, _url, isMainFrame) => {

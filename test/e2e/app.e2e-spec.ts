@@ -641,11 +641,43 @@ const PAGES: Record<string, string> = {
     '/unsupported/none.html': '<html><head><title>Nothing here</title></head><body><p>No video on this page.</p></body></html>'
 };
 
+// A player like the ones embedded from video hosts: it lives in an iframe of ANOTHER origin, below the fold,
+// only arms itself once the page is visible, needs a user gesture to start, and then asks for the video through
+// a signed address without file extension.
+const FRAME_PLAYER = `<html><body style="margin:0"><video id="v" muted playsinline width="640" height="360"></video>
+<div id="overlay" style="position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center"><button id="play" style="font-size:40px">PLAY</button></div>
+<script>
+  var armed = false;
+  function arm() { armed = true; }
+  if (document.visibilityState === 'visible') { arm(); } else { document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { arm(); } }); }
+  document.getElementById('overlay').addEventListener('click', function () {
+    if (!armed || !navigator.userActivation.isActive) { return; }
+    var video = document.getElementById('v');
+    video.src = '/videoplayback?expire=1999999999&ip=203.0.113.9&id=7081&itag=18&mime=video%2Fmp4&sig=AbC123';
+    video.play().catch(function () {});
+  });
+</script></body></html>`;
+
+function nestedPlayerPage(port: number): string {
+    return `<html><head><title>Nested Player</title></head><body><h1>Episode</h1>
+        <div style="height:1600px">spacer</div>
+        <iframe src="http://localhost:${port}/frame/player.html" width="640" height="360" loading="lazy"></iframe></body></html>`;
+}
+
 function startLocalSite(): Promise<{ server: Server; origin: string }> {
     return new Promise((resolvePromise) => {
         const server = createServer((request, response) => {
             const path = (request.url ?? '/').split('?')[0] ?? '/';
-            if (PAGES[path]) {
+            if (path === '/unsupported/nested.html') {
+                response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+                response.end(nestedPlayerPage((server.address() as AddressInfo).port));
+            } else if (path === '/frame/player.html') {
+                response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+                response.end(FRAME_PLAYER);
+            } else if (path === '/videoplayback') {
+                response.writeHead(206, { 'content-type': 'video/mp4', 'content-length': 300000, 'content-range': 'bytes 0-299999/300000', 'accept-ranges': 'bytes' });
+                response.end(Buffer.alloc(300000));
+            } else if (PAGES[path]) {
                 response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
                 response.end(PAGES[path]);
             } else if (path.endsWith('.m3u8')) {
@@ -763,6 +795,25 @@ test.describe('find stream', () => {
         const args = lastYtdlpCall(logPath, '/media/dynamic.m3u8');
         expect(args[args.indexOf('--referer') + 1]).toMatch(new RegExp(`^${site.origin.replace(/[.:/]/g, '\\$&')}/`));
         expect(args[args.indexOf('-o') + 1]).toBe('Dynamic Episode [%(id)s].%(ext)s');
+    });
+
+    test('finds a player inside a cross-origin iframe that needs visibility and a user gesture, served from a signed address', async () => {
+        test.setTimeout(60000);
+        const { page, logPath } = session;
+        await failOn('/unsupported/nested.html');
+        await page.getByRole('button', { name: 'FIND STREAM' }).click();
+        const item = panel().getByRole('listitem');
+        await expect(item).toHaveCount(1, { timeout: 40000 });
+        await expect(item).toContainText('MP4');
+        await expect(item).toContainText('/videoplayback?expire=1999999999');
+        await expect(item).toContainText('seen on the network');
+
+        await panel().getByRole('button', { name: 'Download stream 1' }).click();
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        const args = lastYtdlpCall(logPath, 'sig=AbC123');
+        expect(args.at(-1)).toContain('/videoplayback?expire=1999999999&ip=203.0.113.9&id=7081&itag=18&mime=video%2Fmp4&sig=AbC123');
+        expect(args[args.indexOf('--referer') + 1]).toMatch(/^http:\/\/localhost:\d+\//);
+        expect(args[args.indexOf('-o') + 1]).toBe('Nested Player [%(id)s].%(ext)s');
     });
 
     test('can search deeper with the browser after a static result', async () => {
