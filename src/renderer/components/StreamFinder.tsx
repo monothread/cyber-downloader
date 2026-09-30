@@ -110,7 +110,7 @@ export function StreamFinder({ jobId }: StreamFinderProps) {
                 </>
             )}
 
-            <p className="stream-finder__note">Protected (DRM) streams cannot be downloaded. Only download what you have the right to.</p>
+            <p className="stream-finder__note">Protected (DRM) streams cannot be downloaded. Downloads are at your own risk: you are responsible for what you download.</p>
         </section>
     );
 }

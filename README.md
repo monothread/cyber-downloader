@@ -1,6 +1,8 @@
 # CYBER//DL
 
-Cyberpunk-themed Linux desktop app (Electron + React + TypeScript) that wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+Cyberpunk-themed desktop app (Electron + React + TypeScript) for Linux and Windows that wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+
+> **Disclaimer:** every download made with this program is **at the user's own risk and responsibility**. The authors and contributors are not responsible for what is downloaded or for how it is used. You must only download content you have the right to download. See [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Install
 Download the file for your system from the [Releases page](https://github.com/monothread/cyber-downloader/releases/latest). Nothing else has to be installed: yt-dlp, ffmpeg/ffprobe and deno are bundled.
@@ -80,7 +82,7 @@ When a download fails because yt-dlp does not understand the page (for example "
 
 - It does **not** bypass DRM: protected streams (Widevine, FairPlay...) cannot be downloaded, and pages that need a login or an action the app cannot perform may show nothing.
 - The hidden window contacts the site like any browser would, so the site sees a visit from you. Nothing from it is kept after the search.
-- Use it only for content you have the right to download.
+- Use it only for content you have the right to download. You are solely responsible for what you download; see [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Notes
 - **System tray:** on Linux the tray uses the StatusNotifierItem/AppIndicator standard (KDE, XFCE, Cinnamon, MATE, LXQt and GNOME with an extension); on Windows it is the notification area. Stock GNOME has no tray: install the "AppIndicator and KStatusNotifierItem Support" extension (Ubuntu ships it enabled; Fedora: `sudo dnf install gnome-shell-extension-appindicator`; Arch: `sudo pacman -S gnome-shell-extension-appindicator`, then enable it). Without one, the option is ignored and closing the window quits the app.

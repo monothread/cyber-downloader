@@ -115,9 +115,9 @@ describe('StreamFinder', () => {
         expect(useAppStore.getState().streamSearches['job-1']).toBeUndefined();
     });
 
-    it('always reminds that DRM streams cannot be downloaded', () => {
+    it('always reminds that DRM streams cannot be downloaded and that downloads are at the user\'s own risk', () => {
         setSearch({ message: 'nothing' });
         render(<StreamFinder jobId="job-1" />);
-        expect(screen.getByText('Protected (DRM) streams cannot be downloaded. Only download what you have the right to.')).toBeInTheDocument();
+        expect(screen.getByText('Protected (DRM) streams cannot be downloaded. Downloads are at your own risk: you are responsible for what you download.')).toBeInTheDocument();
     });
 });
