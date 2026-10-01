@@ -206,4 +206,33 @@ describe('App theme', () => {
         await screen.findByLabelText('Link 1');
         expect(window.localStorage.getItem('cyber-dl-theme')).toBe('cyberpunk');
     });
+
+    it('makes the neon follow the mouse only in the cyberpunk theme', async () => {
+        mock.api.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS, theme: 'cyberpunk' });
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        await act(async () => {
+            window.dispatchEvent(new MouseEvent('pointermove', { clientX: 33, clientY: 44 }));
+            await new Promise((resolve) => {
+                window.requestAnimationFrame(resolve);
+            });
+        });
+        expect(document.documentElement.style.getPropertyValue('--mx')).toBe('33px');
+        expect(document.documentElement.style.getPropertyValue('--my')).toBe('44px');
+        expect(document.documentElement.getAttribute('data-glow')).toBe('on');
+    });
+
+    it('does not follow the mouse in the dark theme', async () => {
+        mock.api.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS, theme: 'dark' });
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        await act(async () => {
+            window.dispatchEvent(new MouseEvent('pointermove', { clientX: 33, clientY: 44 }));
+            await new Promise((resolve) => {
+                window.requestAnimationFrame(resolve);
+            });
+        });
+        expect(document.documentElement.style.getPropertyValue('--mx')).toBe('');
+        expect(document.documentElement.getAttribute('data-glow')).toBeNull();
+    });
 });

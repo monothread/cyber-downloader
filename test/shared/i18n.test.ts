@@ -1,0 +1,120 @@
+import { FALLBACK_LANGUAGE, LANGUAGE_CODES, LANGUAGE_SETTINGS } from '@shared/constants';
+import { CATALOGS, createTranslator, interpolate, languageFromLocale, LANGUAGE_NAMES, resolveLanguage } from '@shared/i18n';
+import { en, type MessageKey } from '@shared/i18n/en';
+import type { LanguageCode } from '@shared/types';
+
+const ENGLISH_KEYS = Object.keys(en).sort() as MessageKey[];
+
+function placeholdersOf(text: string): string[] {
+    return (text.match(/\{\w+\}/g) ?? []).sort();
+}
+
+describe('language constants', () => {
+    it('supports English, Portuguese, Spanish, Chinese and Japanese', () => {
+        expect(LANGUAGE_CODES).toEqual(['en', 'pt', 'es', 'zh', 'ja']);
+    });
+
+    it('offers "device" besides every supported language', () => {
+        expect(LANGUAGE_SETTINGS).toEqual(['device', 'en', 'pt', 'es', 'zh', 'ja']);
+    });
+
+    it('falls back to English', () => {
+        expect(FALLBACK_LANGUAGE).toBe('en');
+    });
+
+    it('names every language in itself', () => {
+        expect(LANGUAGE_NAMES).toEqual({ en: 'English', pt: 'Português', es: 'Español', zh: '中文', ja: '日本語' });
+    });
+});
+
+describe.each(LANGUAGE_CODES)('catalog "%s"', (language: LanguageCode) => {
+    const catalog = CATALOGS[language];
+
+    it('has exactly the keys of the English catalog', () => {
+        expect(Object.keys(catalog).sort()).toEqual(ENGLISH_KEYS);
+    });
+
+    it('has no empty message', () => {
+        ENGLISH_KEYS.forEach((key) => {
+            expect(catalog[key].trim().length, `${language}:${key}`).toBeGreaterThan(0);
+        });
+    });
+
+    it('keeps the placeholders of the English message', () => {
+        ENGLISH_KEYS.forEach((key) => {
+            expect(placeholdersOf(catalog[key]), `${language}:${key}`).toEqual(placeholdersOf(en[key]));
+        });
+    });
+});
+
+describe('translations', () => {
+    it('translates the same key differently in every language', () => {
+        const titles = LANGUAGE_CODES.map((language) => {
+            return createTranslator(language)('tab.settings');
+        });
+        expect(titles).toEqual(['SETTINGS', 'CONFIGURAÇÕES', 'AJUSTES', '设置', '設定']);
+    });
+});
+
+describe('interpolate', () => {
+    it('returns the template untouched without params', () => {
+        expect(interpolate('Version {version}', undefined)).toBe('Version {version}');
+    });
+
+    it('replaces every placeholder, numbers included', () => {
+        expect(interpolate('{count} of {total} ({count})', { count: 2, total: 'ten' })).toBe('2 of ten (2)');
+    });
+
+    it('keeps a placeholder that has no param', () => {
+        expect(interpolate('Hello {name}', { other: 'x' })).toBe('Hello {name}');
+    });
+});
+
+describe('createTranslator', () => {
+    it('returns the message of the language', () => {
+        expect(createTranslator('en')('tab.history')).toBe('HISTORY');
+        expect(createTranslator('ja')('tab.history')).toBe('履歴');
+    });
+
+    it('interpolates the params', () => {
+        expect(createTranslator('en')('update.available', { version: '1.2.3' })).toBe('Version 1.2.3 is available.');
+        expect(createTranslator('pt')('update.available', { version: '1.2.3' })).toBe('A versão 1.2.3 está disponível.');
+        expect(createTranslator('zh')('queue.label', { count: 4 })).toBe('队列 [4]');
+    });
+});
+
+describe('languageFromLocale', () => {
+    it.each([
+        ['en-US', 'en'],
+        ['pt-BR', 'pt'],
+        ['pt_PT', 'pt'],
+        ['es-419', 'es'],
+        ['zh-CN', 'zh'],
+        ['zh-Hant-TW', 'zh'],
+        ['ja', 'ja'],
+        ['JA-JP', 'ja']
+    ])('maps %s to %s', (locale, expected) => {
+        expect(languageFromLocale(locale)).toBe(expected);
+    });
+
+    it.each(['fr-FR', 'de', '', 'xx-YY'])('falls back to English for "%s"', (locale) => {
+        expect(languageFromLocale(locale)).toBe('en');
+    });
+
+    it('falls back to English without a locale', () => {
+        expect(languageFromLocale(null)).toBe('en');
+        expect(languageFromLocale(undefined)).toBe('en');
+    });
+});
+
+describe('resolveLanguage', () => {
+    it('follows the system locale for "device"', () => {
+        expect(resolveLanguage('device', 'es-ES')).toBe('es');
+        expect(resolveLanguage('device', 'fr-FR')).toBe('en');
+    });
+
+    it('ignores the system locale for an explicit language', () => {
+        expect(resolveLanguage('ja', 'es-ES')).toBe('ja');
+        expect(resolveLanguage('en', 'pt-BR')).toBe('en');
+    });
+});

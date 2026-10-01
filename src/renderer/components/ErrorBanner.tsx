@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { DownloadError } from '@shared/types';
+import { useTranslator } from '../i18n/useTranslator';
 
 interface ErrorBannerProps {
     error: DownloadError;
@@ -8,7 +9,8 @@ interface ErrorBannerProps {
     findStreamLabel?: string;
 }
 
-export function ErrorBanner({ error, onRetry, onFindStream, findStreamLabel = 'FIND STREAM' }: ErrorBannerProps) {
+export function ErrorBanner({ error, onRetry, onFindStream, findStreamLabel }: ErrorBannerProps) {
+    const t = useTranslator();
     const [showDetails, setShowDetails] = useState(false);
     return (
         <div className="error-banner" role="alert">
@@ -27,14 +29,14 @@ export function ErrorBanner({ error, onRetry, onFindStream, findStreamLabel = 'F
                         });
                     }}
                 >
-                    {showDetails ? 'HIDE DETAILS' : 'SHOW DETAILS'}
+                    {showDetails ? t('errorBanner.hideDetails') : t('errorBanner.showDetails')}
                 </button>
                 <button type="button" className="btn btn--small btn--hot" onClick={onRetry}>
-                    RETRY
+                    {t('errorBanner.retry')}
                 </button>
                 {onFindStream && (
                     <button type="button" className="btn btn--small btn--primary" onClick={onFindStream}>
-                        {findStreamLabel}
+                        {findStreamLabel ?? t('errorBanner.findStream')}
                     </button>
                 )}
             </div>

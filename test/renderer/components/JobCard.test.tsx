@@ -18,8 +18,12 @@ beforeEach(() => {
     useAppStore.setState({ ...initial, streamSearches: {} });
 });
 
+function makeHandlers() {
+    return { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+}
+
 function renderCard(job: DownloadJob) {
-    const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+    const handlers = makeHandlers();
     render(<JobCard job={job} {...handlers} />);
     return handlers;
 }
@@ -264,3 +268,110 @@ describe('JobCard', () => {
         });
     });
 });
+
+describe('JobCard live phases', () => {
+    const verifying = (overrides: Partial<DownloadJob> = {}) => {
+        return makeJob({ status: 'running', live: true, percent: 0, title: 'Live Show', elapsedSeconds: 754, endCheck: { secondsLeft: 7, totalSeconds: 10 }, ...overrides });
+    };
+    const waiting = (overrides: Partial<DownloadJob> = {}) => {
+        return makeJob({ status: 'running', live: false, percent: 0, title: 'Scheduled Show', speed: '', eta: '', waitingForLive: true, ...overrides });
+    };
+
+    describe('checking whether the stream really ended', () => {
+        it('shows the VERIFYING END badge, a draining bar and the seconds that are left', () => {
+            const { container } = render(<JobCard job={verifying()} {...makeHandlers()} />);
+            expect(screen.getByText('VERIFYING END')).toHaveClass('badge', 'badge--verifying');
+            expect(screen.getByText('The stream stopped. Checking whether it really ended… 7s')).toHaveClass('job__verifying');
+            const bar = screen.getByRole('progressbar', { name: 'Checking whether the live stream really ended' });
+            expect(bar).toHaveClass('progress--verify');
+            expect(bar).toHaveAttribute('aria-valuemin', '0');
+            expect(bar).toHaveAttribute('aria-valuemax', '10');
+            expect(bar).toHaveAttribute('aria-valuenow', '7');
+            expect(bar.firstElementChild).toHaveStyle({ animationDuration: '10s' });
+            expect(screen.getByTestId('job-card')).toHaveClass('job', 'job--running', 'job--verifying');
+            expect(container.querySelector('.job__live')).toBeNull();
+        });
+
+        it('replaces the recording details and the usual actions with FINISH NOW', async () => {
+            const user = userEvent.setup();
+            const handlers = makeHandlers();
+            render(<JobCard job={verifying()} {...handlers} />);
+            expect(screen.queryByText('RECORDING')).not.toBeInTheDocument();
+            expect(screen.queryByText('● LIVE')).not.toBeInTheDocument();
+            expect(screen.queryByText('12:34')).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'STOP & SAVE' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'CANCEL' })).not.toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: 'FINISH NOW' }));
+            expect(handlers.onStop).toHaveBeenCalledWith('job-1');
+            expect(handlers.onCancel).not.toHaveBeenCalled();
+        });
+
+        it('goes back to the recording view when the check closes', () => {
+            const { rerender } = render(<JobCard job={verifying()} {...makeHandlers()} />);
+            rerender(<JobCard job={verifying({ endCheck: null })} {...makeHandlers()} />);
+            expect(screen.getByText('RECORDING')).toBeInTheDocument();
+            expect(screen.getByText('● LIVE')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'FINISH NOW' })).not.toBeInTheDocument();
+            expect(screen.getByTestId('job-card')).not.toHaveClass('job--verifying');
+        });
+
+        it('has no effect once the job is finished', () => {
+            render(<JobCard job={verifying({ status: 'done' })} {...makeHandlers()} />);
+            expect(screen.getByText('COMPLETE')).toBeInTheDocument();
+            expect(screen.queryByText('VERIFYING END')).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'FINISH NOW' })).not.toBeInTheDocument();
+        });
+    });
+
+    describe('waiting for a scheduled live stream', () => {
+        it('shows the WAITING FOR LIVE badge and a sweeping bar', () => {
+            render(<JobCard job={waiting()} {...makeHandlers()} />);
+            expect(screen.getByText('WAITING FOR LIVE')).toHaveClass('badge', 'badge--waiting');
+            expect(screen.getByText('Waiting for the live stream to start')).toHaveClass('job__waiting');
+            expect(screen.getByRole('progressbar', { name: 'Waiting for the live stream to start' })).toHaveClass('progress--waiting');
+            expect(screen.getByTestId('job-card')).toHaveClass('job', 'job--running', 'job--waiting');
+            expect(screen.queryByText('0.0%')).not.toBeInTheDocument();
+        });
+
+        it('can be cancelled', async () => {
+            const user = userEvent.setup();
+            const handlers = makeHandlers();
+            render(<JobCard job={waiting()} {...handlers} />);
+            await user.click(screen.getByRole('button', { name: 'CANCEL' }));
+            expect(handlers.onCancel).toHaveBeenCalledWith('job-1');
+            expect(screen.queryByRole('button', { name: 'FINISH NOW' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'STOP & SAVE' })).not.toBeInTheDocument();
+        });
+
+        it('goes back to the normal view when it is not waiting any more', () => {
+            render(<JobCard job={waiting({ waitingForLive: false, percent: 42.5 })} {...makeHandlers()} />);
+            expect(screen.getByText('DOWNLOADING')).toBeInTheDocument();
+            expect(screen.getByText('42.5%')).toBeInTheDocument();
+            expect(screen.getByTestId('job-card')).not.toHaveClass('job--waiting');
+        });
+    });
+});
+
+describe('JobCard custom options', () => {
+    it('shows a badge when the download has options of its own', () => {
+        render(<JobCard job={makeJob({ customized: true })} {...makeHandlers()} />);
+        const badge = screen.getByText('CUSTOM');
+        expect(badge).toHaveClass('badge', 'badge--custom');
+        expect(badge).toHaveAttribute('title', 'This download has options of its own');
+        expect(screen.getByText('DOWNLOADING')).toBeInTheDocument();
+    });
+
+    it('has no badge otherwise', () => {
+        render(<JobCard job={makeJob({ customized: false })} {...makeHandlers()} />);
+        expect(screen.queryByText('CUSTOM')).not.toBeInTheDocument();
+    });
+
+    it('keeps the badge when the download has finished or failed', () => {
+        const { rerender } = render(<JobCard job={makeJob({ customized: true, status: 'done' })} {...makeHandlers()} />);
+        expect(screen.getByText('CUSTOM')).toBeInTheDocument();
+        rerender(<JobCard job={makeJob({ customized: true, status: 'error' })} {...makeHandlers()} />);
+        expect(screen.getByText('CUSTOM')).toBeInTheDocument();
+        expect(screen.getByText('FAILED')).toBeInTheDocument();
+    });
+});
+

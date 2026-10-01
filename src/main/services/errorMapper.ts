@@ -1,10 +1,20 @@
+import type { MessageKey } from '@shared/i18n';
 import type { DownloadError, ErrorCode } from '@shared/types';
+import { translateMain } from './language';
+
+type RuleCode = Exclude<ErrorCode, 'UNKNOWN' | 'BINARY_MISSING'>;
 
 interface ErrorRule {
-    code: ErrorCode;
-    title: string;
-    hint: string;
+    code: RuleCode;
     patterns: RegExp[];
+}
+
+function titleKey(code: ErrorCode): MessageKey {
+    return `error.${code}.title`;
+}
+
+function hintKey(code: ErrorCode): MessageKey {
+    return `error.${code}.hint`;
 }
 
 const RAW_LIMIT = 4000;
@@ -12,44 +22,30 @@ const RAW_LIMIT = 4000;
 const ERROR_RULES: ErrorRule[] = [
     {
         code: 'FILENAME_TOO_LONG',
-        title: 'Title too long',
-        hint: 'Reduce the maximum title length in the settings.',
         patterns: [/file name too long/i, /filename too long/i, /errno 36/i]
     },
     {
         code: 'FFMPEG_MISSING',
-        title: 'ffmpeg not found',
-        hint: 'Install ffmpeg or set its path in the settings.',
         patterns: [/ffmpeg (is )?not (found|installed)/i, /ffprobe and ffmpeg not found/i, /ffmpeg or avconv not found/i]
     },
     {
         code: 'LOGIN_REQUIRED',
-        title: 'Login required',
-        hint: 'Enable browser cookies in the settings and make sure you are logged in.',
         patterns: [/sign in/i, /log ?in (is )?required/i, /age[- ]restricted/i, /confirm you.{1,3}re not a bot/i, /members[- ]only/i]
     },
     {
         code: 'UNAVAILABLE',
-        title: 'Video unavailable',
-        hint: 'The video may be private, removed or blocked in your region.',
         patterns: [/video unavailable/i, /private video/i, /has been removed/i, /not available/i, /does not exist/i, /is private/i]
     },
     {
         code: 'OUTDATED',
-        title: 'yt-dlp may be outdated',
-        hint: 'Use the update button to get the latest yt-dlp.',
         patterns: [/unable to extract/i, /please update/i, /yt-dlp -u/i, /unsupported url/i]
     },
     {
         code: 'FORBIDDEN',
-        title: 'Access refused by the server',
-        hint: 'The server refused the request (HTTP 401/403/410). The link may have expired or may only work for the original session, network or browser, which is common for temporary addresses. Try again from the page, enable browser cookies in the settings, or search for the stream again.',
         patterns: [/http error (401|403|410)/i, /\b403\b.{0,20}forbidden/i, /forbidden/i]
     },
     {
         code: 'NETWORK',
-        title: 'Network failure',
-        hint: 'Check your connection and try again.',
         patterns: [
             /unable to download/i,
             /timed out/i,
@@ -75,13 +71,13 @@ export function mapDownloadError(stderr: string, exitCode: number | null): Downl
         });
     });
     if (matchedRule) {
-        return { code: matchedRule.code, title: matchedRule.title, hint: matchedRule.hint, raw };
+        return { code: matchedRule.code, title: translateMain(titleKey(matchedRule.code)), hint: translateMain(hintKey(matchedRule.code)), raw };
     }
     return {
         code: 'UNKNOWN',
-        title: 'Download failed',
-        hint: 'See the details below.',
-        raw: raw.length > 0 ? raw : `yt-dlp exited with code ${exitCode ?? 'unknown'}`
+        title: translateMain(titleKey('UNKNOWN')),
+        hint: translateMain(hintKey('UNKNOWN')),
+        raw: raw.length > 0 ? raw : translateMain('error.exitCode', { code: exitCode ?? translateMain('error.exitCodeUnknown') })
     };
 }
 
@@ -89,10 +85,10 @@ export function mapSpawnError(error: NodeJS.ErrnoException): DownloadError {
     if (error.code === 'ENOENT') {
         return {
             code: 'BINARY_MISSING',
-            title: 'yt-dlp not found',
-            hint: 'Install yt-dlp or set its path in the settings.',
+            title: translateMain(titleKey('BINARY_MISSING')),
+            hint: translateMain(hintKey('BINARY_MISSING')),
             raw: error.message
         };
     }
-    return { code: 'UNKNOWN', title: 'Could not start yt-dlp', hint: 'See the details below.', raw: error.message };
+    return { code: 'UNKNOWN', title: translateMain('error.spawn.title'), hint: translateMain(hintKey('UNKNOWN')), raw: error.message };
 }

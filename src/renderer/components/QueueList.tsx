@@ -1,7 +1,9 @@
+import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 import { JobCard } from './JobCard';
 
 export function QueueList() {
+    const t = useTranslator();
     const jobs = useAppStore((state) => {
         return state.jobs;
     });
@@ -28,13 +30,13 @@ export function QueueList() {
     });
 
     if (jobs.length === 0) {
-        return <p className="empty">// NO ACTIVE DOWNLOADS. JACK IN A URL ABOVE.</p>;
+        return <p className="empty">{t('queue.empty')}</p>;
     }
 
     return (
-        <section className="queue" aria-label="Download queue">
+        <section className="queue" aria-label={t('queue.aria')}>
             <div className="queue__toolbar">
-                <span className="section-label">QUEUE [{jobs.length}]</span>
+                <span className="section-label">{t('queue.label', { count: jobs.length })}</span>
                 {hasFinished && (
                     <button
                         type="button"
@@ -43,7 +45,7 @@ export function QueueList() {
                             void clearFinished();
                         }}
                     >
-                        CLEAR FINISHED
+                        {t('queue.clearFinished')}
                     </button>
                 )}
             </div>

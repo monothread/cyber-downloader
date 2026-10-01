@@ -1,6 +1,8 @@
+import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 
 export function UpdateActions() {
+    const t = useTranslator();
     const status = useAppStore((state) => {
         return state.appUpdate.status;
     });
@@ -23,7 +25,7 @@ export function UpdateActions() {
                     void downloadAppUpdate();
                 }}
             >
-                UPDATE TO {version}
+                {t('update.updateTo', { version: version ?? '' })}
             </button>
         );
     }
@@ -36,7 +38,7 @@ export function UpdateActions() {
                     void installAppUpdate();
                 }}
             >
-                RESTART & INSTALL
+                {t('update.restartInstall')}
             </button>
         );
     }

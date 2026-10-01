@@ -1,9 +1,10 @@
 import { join } from 'node:path';
-import type { Settings } from '@shared/types';
+import type { DownloadOptions, Settings } from '@shared/types';
 import { FILE_PRINT_TEMPLATE, INFO_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from './progressParser';
 
 const FILENAME_BYTE_LIMIT = '240';
 const LIVE_WAIT_SECONDS = '30';
+const LIVE_ONLY_FILTER = 'is_live';
 
 // What a download found by the stream finder needs to reach the stream as the page itself would have.
 export interface RequestExtras {
@@ -17,6 +18,11 @@ export interface RequestExtras {
     ipFamily?: 4 | 6;
     // The page the stream was found on; used to look for a fresh address, never passed to yt-dlp.
     pageUrl?: string;
+    // A new attempt to record a live stream that came back: the file gets a part number, the recording does not start over
+    // and yt-dlp skips the video unless it is live.
+    resumedPart?: number;
+    // Settings chosen for this download only; they replace the ones in the settings.
+    options?: DownloadOptions;
 }
 
 export function splitArguments(input: string): string[] {
@@ -50,16 +56,22 @@ export function escapeTitleForTemplate(title: string, maxLength: number): string
 
 function buildOutputTemplate(settings: Settings, extras: RequestExtras): string {
     const title = extras.title ? escapeTitleForTemplate(extras.title, settings.maxTitleLength) : '';
-    return title.length > 0 ? `${title} [%(id)s].%(ext)s` : `%(title).${settings.maxTitleLength}s [%(id)s].%(ext)s`;
+    const part = extras.resumedPart === undefined ? '' : ` (part ${extras.resumedPart})`;
+    return title.length > 0 ? `${title} [%(id)s]${part}.%(ext)s` : `%(title).${settings.maxTitleLength}s [%(id)s]${part}.%(ext)s`;
 }
 
 // Live streams. "From the start" is honoured where the site allows it: yt-dlp's own option (YouTube, Twitch) and, for
 // HLS recorded through ffmpeg, starting at the first segment the playlist still offers (the whole broadcast when the
-// broadcaster keeps it, as in DVR/EVENT playlists).
-function buildLiveArgs(settings: Settings): string[] {
+// broadcaster keeps it, as in DVR/EVENT playlists). While waiting for a scheduled stream yt-dlp must not be quiet,
+// otherwise its "[wait]" lines are hidden and the app cannot tell that it is waiting.
+function buildLiveArgs(settings: Settings, extras: RequestExtras): string[] {
+    if (extras.resumedPart !== undefined) {
+        // A stream that came back is recorded from now on, and only when it really is live.
+        return ['--match-filter', LIVE_ONLY_FILTER];
+    }
     const args: string[] = [];
     if (settings.waitForLive) {
-        args.push('--wait-for-video', LIVE_WAIT_SECONDS);
+        args.push('--no-quiet', '--wait-for-video', LIVE_WAIT_SECONDS);
     }
     if (settings.liveFromStart) {
         args.push('--live-from-start', '--downloader-args', 'ffmpeg_i:-live_start_index 0');
@@ -165,7 +177,7 @@ export function buildYtdlpArgs(
         FILENAME_BYTE_LIMIT,
         settings.downloadPlaylist ? '--yes-playlist' : '--no-playlist',
         ...buildFormatArgs(settings),
-        ...buildLiveArgs(settings),
+        ...buildLiveArgs(settings, extras),
         ...buildCookieArgs(settings),
         ...buildSubtitleArgs(settings),
         ...buildOptionalArgs(settings, ffmpegLocation),

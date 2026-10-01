@@ -1,4 +1,4 @@
-import { expect, test, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { expect, test, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -40,7 +40,7 @@ async function launch(options: LaunchOptions = {}): Promise<Session> {
     const logPath = join(workDir, 'ytdlp-calls.log');
     writeFileSync(logPath, '');
     mkdirSync(userData, { recursive: true });
-    writeFileSync(join(userData, 'settings.json'), JSON.stringify({ ...(useFakeYtdlp ? { ytdlpPath: FAKE_YTDLP } : {}), downloadDir, ...settings }));
+    writeFileSync(join(userData, 'settings.json'), JSON.stringify({ language: 'en', verifyLiveEnd: false, ...(useFakeYtdlp ? { ytdlpPath: FAKE_YTDLP } : {}), downloadDir, ...settings }));
     const app = await electron.launch({
         args: [ROOT, '--no-sandbox', `--user-data-dir=${userData}`],
         env: { ...process.env, FAKE_YTDLP_LOG: logPath, ...env }
@@ -797,6 +797,56 @@ test.describe('themes', () => {
         }).toBe('dark');
     });
 
+    async function glowOf(page: Page): Promise<{ attribute: string | null; x: string; y: string; opacity: string; image: string }> {
+        return page.evaluate(() => {
+            const root = document.documentElement;
+            const glow = getComputedStyle(document.body, '::before');
+            return {
+                attribute: root.getAttribute('data-glow'),
+                x: root.style.getPropertyValue('--mx'),
+                y: root.style.getPropertyValue('--my'),
+                opacity: glow.opacity,
+                image: glow.backgroundImage
+            };
+        });
+    }
+
+    test('the cyberpunk theme has a neon glow that follows the mouse and the other themes do not', async () => {
+        const { page } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Theme').selectOption('cyberpunk');
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
+        expect(await glowOf(page)).toMatchObject({ attribute: null, opacity: '0' });
+
+        await page.mouse.move(300, 200);
+        await expect(page.locator('html')).toHaveAttribute('data-glow', 'on');
+        await expect.poll(() => {
+            return glowOf(page).then((glow) => {
+                return [glow.x, glow.y, glow.opacity];
+            });
+        }).toEqual(['300px', '200px', '1']);
+        const glow = await glowOf(page);
+        expect(glow.image).toContain('radial-gradient');
+        expect(glow.image).toContain('rgba(0, 240, 255, 0.2)');
+        expect(glow.image).toContain('rgba(255, 43, 214, 0.14)');
+
+        await page.mouse.move(640, 480);
+        await expect.poll(() => {
+            return glowOf(page).then((moved) => {
+                return [moved.x, moved.y];
+            });
+        }).toEqual(['640px', '480px']);
+
+        await page.getByLabel('Theme').selectOption('dark');
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+        await page.mouse.move(100, 100);
+        await expect.poll(() => {
+            return glowOf(page).then((off) => {
+                return [off.attribute, off.x, off.opacity];
+            });
+        }).toEqual([null, '', '0']);
+    });
+
     test('a fixed theme ignores the system mode', async () => {
         const { page } = session;
         await page.getByRole('button', { name: 'SETTINGS' }).click();
@@ -844,6 +894,129 @@ test.describe('themes', () => {
     });
 });
 
+test.describe('languages', () => {
+    test('the language setting from the settings file is shown and every language is named in itself', async () => {
+        const { page, userData } = session;
+        await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+        await expect(page.getByRole('button', { name: 'DOWNLOADS' })).toHaveAttribute('aria-current', 'page');
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect(page.getByLabel('Language', { exact: true })).toHaveValue('en');
+        const options = await page.getByLabel('Language', { exact: true }).locator('option').allTextContents();
+        expect(options).toEqual(['Device (follows the system)', 'English', 'Português', 'Español', '中文', '日本語']);
+        expect(readSettings(userData).language).toBe('en');
+    });
+
+    test('choosing a language translates the whole interface right away and saves it', async () => {
+        const { page, userData } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Language', { exact: true }).selectOption('pt');
+        await expect(page.locator('html')).toHaveAttribute('lang', 'pt');
+        await expect(page.getByRole('button', { name: 'CONFIGURAÇÕES' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByLabel('Idioma', { exact: true })).toHaveValue('pt');
+        await expect(page.getByText('APARÊNCIA E JANELA')).toBeVisible();
+        await expect(page.getByText('Todas as alterações foram salvas.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(userData).language).toBe('pt');
+
+        await page.getByLabel('Idioma', { exact: true }).selectOption('ja');
+        await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+        await expect(page.getByRole('button', { name: '設定' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByText('外観とウィンドウ')).toBeVisible();
+        await expect.poll(() => {
+            return readSettings(userData).language;
+        }).toBe('ja');
+
+        await page.getByLabel('言語', { exact: true }).selectOption('zh');
+        await expect(page.getByRole('button', { name: '设置' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByText('外观与窗口')).toBeVisible();
+
+        await page.getByLabel('语言', { exact: true }).selectOption('es');
+        await expect(page.getByRole('button', { name: 'AJUSTES' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByText('APARIENCIA Y VENTANA')).toBeVisible();
+
+        await page.getByLabel('Idioma', { exact: true }).selectOption('en');
+        await expect(page.getByRole('button', { name: 'SETTINGS' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByText('APPEARANCE & WINDOW')).toBeVisible();
+    });
+
+    test('messages written by the main process use the chosen language', async () => {
+        const { page } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Language', { exact: true }).selectOption('pt');
+        await expect(page.getByText('Todas as alterações foram salvas.')).toBeVisible({ timeout: 6000 });
+        await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+        await page.getByLabel('Link 1', { exact: true }).fill('nope');
+        await page.getByRole('button', { name: 'BAIXAR', exact: true }).click();
+        const alert = page.getByRole('alert').filter({ hasText: 'URL inválida. Use um link http(s).' });
+        await expect(alert).toBeVisible();
+        await expect(page.getByRole('alert')).toHaveCount(1);
+    });
+
+    test('a download error is explained in the language chosen when it happened', async () => {
+        const { page, userData } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Language', { exact: true }).selectOption('es');
+        await expect(page.getByText('Todos los cambios guardados.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(userData).language).toBe('es');
+        await page.getByRole('button', { name: 'DESCARGAS' }).click();
+        await page.getByLabel('Enlace 1', { exact: true }).fill('https://example.com/fail');
+        await page.getByRole('button', { name: 'DESCARGAR', exact: true }).click();
+        const banner = page.getByRole('alert').filter({ hasText: 'Vídeo no disponible' });
+        await expect(banner).toBeVisible();
+        await expect(banner).toContainText('Puede que el vídeo sea privado, se haya eliminado o esté bloqueado en tu región.');
+        await expect(banner.getByRole('button', { name: 'MOSTRAR DETALLES' })).toBeVisible();
+        await expect(banner.getByRole('button', { name: 'REINTENTAR' })).toBeVisible();
+    });
+
+    test('the chosen language is still there after closing and opening the app again', async () => {
+        const { page, app, userData, downloadDir } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Language', { exact: true }).selectOption('ja');
+        await expect.poll(() => {
+            return readSettings(userData).language;
+        }).toBe('ja');
+        await app.close();
+
+        const reopened = await electron.launch({
+            args: [ROOT, '--no-sandbox', `--user-data-dir=${userData}`],
+            env: { ...process.env, FAKE_YTDLP_LOG: session.logPath }
+        });
+        try {
+            const reopenedPage = await reopened.firstWindow();
+            await reopenedPage.waitForSelector('.logo');
+            await expect(reopenedPage.locator('html')).toHaveAttribute('lang', 'ja');
+            await expect(reopenedPage.getByRole('navigation', { name: 'セクション' }).getByRole('button', { name: 'ダウンロード' })).toHaveAttribute('aria-current', 'page');
+            await reopenedPage.getByRole('button', { name: '設定' }).click();
+            await expect(reopenedPage.getByLabel('言語', { exact: true })).toHaveValue('ja');
+            expect(readSettings(userData)).toMatchObject({ language: 'ja', downloadDir });
+        } finally {
+            await reopened.close();
+        }
+    });
+
+    test('"device" follows the language of the system', async () => {
+        const workDir = mkdtempSync(join(tmpdir(), 'cyber-dl-e2e-'));
+        const userData = join(workDir, 'user-data');
+        mkdirSync(userData, { recursive: true });
+        writeFileSync(join(userData, 'settings.json'), JSON.stringify({ language: 'device', ytdlpPath: FAKE_YTDLP, downloadDir: join(workDir, 'downloads') }));
+        const spanish = await electron.launch({
+            args: [ROOT, '--no-sandbox', '--lang=es-ES', `--user-data-dir=${userData}`],
+            env: { ...process.env, LANGUAGE: 'es_ES', LC_ALL: 'es_ES.UTF-8', FAKE_YTDLP_LOG: join(workDir, 'calls.log') }
+        });
+        try {
+            const spanishPage = await spanish.firstWindow();
+            await spanishPage.waitForSelector('.logo');
+            await expect(spanishPage.locator('html')).toHaveAttribute('lang', 'es');
+            await expect(spanishPage.getByRole('button', { name: 'DESCARGAS' })).toHaveAttribute('aria-current', 'page');
+            await spanishPage.getByRole('button', { name: 'AJUSTES' }).click();
+            await expect(spanishPage.getByLabel('Idioma', { exact: true })).toHaveValue('device');
+            expect(readSettings(userData).language).toBe('device');
+        } finally {
+            await spanish.close();
+            rmSync(workDir, { recursive: true, force: true });
+        }
+    });
+});
+
 test.describe('settings layout', () => {
     test('the panels have the same width and the panels of a row have the same height', async () => {
         const { page } = session;
@@ -877,6 +1050,196 @@ test.describe('settings layout', () => {
             return box.wide;
         });
         expect(advanced?.width).toBeGreaterThan((regular[0]?.width ?? 0) * 1.8);
+    });
+});
+
+test.describe('options for one download', () => {
+    async function openOptions(page: Page, index: number): Promise<Locator> {
+        await page.getByRole('button', { name: `Options for link ${index}` }).click();
+        const dialog = page.getByRole('dialog', { name: `Options for link ${index}` });
+        await expect(dialog).toBeVisible();
+        return dialog;
+    }
+
+    async function relaunchWith(settings: Record<string, unknown>): Promise<Session> {
+        await session.app.close();
+        rmSync(resolve(session.userData, '..'), { recursive: true, force: true });
+        session = await launch({ settings });
+        return session;
+    }
+
+    const formatOf = (args: string[]): string => {
+        return args[args.indexOf('-f') + 1] ?? '';
+    };
+    const containerOf = (args: string[]): string => {
+        return args[args.indexOf('--merge-output-format') + 1] ?? '';
+    };
+
+    test('opens a window for the link with the settings as the defaults and closes with Escape or Cancel without changing anything', async () => {
+        const { page } = session;
+        const dialog = await openOptions(page, 1);
+        await expect(dialog.getByLabel('Video quality')).toBeFocused();
+        await expect(dialog.getByLabel('Video quality')).toHaveValue('');
+        await expect(dialog.getByLabel('Video quality').locator('option').first()).toHaveText('Use the setting (Best available)');
+        await expect(dialog.getByLabel('Double-check that a live stream really ended').locator('option').first()).toHaveText('Use the setting (Off)');
+
+        await dialog.getByLabel('Video quality').selectOption('720');
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Options for link 1' })).toBeFocused();
+        await expect(page.getByRole('button', { name: 'Options for link 1' })).toHaveClass(/btn--ghost/);
+
+        const again = await openOptions(page, 1);
+        await again.getByLabel('Video container').selectOption('mkv');
+        await again.getByRole('button', { name: 'CANCEL' }).click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Options for link 1' })).toHaveClass(/btn--ghost/);
+    });
+
+    test('changes the quality and format of one link only and leaves the settings alone', async () => {
+        const { page, logPath, userData } = session;
+        await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/watch?v=plain');
+        await page.getByRole('button', { name: '+ ADD LINK' }).click();
+        await page.getByLabel('Link 2', { exact: true }).fill('https://example.com/watch?v=custom');
+        const dialog = await openOptions(page, 2);
+        await dialog.getByLabel('Video quality').selectOption('720');
+        await dialog.getByLabel('Video container').selectOption('mkv');
+        await dialog.getByRole('button', { name: 'APPLY' }).click();
+        await expect(page.getByRole('button', { name: 'Options for link 2' })).toHaveClass(/btn--hot/);
+        await expect(page.getByRole('button', { name: 'Options for link 1' })).toHaveClass(/btn--ghost/);
+        await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(2);
+        const plain = lastYtdlpCall(logPath, 'v=plain');
+        const custom = lastYtdlpCall(logPath, 'v=custom');
+        expect(formatOf(plain)).toBe('bv*+ba/b');
+        expect(containerOf(plain)).toBe('mp4');
+        expect(formatOf(custom)).toBe('bv*[height<=720]+ba/b[height<=720]');
+        expect(containerOf(custom)).toBe('mkv');
+        await expect(page.getByTestId('job-card')).toHaveCount(2);
+        await expect(page.getByText('CUSTOM', { exact: true })).toHaveCount(1);
+        expect(readSettings(userData).maxResolution ?? 'best').toBe('best');
+        expect(readSettings(userData).videoContainer ?? 'mp4').toBe('mp4');
+        expect(readSettings(userData).audioOnly ?? false).toBe(false);
+        await expect(page.getByLabel('Link 1', { exact: true })).toHaveValue('');
+        await expect(page.getByRole('button', { name: 'Options for link 1' })).toHaveClass(/btn--ghost/);
+        await expect(page.getByRole('button', { name: /Options for link 2/ })).toHaveCount(0);
+    });
+
+    test('downloads only the audio of one link', async () => {
+        const { page, logPath } = session;
+        await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/watch?v=music');
+        const dialog = await openOptions(page, 1);
+        await dialog.getByLabel('Audio only').selectOption('on');
+        await dialog.getByLabel('Audio format').selectOption('opus');
+        await dialog.getByRole('button', { name: 'APPLY' }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(1);
+        const args = lastYtdlpCall(logPath, 'v=music');
+        expect(args).toEqual(expect.arrayContaining(['-x', '--audio-format', 'opus']));
+        expect(args).not.toContain('--merge-output-format');
+    });
+
+    test('keeps following the settings for what the link does not choose', async () => {
+        const { page, logPath } = await relaunchWith({ maxResolution: '1080', videoContainer: 'webm' });
+        await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/watch?v=follow');
+        const dialog = await openOptions(page, 1);
+        await expect(dialog.getByLabel('Video quality').locator('option').first()).toHaveText('Use the setting (Up to 1080p)');
+        await dialog.getByLabel('Video container').selectOption('mkv');
+        await dialog.getByRole('button', { name: 'APPLY' }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(1);
+        const args = lastYtdlpCall(logPath, 'v=follow');
+        expect(formatOf(args)).toBe('bv*[height<=1080]+ba/b[height<=1080]');
+        expect(containerOf(args)).toBe('mkv');
+    });
+
+    test('keeps the options when the download is retried', async () => {
+        const { page, logPath } = session;
+        await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/fail');
+        const dialog = await openOptions(page, 1);
+        await dialog.getByLabel('Video quality').selectOption('480');
+        await dialog.getByRole('button', { name: 'APPLY' }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+        const banner = page.getByRole('alert').filter({ hasText: 'Video unavailable' });
+        await expect(banner).toBeVisible();
+        await banner.getByRole('button', { name: 'RETRY' }).click();
+        await expect.poll(() => {
+            return readCalls(logPath).filter((call) => {
+                return call.at(-1)?.endsWith('fail');
+            }).length;
+        }).toBe(2);
+        readCalls(logPath)
+            .filter((call) => {
+                return call.at(-1)?.endsWith('fail');
+            })
+            .forEach((call) => {
+                expect(formatOf(call)).toBe('bv*[height<=480]+ba/b[height<=480]');
+            });
+        await expect(page.getByTestId('job-card').getByText('CUSTOM')).toBeVisible();
+    });
+
+    test('waits for a scheduled live stream only for the link that asked for it', async () => {
+        const { page, logPath, userData } = session;
+        await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/livewait');
+        const dialog = await openOptions(page, 1);
+        await dialog.getByLabel('Wait for scheduled live streams to start').selectOption('on');
+        await dialog.getByRole('button', { name: 'APPLY' }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge').filter({ hasText: 'WAITING FOR LIVE' })).toBeVisible();
+        const args = lastYtdlpCall(logPath, 'livewait');
+        expect(args[args.indexOf('--wait-for-video') + 1]).toBe('30');
+        expect(args).toContain('--no-quiet');
+        expect(readSettings(userData).waitForLive ?? false).toBe(false);
+        await expect(card.locator('.badge').filter({ hasText: 'RECORDING' })).toBeVisible({ timeout: 10000 });
+        await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+        await expect(card.locator('.badge').filter({ hasText: 'COMPLETE' })).toBeVisible();
+    });
+
+    test('checks the end of one live stream with its own seconds while the settings keep the check off', async () => {
+        const { page, userData } = session;
+        await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/liveend');
+        const dialog = await openOptions(page, 1);
+        const seconds = dialog.getByLabel('Seconds to keep checking');
+        await expect(seconds).toBeDisabled();
+        await dialog.getByLabel('Double-check that a live stream really ended').selectOption('on');
+        await expect(seconds).toBeEnabled();
+        await seconds.fill('3');
+        await dialog.getByRole('button', { name: 'APPLY' }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge').filter({ hasText: 'VERIFYING END' })).toBeVisible();
+        await expect(card.locator('.badge').filter({ hasText: 'COMPLETE' })).toBeVisible({ timeout: 12000 });
+        expect(readSettings(userData).verifyLiveEnd).toBe(false);
+        expect(readSettings(userData).verifyLiveEndSeconds ?? 10).toBe(10);
+    });
+
+    test('works with the keyboard: Tab stays inside the window and Escape gives the focus back', async () => {
+        const { page } = session;
+        await page.getByRole('button', { name: 'Options for link 1' }).focus();
+        await page.keyboard.press('Enter');
+        const dialog = page.getByRole('dialog', { name: 'Options for link 1' });
+        await expect(dialog.getByLabel('Video quality')).toBeFocused();
+        await page.getByRole('button', { name: 'APPLY' }).focus();
+        await page.keyboard.press('Tab');
+        await expect(dialog.getByLabel('Video quality')).toBeFocused();
+        await page.keyboard.press('Shift+Tab');
+        await expect(page.getByRole('button', { name: 'APPLY' })).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Options for link 1' })).toBeFocused();
+    });
+
+    test('is translated with the rest of the app', async () => {
+        const { page } = await relaunchWith({ language: 'pt' });
+        await page.getByRole('button', { name: 'Opções do link 1' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Opções do link 1' });
+        await expect(dialog.getByText('Só o que você mudar aqui vale para este download. O resto segue as Configurações.')).toBeVisible();
+        await expect(dialog.getByLabel('Qualidade do vídeo').locator('option').first()).toHaveText('Usar a configuração (A melhor disponível)');
+        await expect(dialog.getByRole('button', { name: 'APLICAR' })).toBeVisible();
     });
 });
 
@@ -1407,6 +1770,224 @@ test.describe('live streams', () => {
         const args = lastYtdlpCall(logPath, 'live-default');
         expect(args).not.toContain('--wait-for-video');
         expect(args).not.toContain('--live-from-start');
+    });
+});
+
+test.describe('end of live check and waiting for a live stream', () => {
+    // Starts the app again with other settings; the session of the test is replaced.
+    async function relaunchWith(settings: Record<string, unknown>): Promise<Session> {
+        await session.app.close();
+        rmSync(resolve(session.userData, '..'), { recursive: true, force: true });
+        session = await launch({ settings });
+        return session;
+    }
+
+    function callsFor(logPath: string, urlEnding: string): string[][] {
+        return readCalls(logPath).filter((call) => {
+            return call.at(-1)?.endsWith(urlEnding);
+        });
+    }
+
+    test('is on by default for 10 seconds and its seconds follow the checkbox', async () => {
+        const { page, userData } = await relaunchWith({ verifyLiveEnd: undefined });
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        const checkbox = page.getByLabel('Double-check that a live stream really ended');
+        const seconds = page.getByLabel('Seconds to keep checking');
+        await expect(checkbox).toBeChecked();
+        await expect(seconds).toHaveValue('10');
+        await expect(seconds).toBeEnabled();
+
+        await checkbox.uncheck();
+        await expect(seconds).toBeDisabled();
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(userData)).toMatchObject({ verifyLiveEnd: false, verifyLiveEndSeconds: 10 });
+
+        await checkbox.check();
+        await expect(seconds).toBeEnabled();
+        await seconds.fill('7');
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        await expect.poll(() => {
+            return readSettings(userData);
+        }).toMatchObject({ verifyLiveEnd: true, verifyLiveEndSeconds: 7 });
+    });
+
+    test('a live stream that ended is finished right away when the check is off', async () => {
+        const { page, logPath } = session;
+        await submitUrl(page, 'https://example.com/liveend');
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('COMPLETE');
+        await expect(card.locator('.badge')).not.toHaveText('VERIFYING END');
+        expect(callsFor(logPath, 'liveend')).toHaveLength(1);
+    });
+
+    test('shows the check while it runs, asks yt-dlp again and finishes when the stream did not come back', async () => {
+        const { page, downloadDir, logPath } = await relaunchWith({ verifyLiveEnd: true, verifyLiveEndSeconds: 4 });
+        await submitUrl(page, 'https://example.com/liveend');
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('VERIFYING END');
+        await expect(card).toHaveClass(/job--verifying/);
+        await expect(card.getByRole('progressbar', { name: 'Checking whether the live stream really ended' })).toHaveClass(/progress--verify/);
+        await expect(card.getByText(/^The stream stopped\. Checking whether it really ended… [1-4]s$/)).toBeVisible();
+        await expect(card.getByRole('button', { name: 'FINISH NOW' })).toBeVisible();
+        await expect(card.getByRole('button', { name: 'CANCEL' })).toHaveCount(0);
+
+        await expect(card.locator('.badge')).toHaveText('COMPLETE', { timeout: 15000 });
+        await expect(card).not.toHaveClass(/job--verifying/);
+        expect(existsSync(join(downloadDir, 'Live End [abc].mp4'))).toBe(true);
+        const calls = callsFor(logPath, 'liveend');
+        expect(calls.length).toBeGreaterThanOrEqual(2);
+        expect(calls[0]).not.toContain('--match-filter');
+        calls.slice(1).forEach((call) => {
+            expect(call[call.indexOf('--match-filter') + 1]).toBe('is_live');
+            expect(call[call.indexOf('-o') + 1]).toBe('%(title).80s [%(id)s] (part 2).%(ext)s');
+        });
+        await page.getByRole('button', { name: 'HISTORY' }).click();
+        await expect(page.locator('.history__item--done')).toHaveCount(1);
+    });
+
+    test('keeps recording in a new file of the same card when the stream comes back', async () => {
+        const { page, downloadDir } = await relaunchWith({ verifyLiveEnd: true, verifyLiveEndSeconds: 6 });
+        await submitUrl(page, 'https://example.com/liveback');
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('VERIFYING END');
+        await expect(card.locator('.badge')).toHaveText('RECORDING', { timeout: 10000 });
+        await expect(card).not.toHaveClass(/job--verifying/);
+        await expect(card.getByText('● LIVE')).toBeVisible();
+        await expect(page.getByTestId('job-card')).toHaveCount(1);
+
+        await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+        await expect(card.locator('.badge')).toHaveText('COMPLETE');
+        await expect(card.locator('.badge')).not.toHaveText('VERIFYING END');
+        expect(existsSync(join(downloadDir, 'Live Back [abc].mp4'))).toBe(true);
+        expect(existsSync(join(downloadDir, 'Live Back [abc] (part 2).mp4'))).toBe(true);
+        await page.getByRole('button', { name: 'HISTORY' }).click();
+        await expect(page.locator('.history__item--done')).toHaveCount(1);
+    });
+
+    test('FINISH NOW ends the check at once', async () => {
+        const { page, downloadDir, logPath } = await relaunchWith({ verifyLiveEnd: true, verifyLiveEndSeconds: 60 });
+        await submitUrl(page, 'https://example.com/liveend');
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('VERIFYING END');
+        await card.getByRole('button', { name: 'FINISH NOW' }).click();
+        await expect(card.locator('.badge')).toHaveText('COMPLETE', { timeout: 3000 });
+        expect(existsSync(join(downloadDir, 'Live End [abc].mp4'))).toBe(true);
+        const callsAfter = callsFor(logPath, 'liveend').length;
+        await page.waitForTimeout(2500);
+        expect(callsFor(logPath, 'liveend')).toHaveLength(callsAfter);
+    });
+
+    test('STOP & SAVE on a live recording is final: it is not checked again', async () => {
+        const { page, logPath } = await relaunchWith({ verifyLiveEnd: true, verifyLiveEndSeconds: 6 });
+        await submitUrl(page, 'https://example.com/livestream');
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('RECORDING');
+        await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+        await expect(card.locator('.badge')).toHaveText('COMPLETE');
+        expect(callsFor(logPath, 'livestream')).toHaveLength(1);
+    });
+
+    test('shows that it is waiting for a scheduled live stream and goes on when it starts', async () => {
+        const { page, downloadDir, logPath } = await relaunchWith({ waitForLive: true });
+        await submitUrl(page, 'https://example.com/livewait');
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('WAITING FOR LIVE');
+        await expect(card).toHaveClass(/job--waiting/);
+        await expect(card.getByRole('progressbar', { name: 'Waiting for the live stream to start' })).toHaveClass(/progress--waiting/);
+        await expect(card.getByText('Waiting for the live stream to start', { exact: true }).first()).toBeVisible();
+        await expect(card.getByRole('button', { name: 'CANCEL' })).toBeVisible();
+        expect(lastYtdlpCall(logPath, 'livewait')).toContain('--no-quiet');
+
+        await expect(card.locator('.badge')).toHaveText('RECORDING', { timeout: 10000 });
+        await expect(card).not.toHaveClass(/job--waiting/);
+        await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+        await expect(card.locator('.badge')).toHaveText('COMPLETE');
+        expect(existsSync(join(downloadDir, 'Live Wait [abc].mp4'))).toBe(true);
+    });
+
+    test('a download that is not waiting for a live stream has no waiting effect', async () => {
+        const { page } = session;
+        await submitUrl(page, 'https://example.com/livewait');
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('RECORDING', { timeout: 10000 });
+        await expect(card).not.toHaveClass(/job--waiting/);
+        await expect(card.locator('.badge')).not.toHaveText('WAITING FOR LIVE');
+        await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+    });
+});
+
+test.describe('stopping and cancelling a recording whose ffmpeg is left behind', () => {
+    function orphanPid(): number {
+        return Number(readFileSync(`${session.logPath}.orphan`, 'utf-8'));
+    }
+
+    function isAlive(pid: number): boolean {
+        try {
+            process.kill(pid, 0);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    test('CANCEL ends the recording and the process it started, instead of leaving the card recording', async () => {
+        const { page } = session;
+        await submitUrl(page, 'https://example.com/liveorphan');
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('RECORDING');
+        await expect.poll(() => {
+            return existsSync(`${session.logPath}.orphan`);
+        }).toBe(true);
+        const pid = orphanPid();
+        expect(isAlive(pid)).toBe(true);
+
+        await card.getByRole('button', { name: 'CANCEL' }).click();
+        await expect(card.locator('.badge')).toHaveText('CANCELLED', { timeout: 8000 });
+        await expect.poll(() => {
+            return isAlive(pid);
+        }).toBe(false);
+        await expect(card.getByRole('button', { name: 'RETRY' })).toBeVisible();
+    });
+
+    test('STOP & SAVE does not leave the card recording when yt-dlp leaves a process holding the pipes', async () => {
+        const { page, downloadDir } = session;
+        await submitUrl(page, 'https://example.com/liveleftover');
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('RECORDING');
+        await expect.poll(() => {
+            return existsSync(`${session.logPath}.orphan`);
+        }).toBe(true);
+        const pid = orphanPid();
+
+        await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+        await expect(card.locator('.badge')).toHaveText('COMPLETE', { timeout: 8000 });
+        expect(existsSync(join(downloadDir, 'Live Orphan [abc].mp4'))).toBe(true);
+        await expect.poll(() => {
+            return isAlive(pid);
+        }).toBe(false);
+    });
+
+    test('STOP & SAVE ends a recording that ignores Ctrl+C, after a while, and does not leave anything running', async () => {
+        test.setTimeout(60000);
+        const { page } = session;
+        await submitUrl(page, 'https://example.com/liveorphan');
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('RECORDING');
+        await expect.poll(() => {
+            return existsSync(`${session.logPath}.orphan`);
+        }).toBe(true);
+        const pid = orphanPid();
+
+        await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+        await expect(card.locator('.badge')).not.toHaveText('RECORDING', { timeout: 25000 });
+        await expect(card.locator('.badge')).toHaveText(/COMPLETE|FAILED/);
+        await expect.poll(() => {
+            return isAlive(pid);
+        }).toBe(false);
     });
 });
 

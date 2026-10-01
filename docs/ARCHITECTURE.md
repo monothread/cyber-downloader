@@ -33,6 +33,7 @@ src/
   preload/index.ts              # contextBridge with a typed API
   renderer/
     App.tsx, theme/cyberpunk.css
+    i18n/ language (system locale), useTranslator (React hook)
     components/ UrlInput, QueueList, JobCard, SettingsPanel, HistoryList, ErrorBanner, BinaryStatus,
                 Toast, UpdateBanner, UpdateActions, StreamFinder, fields
     hooks/ useAutoSaveSettings (debounced settings auto-save)
@@ -73,6 +74,9 @@ yt-dlp prints `CYBERINFO|<is_live>|<file>` before downloading → `QueueManager.
 | Live streams | `--wait-for-video 30` (wait setting); `--live-from-start --downloader-args ffmpeg_i:-live_start_index 0` (from-start setting); `--print before_dl:CYBERINFO\|%(is_live)s\|%(filename)s` always |
 | Extras | rate limit, concurrency, custom paths, JS runtime, extra args |
 | Stream found on a page | `--referer <page>`, `--user-agent <UA used to find it>`, `--add-header Cookie:<cookies seen>`, `--force-ipv4/--force-ipv6` when the address is bound to an IP, file named from the page title |
+
+## Languages
+English, Portuguese, Spanish, Chinese and Japanese (D-029). The catalogs are in `src/shared/i18n/` (`en.ts` defines the keys, the other four are typed against it, so a missing key fails `tsc`). The renderer reads them through `useTranslator()`; the main process through `translateMain` (`src/main/services/language.ts`), which follows the saved `language` setting.
 
 ## Theme
 Neon cyan/magenta/yellow on a dark background, mono font, scanlines, glitch on titles, glowing borders. Errors in neon red.

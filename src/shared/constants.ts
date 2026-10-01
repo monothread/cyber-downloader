@@ -1,4 +1,4 @@
-import type { AudioFormat, BrowserName, MaxResolution, Settings, ThemeName, VideoContainer } from './types';
+import type { AudioFormat, BrowserName, LanguageCode, LanguageSetting, MaxResolution, Settings, ThemeName, VideoContainer } from './types';
 
 export const IPC = {
     settingsGet: 'settings:get',
@@ -38,9 +38,14 @@ export const RESOLUTIONS: readonly MaxResolution[] = ['best', '2160', '1440', '1
 export const VIDEO_CONTAINERS: readonly VideoContainer[] = ['mp4', 'mkv', 'webm'];
 export const AUDIO_FORMATS: readonly AudioFormat[] = ['mp3', 'm4a', 'opus'];
 export const THEMES: readonly ThemeName[] = ['device', 'cyberpunk', 'dark', 'light'];
+export const LANGUAGE_CODES: readonly LanguageCode[] = ['en', 'pt', 'es', 'zh', 'ja'];
+export const LANGUAGE_SETTINGS: readonly LanguageSetting[] = ['device', ...LANGUAGE_CODES];
+export const FALLBACK_LANGUAGE: LanguageCode = 'en';
 
 export const MIN_TITLE_LENGTH = 20;
 export const MAX_TITLE_LENGTH = 200;
+export const MIN_LIVE_END_CHECK_SECONDS = 1;
+export const MAX_LIVE_END_CHECK_SECONDS = 120;
 export const MIN_CONCURRENT = 1;
 export const MAX_CONCURRENT = 5;
 
@@ -71,6 +76,9 @@ export const DEFAULT_SETTINGS: Settings = {
     closeToTray: false,
     liveFromStart: false,
     waitForLive: false,
+    verifyLiveEnd: true,
+    verifyLiveEndSeconds: 10,
     theme: 'device',
+    language: 'device',
     extraArgs: ''
 };

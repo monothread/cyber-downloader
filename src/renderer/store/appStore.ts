@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { DEFAULT_SETTINGS } from '@shared/constants';
+import { createTranslator, type MessageKey, type MessageParams } from '@shared/i18n';
+import { resolveAppLanguage } from '../i18n/language';
 import type {
     AddJobResult,
     AppUpdateState,
@@ -69,6 +71,19 @@ export interface AppState {
     cancelStreamSearch: (jobId: string) => Promise<void>;
     downloadStream: (jobId: string, candidateId: string) => Promise<void>;
     closeStreamSearch: (jobId: string) => void;
+}
+
+// Messages the store creates itself (not reactive): they use the language that is saved when they are created.
+function translateNow(settings: Settings, key: MessageKey, params?: MessageParams): string {
+    return createTranslator(resolveAppLanguage(settings.language))(key, params);
+}
+
+// The folder and the options are only passed when the link has them.
+function addRequest(link: LinkRequest): Promise<AddJobResult> {
+    if (Object.keys(link.options).length > 0) {
+        return window.api.addDownload(link.url, link.downloadDir ?? '', link.options);
+    }
+    return link.downloadDir ? window.api.addDownload(link.url, link.downloadDir) : window.api.addDownload(link.url);
 }
 
 function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
@@ -165,7 +180,7 @@ export const useAppStore = create<AppState>((set, get) => {
         addUrls: (links) => {
             return Promise.all(
                 links.map((link) => {
-                    return link.downloadDir ? window.api.addDownload(link.url, link.downloadDir) : window.api.addDownload(link.url);
+                    return addRequest(link);
                 })
             );
         },
@@ -222,7 +237,7 @@ export const useAppStore = create<AppState>((set, get) => {
             const result = await window.api.updateYtdlp();
             set({
                 updating: false,
-                notice: { kind: result.ok ? 'info' : 'error', message: result.output || (result.ok ? 'yt-dlp is up to date.' : 'Update failed.') }
+                notice: { kind: result.ok ? 'info' : 'error', message: result.output || translateNow(get().settings, result.ok ? 'notice.ytdlpUpToDate' : 'notice.updateFailed') }
             });
             await get().refreshBinaries();
         },
@@ -287,7 +302,7 @@ export const useAppStore = create<AppState>((set, get) => {
         downloadStream: async (jobId, candidateId) => {
             const result = await window.api.downloadStream(candidateId);
             if (!result.ok) {
-                set({ notice: { kind: 'error', message: result.message ?? 'Could not add the download.' } });
+                set({ notice: { kind: 'error', message: result.message ?? translateNow(get().settings, 'url.addFailed') } });
                 return;
             }
             get().closeStreamSearch(jobId);

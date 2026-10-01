@@ -100,8 +100,8 @@ describe('useAppStore.addUrls', () => {
         mock.api.addDownload.mockResolvedValueOnce({ ok: true, job: null, message: null });
         mock.api.addDownload.mockResolvedValueOnce({ ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' });
         const results = await useAppStore.getState().addUrls([
-            { url: 'https://a.com', downloadDir: null },
-            { url: 'nope', downloadDir: null }
+            { url: 'https://a.com', downloadDir: null, options: {} },
+            { url: 'nope', downloadDir: null, options: {} }
         ]);
         expect(mock.api.addDownload.mock.calls).toEqual([['https://a.com'], ['nope']]);
         expect(results).toEqual([
@@ -113,10 +113,24 @@ describe('useAppStore.addUrls', () => {
     it('sends the folder chosen for a link along with its URL', async () => {
         mock.api.addDownload.mockResolvedValue({ ok: true, job: null, message: null });
         await useAppStore.getState().addUrls([
-            { url: 'https://a.com', downloadDir: '/media/videos' },
-            { url: 'https://b.com', downloadDir: null }
+            { url: 'https://a.com', downloadDir: '/media/videos', options: {} },
+            { url: 'https://b.com', downloadDir: null, options: {} }
         ]);
         expect(mock.api.addDownload.mock.calls).toEqual([['https://a.com', '/media/videos'], ['https://b.com']]);
+    });
+
+    it('sends the options chosen for a link, with an empty folder when it has none', async () => {
+        mock.api.addDownload.mockResolvedValue({ ok: true, job: null, message: null });
+        await useAppStore.getState().addUrls([
+            { url: 'https://a.com', downloadDir: null, options: { maxResolution: '720' } },
+            { url: 'https://b.com', downloadDir: '/media/videos', options: { waitForLive: true, verifyLiveEndSeconds: 20 } },
+            { url: 'https://c.com', downloadDir: null, options: {} }
+        ]);
+        expect(mock.api.addDownload.mock.calls).toEqual([
+            ['https://a.com', '', { maxResolution: '720' }],
+            ['https://b.com', '/media/videos', { waitForLive: true, verifyLiveEndSeconds: 20 }],
+            ['https://c.com']
+        ]);
     });
 
     it('does not call the API and returns nothing for an empty list', async () => {
@@ -126,7 +140,7 @@ describe('useAppStore.addUrls', () => {
 
     it('does not set a notice; feedback is shown by the caller', async () => {
         mock.api.addDownload.mockResolvedValueOnce({ ok: false, job: null, message: 'bad' });
-        await useAppStore.getState().addUrls([{ url: 'nope', downloadDir: null }]);
+        await useAppStore.getState().addUrls([{ url: 'nope', downloadDir: null, options: {} }]);
         expect(useAppStore.getState().notice).toBeNull();
     });
 });

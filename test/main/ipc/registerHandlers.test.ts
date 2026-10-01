@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { DEFAULT_SETTINGS, IPC } from '@shared/constants';
 import type { DownloadJob, HistoryEntry } from '@shared/types';
 import { registerHandlers, type IpcMainLike } from '@main/ipc/registerHandlers';
+import { applyLanguage } from '@main/services/language';
 import { checkBinaries } from '@main/services/binaryLocator';
 import { BinaryResolver } from '@main/services/binaryResolver';
 import { updateYtdlp } from '@main/services/updater';
@@ -36,7 +37,7 @@ afterEach(() => {
 });
 
 const JOB: DownloadJob = {
-    id: 'j1', url: 'https://x.com/a', status: 'queued', title: null, percent: 0, speed: '', eta: '', filePath: null, error: null, createdAt: 1, pageUrl: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false
+    id: 'j1', url: 'https://x.com/a', status: 'queued', title: null, percent: 0, speed: '', eta: '', filePath: null, error: null, createdAt: 1, pageUrl: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false, customized: false, waitingForLive: false, endCheck: null
 };
 
 function setup() {
@@ -195,6 +196,14 @@ describe('registerHandlers', () => {
             expect(streamFinder.find).toHaveBeenCalledWith('j9', 'https://site.test/ep-1', false, expect.any(Function));
         });
 
+        it('refuses in the saved language to search for a job that does not exist', () => {
+            applyLanguage('es', 'en-US');
+            const { call, queue } = setup();
+            queue.getJob.mockReturnValue(undefined);
+            expect(call(IPC.streamFind, 'gone', false)).toEqual({ ok: false, candidates: [], message: 'Esa descarga ya no existe.', usedBrowser: false });
+            applyLanguage('en', 'en-US');
+        });
+
         it('refuses to search for a job that does not exist', () => {
             const { call, queue, streamFinder } = setup();
             queue.getJob.mockReturnValue(undefined);
@@ -222,6 +231,14 @@ describe('registerHandlers', () => {
             streamFinder.getCandidate.mockReturnValue({ url: 'https://cdn.test/a.mp4', referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: null, title: null, ipFamily: 6, pageUrl: 'https://origin.test/p' });
             call(IPC.streamDownload, 'c2');
             expect(queue.add).toHaveBeenCalledWith('https://cdn.test/a.mp4', { referer: 'https://site.test/ep-1', userAgent: 'UA', cookie: undefined, title: undefined, ipFamily: 6, pageUrl: 'https://origin.test/p' });
+        });
+
+        it('explains in the saved language when the stream is no longer known', () => {
+            applyLanguage('pt', 'en-US');
+            const { call, streamFinder } = setup();
+            streamFinder.getCandidate.mockReturnValue(undefined);
+            expect(call(IPC.streamDownload, 'old')).toEqual({ ok: false, job: null, message: 'Esse stream não está mais disponível. Busque novamente.' });
+            applyLanguage('en', 'en-US');
         });
 
         it('explains when the stream is no longer known', () => {
@@ -252,6 +269,33 @@ describe('registerHandlers', () => {
             expect(queue.add).toHaveBeenCalledWith('https://x.com/a');
         }
     );
+
+    it('adds a download with the options chosen for it', () => {
+        const { call, queue } = setup();
+        call(IPC.queueAdd, 'https://x.com/a', '', { maxResolution: '720', audioOnly: true });
+        expect(queue.add).toHaveBeenCalledWith('https://x.com/a', { options: { maxResolution: '720', audioOnly: true } });
+    });
+
+    it('adds a download with both the folder and the options', () => {
+        const { call, queue } = setup();
+        call(IPC.queueAdd, 'https://x.com/a', '/media/videos', { waitForLive: true, verifyLiveEndSeconds: 500 });
+        expect(queue.add).toHaveBeenCalledWith('https://x.com/a', { downloadDir: '/media/videos', options: { waitForLive: true, verifyLiveEndSeconds: 120 } });
+    });
+
+    it.each([['no options', undefined], ['empty options', {}], ['invalid options', { maxResolution: '99', theme: 'dark' }], ['non-object options', 'text']])(
+        'adds the download without extras for %s',
+        (_name, options) => {
+            const { call, queue } = setup();
+            call(IPC.queueAdd, 'https://x.com/a', '', options);
+            expect(queue.add).toHaveBeenCalledWith('https://x.com/a');
+        }
+    );
+
+    it('keeps only the valid options and never lets other settings through', () => {
+        const { call, queue } = setup();
+        call(IPC.queueAdd, 'https://x.com/a', '', { audioFormat: 'm4a', extraArgs: '--exec x', ytdlpPath: '/bin/sh' });
+        expect(queue.add).toHaveBeenCalledWith('https://x.com/a', { options: { audioFormat: 'm4a' } });
+    });
 
     it('coerces non-string URLs to an empty string', () => {
         const { call, queue } = setup();

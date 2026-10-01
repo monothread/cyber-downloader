@@ -1,6 +1,9 @@
+import { useAppLanguage, useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 
 export function HistoryList() {
+    const t = useTranslator();
+    const language = useAppLanguage();
     const history = useAppStore((state) => {
         return state.history;
     });
@@ -9,13 +12,13 @@ export function HistoryList() {
     });
 
     if (history.length === 0) {
-        return <p className="empty">// HISTORY IS EMPTY.</p>;
+        return <p className="empty">{t('history.empty')}</p>;
     }
 
     return (
-        <section className="history" aria-label="Download history">
+        <section className="history" aria-label={t('history.aria')}>
             <div className="queue__toolbar">
-                <span className="section-label">HISTORY [{history.length}]</span>
+                <span className="section-label">{t('history.label', { count: history.length })}</span>
                 <button
                     type="button"
                     className="btn btn--small btn--ghost"
@@ -23,7 +26,7 @@ export function HistoryList() {
                         void clearHistory();
                     }}
                 >
-                    CLEAR HISTORY
+                    {t('history.clear')}
                 </button>
             </div>
             <ul className="history__list">
@@ -35,8 +38,8 @@ export function HistoryList() {
                                     {entry.title}
                                 </span>
                                 <span className="history__meta">
-                                    {entry.status === 'done' ? 'COMPLETE' : `FAILED — ${entry.errorTitle ?? 'Unknown error'}`} ·{' '}
-                                    {new Date(entry.finishedAt).toLocaleString()}
+                                    {entry.status === 'done' ? t('history.complete') : t('history.failed', { title: entry.errorTitle ?? t('history.unknownError') })} ·{' '}
+                                    {new Date(entry.finishedAt).toLocaleString(language)}
                                 </span>
                             </div>
                             {entry.filePath && (
@@ -47,7 +50,7 @@ export function HistoryList() {
                                         void window.api.showItemInFolder(entry.filePath ?? '');
                                     }}
                                 >
-                                    SHOW FILE
+                                    {t('history.showFile')}
                                 </button>
                             )}
                         </li>

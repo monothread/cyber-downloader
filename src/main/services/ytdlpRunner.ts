@@ -1,8 +1,16 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { DownloadError, DownloadInfo, ProgressInfo } from '@shared/types';
 import { mapDownloadError, mapSpawnError } from './errorMapper';
-import { killProcessTree, type TaskkillSpawn } from './processTree';
-import { parseFileLine, parseInfoLine, parseProgressLine } from './progressParser';
+import { killProcessTree, type GroupKill, type TaskkillSpawn } from './processTree';
+import { isWaitLine, parseFileLine, parseInfoLine, parseProgressLine } from './progressParser';
+
+// After yt-dlp exits its pipes may still be held open by a process it started (an ffmpeg left behind), which would keep
+// the download "running" forever: the result is given anyway once this time has passed.
+export const EXIT_GRACE_MS = 1500;
+// A process that was asked to end and is still there after this time is killed.
+export const KILL_ESCALATION_MS = 3000;
+// A live recording that was asked to stop (Ctrl+C) and has not finished after this time is ended and its file salvaged.
+export const STOP_ESCALATION_MS = 10000;
 
 export type SpawnFn = (command: string, args: string[], env?: NodeJS.ProcessEnv) => ChildProcessWithoutNullStreams;
 
@@ -26,14 +34,18 @@ export interface RunOptions {
     args: string[];
     onProgress: (progress: ProgressInfo) => void;
     onInfo?: (info: DownloadInfo) => void;
+    // yt-dlp is waiting for a scheduled live stream to start.
+    onWaiting?: () => void;
     env?: NodeJS.ProcessEnv;
     spawnFn?: SpawnFn;
     platform?: NodeJS.Platform;
     taskkill?: TaskkillSpawn;
+    killGroup?: GroupKill;
 }
 
 export function defaultSpawn(command: string, args: string[], env?: NodeJS.ProcessEnv): ChildProcessWithoutNullStreams {
-    return spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], env, windowsHide: true });
+    // Outside Windows it leads a process group of its own, so cancelling reaches the ffmpeg it starts too.
+    return spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], env, windowsHide: true, detached: process.platform !== 'win32' });
 }
 
 export function createLineSplitter(onLine: (line: string) => void): { push: (chunk: string) => void; flush: () => void } {
@@ -41,7 +53,8 @@ export function createLineSplitter(onLine: (line: string) => void): { push: (chu
     return {
         push: (chunk: string): void => {
             buffer += chunk;
-            const lines = buffer.split(/\r?\n/);
+            // A bare carriage return is also a line end: yt-dlp rewrites its "remaining time" counter with it.
+            const lines = buffer.split(/\r\n|\r|\n/);
             buffer = lines.pop() ?? '';
             lines.forEach(onLine);
         },
@@ -74,6 +87,10 @@ export function runYtdlp(options: RunOptions): RunHandle {
             options.onInfo?.(info);
             return;
         }
+        if (isWaitLine(line)) {
+            options.onWaiting?.();
+            return;
+        }
         filePath = parseFileLine(line) ?? filePath;
     });
 
@@ -84,11 +101,30 @@ export function runYtdlp(options: RunOptions): RunHandle {
         stderr += chunk;
     });
 
+    let settled = false;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    const later = (action: () => void, milliseconds: number): void => {
+        timers.add(setTimeout(action, milliseconds));
+    };
+    const killTree = (signal: NodeJS.Signals): void => {
+        killProcessTree(child, platform, options.taskkill, signal, options.killGroup);
+    };
+    // SIGTERM first; whatever is still alive afterwards is killed. Not tied to the timers, so it also runs after the result.
+    const terminateTree = (): void => {
+        killTree('SIGTERM');
+        setTimeout(() => {
+            killTree('SIGKILL');
+        }, KILL_ESCALATION_MS).unref();
+    };
+
     const result = new Promise<RunResult>((resolve) => {
-        child.once('error', (error: NodeJS.ErrnoException) => {
-            resolve({ status: 'error', error: mapSpawnError(error) });
-        });
-        child.once('close', (code: number | null) => {
+        const settle = (code: number | null): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            timers.forEach(clearTimeout);
+            timers.clear();
             stdoutSplitter.flush();
             if (cancelled) {
                 resolve({ status: 'cancelled' });
@@ -103,22 +139,55 @@ export function runYtdlp(options: RunOptions): RunHandle {
                 return;
             }
             resolve({ status: 'error', error: mapDownloadError(stderr, code) });
+        };
+        child.once('error', (error: NodeJS.ErrnoException) => {
+            settled = true;
+            timers.forEach(clearTimeout);
+            timers.clear();
+            resolve({ status: 'error', error: mapSpawnError(error) });
         });
+        child.once('exit', (code: number | null) => {
+            if (settled) {
+                return;
+            }
+            later(() => {
+                // The pipes are still open: something yt-dlp started is still running. End it and give the result.
+                terminateTree();
+                child.stdout.destroy();
+                child.stderr.destroy();
+                settle(code);
+            }, EXIT_GRACE_MS);
+        });
+        child.once('close', settle);
     });
 
     return {
         result,
         cancel: (): void => {
+            if (settled) {
+                return;
+            }
             cancelled = true;
-            killProcessTree(child, platform, options.taskkill);
+            killTree('SIGTERM');
+            later(() => {
+                killTree('SIGKILL');
+            }, KILL_ESCALATION_MS);
         },
         stop: (): void => {
+            if (settled) {
+                return;
+            }
             if (platform === 'win32') {
                 stopped = true;
-                killProcessTree(child, platform, options.taskkill);
+                killTree('SIGTERM');
                 return;
             }
             child.kill('SIGINT');
+            // yt-dlp did not finish on its own: end the whole tree and let the caller salvage what was recorded.
+            later(() => {
+                stopped = true;
+                terminateTree();
+            }, STOP_ESCALATION_MS);
         }
     };
 }

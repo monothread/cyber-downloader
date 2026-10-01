@@ -73,6 +73,9 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 - Failed or cancelled downloads clean up their `.part` files (Settings > OUTPUT); live recordings are always kept, and each card can also clear its leftovers by hand
 - Settings are saved automatically as you change them
 - Themes in Settings: Device (follows the system light/dark mode, default), Cyberpunk, Dark and Light
+- Options for one download: each link has an **OPTIONS** button that opens a window to choose, for that download only, the video quality and container, audio only and audio format, and the live-stream settings. Whatever is not changed keeps following the Settings; a downloading card shows a *CUSTOM* badge
+- Live streams (Settings > LIVE STREAMS): optionally wait for scheduled lives (the card shows a *WAITING FOR LIVE* effect) and, when a live recording stops, keep looking for the stream for a few seconds (10 by default, configurable; the card shows *VERIFYING END* with a draining bar). If the stream comes back, recording goes on in a new file of the same card
+- Languages in Settings: Device (follows the system language, default), English, Português, Español, 中文 and 日本語; the whole interface, the messages and the tray menu change right away
 - A FOLDER button on each link to send that download to another folder
 - Optional "keep running in the system tray" (KDE, XFCE, Cinnamon, MATE, LXQt and GNOME with the AppIndicator extension); right-click the tray icon to restart or quit
 - Title length limit so long titles never break the file name

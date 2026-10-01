@@ -6,16 +6,21 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { Toast } from './components/Toast';
 import { UpdateBanner } from './components/UpdateBanner';
 import { UrlInput } from './components/UrlInput';
+import type { MessageKey } from '@shared/i18n';
+import { useCursorGlow } from './hooks/useCursorGlow';
+import { useAppLanguage, useTranslator } from './i18n/useTranslator';
 import { useAppStore, type Tab } from './store/appStore';
 import { applyTheme, DARK_SCHEME_QUERY, rememberTheme } from './theme/resolveTheme';
 
-const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
-    { id: 'downloads', label: 'DOWNLOADS' },
-    { id: 'history', label: 'HISTORY' },
-    { id: 'settings', label: 'SETTINGS' }
+const TABS: ReadonlyArray<{ id: Tab; label: MessageKey }> = [
+    { id: 'downloads', label: 'tab.downloads' },
+    { id: 'history', label: 'tab.history' },
+    { id: 'settings', label: 'tab.settings' }
 ];
 
 export function App() {
+    const t = useTranslator();
+    const language = useAppLanguage();
     const tab = useAppStore((state) => {
         return state.tab;
     });
@@ -33,6 +38,8 @@ export function App() {
         return state.settings.theme;
     });
 
+    useCursorGlow(theme === 'cyberpunk');
+
     useEffect(() => {
         applyTheme(theme);
         rememberTheme(theme);
@@ -48,6 +55,10 @@ export function App() {
             query.removeEventListener('change', follow);
         };
     }, [theme]);
+
+    useEffect(() => {
+        document.documentElement.lang = language;
+    }, [language]);
 
     useEffect(() => {
         let dispose: (() => void) | null = null;
@@ -74,7 +85,7 @@ export function App() {
                 <BinaryStatus />
             </header>
             <UpdateBanner />
-            <nav className="tabs" aria-label="Sections">
+            <nav className="tabs" aria-label={t('nav.sections')}>
                 {TABS.map((item) => {
                     return (
                         <button
@@ -86,13 +97,13 @@ export function App() {
                                 setTab(item.id);
                             }}
                         >
-                            {item.label}
+                            {t(item.label)}
                         </button>
                     );
                 })}
             </nav>
             <main className="app__main">
-                {!ready && <p className="empty">// BOOTING SYSTEMS…</p>}
+                {!ready && <p className="empty">{t('app.booting')}</p>}
                 {ready && tab === 'downloads' && (
                     <>
                         <UrlInput />

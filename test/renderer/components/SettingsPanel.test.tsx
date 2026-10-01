@@ -67,6 +67,70 @@ describe('SettingsPanel layout', () => {
     });
 });
 
+describe('SettingsPanel language', () => {
+    it('lists "device" and every language named in itself', () => {
+        render(<SettingsPanel />);
+        const select = screen.getByLabelText('Language');
+        expect(select).toHaveValue('device');
+        const options = Array.from(select.querySelectorAll('option')).map((option) => {
+            return [option.getAttribute('value'), option.textContent];
+        });
+        expect(options).toEqual([
+            ['device', 'Device (follows the system)'],
+            ['en', 'English'],
+            ['pt', 'Português'],
+            ['es', 'Español'],
+            ['zh', '中文'],
+            ['ja', '日本語']
+        ]);
+        expect(screen.getByText('Device uses the language of your system when it is available, otherwise English.')).toBeInTheDocument();
+    });
+
+    it.each(['en', 'pt', 'es', 'zh', 'ja'] as const)('saves right away when the language changes to "%s"', async (language) => {
+        render(<SettingsPanel />);
+        fireEvent.change(screen.getByLabelText('Language'), { target: { value: language } });
+        await flushPromises();
+        expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, language });
+    });
+
+    it('renders every section in the saved language', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'pt' } });
+        render(<SettingsPanel />);
+        ['APARÊNCIA E JANELA', 'SAÍDA', 'QUALIDADE E FORMATO', 'PLAYLISTS E LEGENDAS', 'TRANSMISSÕES AO VIVO', 'COOKIES DO NAVEGADOR', 'YT-DLP', 'ATUALIZAÇÕES DO APLICATIVO', 'AVANÇADO'].forEach((legend) => {
+            expect(screen.getByText(legend)).toBeInTheDocument();
+        });
+        expect(screen.getByLabelText('Idioma')).toHaveValue('pt');
+        expect(screen.getByLabelText('Tema')).toBeInTheDocument();
+        expect(screen.getByText('As alterações são salvas automaticamente.')).toBeInTheDocument();
+        const resolutions = Array.from(screen.getByLabelText('Qualidade do vídeo').querySelectorAll('option')).map((option) => {
+            return option.textContent;
+        });
+        expect(resolutions).toEqual(['A melhor disponível', 'Até 2160p', 'Até 1440p', 'Até 1080p', 'Até 720p', 'Até 480p']);
+    });
+
+    it('translates the browser warning and the tray warning', async () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'es', useBrowserCookies: true, closeToTray: true } });
+        mock.api.listBrowsers.mockResolvedValue([]);
+        mock.api.getTraySupport.mockResolvedValue({ available: false, reason: 'Sin bandeja.' });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.getByText('No se encontró ningún navegador con cookies guardadas en este sistema.')).toBeInTheDocument();
+        expect(screen.getByText('Sin bandeja.')).toBeInTheDocument();
+    });
+
+    it('translates the yt-dlp status and the app update summary', () => {
+        useAppStore.setState({
+            settings: { ...DEFAULT_SETTINGS, language: 'ja' },
+            binaries: { ytdlp: { found: true, path: '/bin/yt-dlp', version: '2026.08.19', source: 'bundled' }, ffmpeg: { found: false, path: '', version: null, source: 'system' } },
+            appUpdate: { ...INITIAL_APP_UPDATE, status: 'not-available', currentVersion: '0.4.1' }
+        });
+        render(<SettingsPanel />);
+        expect(screen.getByText('インストール済みのバージョン：2026.08.19')).toBeInTheDocument();
+        expect(screen.getByText('最新バージョンです（0.4.1）。')).toBeInTheDocument();
+    });
+});
+
 describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
     it.each([
         ['Restrict file names (ASCII only)', 'restrictFilenames'],
@@ -543,6 +607,43 @@ describe('SettingsPanel live streams', () => {
         expect(screen.getByLabelText('Wait for scheduled live streams to start')).not.toBeChecked();
         expect(screen.getByText(/keeps the past part of the stream available \(DVR\)/)).toBeInTheDocument();
         expect(screen.getByText('Keeps checking every 30 seconds until the stream goes live. Cancel to stop waiting.')).toBeInTheDocument();
+    });
+
+    it('double-check the end of a live stream for 10 seconds by default', () => {
+        render(<SettingsPanel />);
+        expect(screen.getByLabelText('Double-check that a live stream really ended')).toBeChecked();
+        expect(screen.getByLabelText('Seconds to keep checking')).toHaveValue(10);
+        expect(screen.getByLabelText('Seconds to keep checking')).toBeEnabled();
+        expect(screen.getByLabelText('Seconds to keep checking')).toHaveAttribute('min', '1');
+        expect(screen.getByLabelText('Seconds to keep checking')).toHaveAttribute('max', '120');
+        expect(screen.getByText('When a live recording stops, keeps looking for the stream for a few seconds. If it comes back, recording continues in a new file of the same download.')).toBeInTheDocument();
+        expect(screen.getByText('How long to look for the stream again after it stops (1 to 120).')).toBeInTheDocument();
+    });
+
+    it('saves right away when the end check is turned off and then disables its seconds', async () => {
+        render(<SettingsPanel />);
+        fireEvent.click(screen.getByLabelText('Double-check that a live stream really ended'));
+        await flushPromises();
+        expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, verifyLiveEnd: false });
+        expect(screen.getByLabelText('Seconds to keep checking')).toBeDisabled();
+    });
+
+    it('saves the seconds two seconds after typing', async () => {
+        render(<SettingsPanel />);
+        fireEvent.change(screen.getByLabelText('Seconds to keep checking'), { target: { value: '25' } });
+        expect(mock.api.saveSettings).not.toHaveBeenCalled();
+        await advance(AUTOSAVE_DELAY_MS);
+        expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, verifyLiveEndSeconds: 25 });
+    });
+
+    it('shows the stored end check values', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, verifyLiveEnd: false, verifyLiveEndSeconds: 45 } });
+        render(<SettingsPanel />);
+        expect(screen.getByLabelText('Double-check that a live stream really ended')).not.toBeChecked();
+        expect(screen.getByLabelText('Seconds to keep checking')).toHaveValue(45);
+        expect(screen.getByLabelText('Seconds to keep checking')).toBeDisabled();
     });
 
     it('reflect the stored values', () => {

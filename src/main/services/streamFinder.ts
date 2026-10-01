@@ -2,12 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { StreamCandidate, StreamFindResult, StreamFindStage, StreamKind, StreamSource } from '@shared/types';
 import type { SniffResult } from './browserSniffer';
 import { STREAM_KIND_ORDER, boundIpFamily, hostOf } from './mediaKinds';
+import { translateMain } from './language';
 import { groupSimilarStreams, type StreamGroup } from './streamGrouping';
 import { STREAM_USER_AGENT, type ScanResult } from './pageScanner';
 
-export const NOTHING_FOUND_MESSAGE =
-    'No video stream was found. The video may be protected by DRM, need a login, or start only after an action that the app cannot do.';
-export const CANCELLED_MESSAGE = 'Search cancelled.';
 
 export interface StreamFinderDependencies {
     scan: (url: string, signal: AbortSignal) => Promise<ScanResult>;
@@ -83,13 +81,13 @@ export class StreamFinder {
                 }
             }
             if (controller.signal.aborted) {
-                return { ok: false, candidates: [], message: CANCELLED_MESSAGE, usedBrowser };
+                return { ok: false, candidates: [], message: translateMain('stream.searchCancelled'), usedBrowser };
             }
             const refined = await this.refine(Array.from(raw.values()));
             const candidates = this.store(jobId, pageUrl, groupSimilarStreams(refined), title);
             return { ok: candidates.length > 0, candidates, message: candidates.length > 0 ? null : this.emptyMessage(scan.error, browserError), usedBrowser };
         } catch (error) {
-            return { ok: false, candidates: [], message: error instanceof Error ? error.message : 'The search failed.', usedBrowser };
+            return { ok: false, candidates: [], message: error instanceof Error ? error.message : translateMain('stream.searchFailed'), usedBrowser };
         } finally {
             if (this.running.get(jobId) === controller) {
                 this.running.delete(jobId);
@@ -110,7 +108,7 @@ export class StreamFinder {
 
     private emptyMessage(scanError: string | null, browserError: string | null): string {
         const pageError = scanError !== null && browserError !== null ? browserError : null;
-        return pageError ?? NOTHING_FOUND_MESSAGE;
+        return pageError ?? translateMain('stream.nothingFound');
     }
 
     private forget(jobId: string): void {

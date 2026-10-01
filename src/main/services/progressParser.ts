@@ -49,6 +49,13 @@ export function parseInfoLine(line: string): DownloadInfo | null {
     return filePath.length > 0 ? { live: livePart.trim() === 'True', filePath } : null;
 }
 
+// yt-dlp prints "[wait] ..." lines (only when it is not quiet) while it waits for a scheduled live stream to start.
+export const WAIT_PREFIX = '[wait]';
+
+export function isWaitLine(line: string): boolean {
+    return line.startsWith(WAIT_PREFIX);
+}
+
 export function parseFileLine(line: string): string | null {
     if (!line.startsWith(FILE_PREFIX)) {
         return null;

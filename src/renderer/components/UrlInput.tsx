@@ -1,5 +1,9 @@
 import { useRef, useState, type FormEvent } from 'react';
+import { useTranslator } from '../i18n/useTranslator';
+import type { DownloadOptions } from '@shared/types';
 import { useAppStore } from '../store/appStore';
+import { DownloadOptionsDialog } from './DownloadOptionsDialog';
+import { hasOptions } from './downloadOptions';
 
 interface LinkRow {
     id: number;
@@ -7,19 +11,20 @@ interface LinkRow {
     error: string | null;
     // Folder chosen for this link only; null uses the folder from the settings.
     directory: string | null;
+    // Settings chosen for this link only.
+    options: DownloadOptions;
 }
 
-export const EMPTY_LINKS_MESSAGE = 'Paste at least one video URL.';
-const GENERIC_ADD_ERROR = 'Could not add the download.';
-
 function createRow(id: number): LinkRow {
-    return { id, value: '', error: null, directory: null };
+    return { id, value: '', error: null, directory: null, options: {} };
 }
 
 export function UrlInput() {
+    const t = useTranslator();
     const nextId = useRef(1);
     const [rows, setRows] = useState<LinkRow[]>([createRow(0)]);
     const [focusId, setFocusId] = useState<number | null>(null);
+    const [optionsRowId, setOptionsRowId] = useState<number | null>(null);
     const addUrls = useAppStore((state) => {
         return state.addUrls;
     });
@@ -62,6 +67,14 @@ export function UrlInput() {
         }
     }
 
+    function setRowOptions(id: number, options: DownloadOptions): void {
+        setRows((previous) => {
+            return previous.map((row) => {
+                return row.id === id ? { ...row, options } : row;
+            });
+        });
+    }
+
     function addRow(): void {
         const row = newRow();
         setRows((previous) => {
@@ -86,22 +99,26 @@ export function UrlInput() {
         if (filled.length === 0) {
             setRows((previous) => {
                 return previous.map((row, index) => {
-                    return index === 0 ? { ...row, error: EMPTY_LINKS_MESSAGE } : row;
+                    return index === 0 ? { ...row, error: t('url.empty') } : row;
                 });
             });
             return;
         }
         const results = await addUrls(
             filled.map((row) => {
-                return { url: row.value.trim(), downloadDir: row.directory };
+                return { url: row.value.trim(), downloadDir: row.directory, options: row.options };
             })
         );
         const failed = filled.flatMap((row, index) => {
             const result = results[index];
-            return result && !result.ok ? [{ ...row, error: result.message ?? GENERIC_ADD_ERROR }] : [];
+            return result && !result.ok ? [{ ...row, error: result.message ?? t('url.addFailed') }] : [];
         });
         setRows(failed.length > 0 ? failed : [newRow()]);
     }
+
+    const optionsRow = rows.find((row) => {
+        return row.id === optionsRowId;
+    });
 
     return (
         <form
@@ -110,7 +127,7 @@ export function UrlInput() {
                 void handleSubmit(event);
             }}
         >
-            <span className="section-label">TARGET LINKS</span>
+            <span className="section-label">{t('url.targetLinks')}</span>
             <div className="link-rows">
                 {rows.map((row, index) => {
                     return (
@@ -123,7 +140,7 @@ export function UrlInput() {
                                     spellCheck={false}
                                     autoComplete="off"
                                     autoFocus={row.id === focusId}
-                                    aria-label={`Link ${index + 1}`}
+                                    aria-label={t('url.link', { n: index + 1 })}
                                     aria-invalid={row.error !== null}
                                     placeholder="https://..."
                                     title={row.value}
@@ -135,19 +152,30 @@ export function UrlInput() {
                                 <button
                                     type="button"
                                     className={`btn btn--small ${row.directory ? 'btn--hot' : 'btn--ghost'}`}
-                                    aria-label={`Choose folder for link ${index + 1}`}
-                                    title={row.directory ?? 'Save this link in another folder'}
+                                    aria-label={t('url.chooseFolder', { n: index + 1 })}
+                                    title={row.directory ?? t('url.folderTitle')}
                                     onClick={() => {
                                         void chooseRowDirectory(row.id);
                                     }}
                                 >
-                                    FOLDER
+                                    {t('url.folder')}
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`btn btn--small ${hasOptions(row.options) ? 'btn--hot' : 'btn--ghost'}`}
+                                    aria-label={t('options.buttonAria', { n: index + 1 })}
+                                    aria-haspopup="dialog"
+                                    onClick={() => {
+                                        setOptionsRowId(row.id);
+                                    }}
+                                >
+                                    {t('options.button')}
                                 </button>
                                 {rows.length > 1 && (
                                     <button
                                         type="button"
                                         className="btn btn--small btn--ghost"
-                                        aria-label={`Remove link ${index + 1}`}
+                                        aria-label={t('url.removeLink', { n: index + 1 })}
                                         onClick={() => {
                                             removeRow(row.id);
                                         }}
@@ -158,11 +186,11 @@ export function UrlInput() {
                             </div>
                             {row.directory && (
                                 <p className="link-row__folder">
-                                    <span title={row.directory}>Saving to: {row.directory}</span>
+                                    <span title={row.directory}>{t('url.savingTo', { directory: row.directory })}</span>
                                     <button
                                         type="button"
                                         className="btn btn--small btn--ghost"
-                                        aria-label={`Use the default folder for link ${index + 1}`}
+                                        aria-label={t('url.defaultFolder', { n: index + 1 })}
                                         onClick={() => {
                                             setRowDirectory(row.id, null);
                                         }}
@@ -189,17 +217,31 @@ export function UrlInput() {
                             void saveSettings({ ...settings, audioOnly: event.target.checked });
                         }}
                     />
-                    <span>AUDIO ONLY</span>
+                    <span>{t('url.audioOnly')}</span>
                 </label>
                 <div className="url-input__buttons">
                     <button type="button" className="btn" onClick={addRow}>
-                        + ADD LINK
+                        {t('url.addLink')}
                     </button>
                     <button type="submit" className="btn btn--primary">
-                        DOWNLOAD
+                        {t('url.download')}
                     </button>
                 </div>
             </div>
+            {optionsRow && (
+                <DownloadOptionsDialog
+                    linkNumber={rows.indexOf(optionsRow) + 1}
+                    options={optionsRow.options}
+                    settings={settings}
+                    onApply={(options) => {
+                        setRowOptions(optionsRow.id, options);
+                        setOptionsRowId(null);
+                    }}
+                    onClose={() => {
+                        setOptionsRowId(null);
+                    }}
+                />
+            )}
         </form>
     );
 }

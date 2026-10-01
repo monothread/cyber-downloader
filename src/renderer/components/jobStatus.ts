@@ -1,15 +1,24 @@
-import type { DownloadError, ErrorCode, JobStatus } from '@shared/types';
+import type { Translator } from '@shared/i18n';
+import type { DownloadError, DownloadJob, ErrorCode, JobStatus } from '@shared/types';
 
-const STATUS_LABELS: Record<JobStatus, string> = {
-    queued: 'QUEUED',
-    running: 'DOWNLOADING',
-    done: 'COMPLETE',
-    error: 'FAILED',
-    cancelled: 'CANCELLED'
-};
+export type LivePhase = 'verifying' | 'waiting';
 
-export function statusLabel(status: JobStatus, live = false): string {
-    return live && status === 'running' ? 'RECORDING' : STATUS_LABELS[status];
+// A running job is either checking whether a live stream really ended or waiting for a scheduled one to start.
+export function livePhase(job: Pick<DownloadJob, 'status' | 'endCheck' | 'waitingForLive'>): LivePhase | null {
+    if (job.status !== 'running') {
+        return null;
+    }
+    if (job.endCheck !== null) {
+        return 'verifying';
+    }
+    return job.waitingForLive ? 'waiting' : null;
+}
+
+export function statusLabel(status: JobStatus, live: boolean, t: Translator, phase: LivePhase | null = null): string {
+    if (phase !== null) {
+        return t(`job.status.${phase}`);
+    }
+    return live && status === 'running' ? t('job.status.recording') : t(`job.status.${status}`);
 }
 
 export function formatPercent(percent: number): string {

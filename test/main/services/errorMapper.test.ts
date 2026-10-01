@@ -1,5 +1,6 @@
 import type { ErrorCode } from '@shared/types';
 import { mapDownloadError, mapSpawnError } from '@main/services/errorMapper';
+import { applyLanguage } from '@main/services/language';
 
 describe('mapDownloadError', () => {
     const cases: Array<[ErrorCode, string, string]> = [
@@ -106,3 +107,48 @@ describe('mapDownloadError for refused requests', () => {
     });
 });
 
+
+describe('error messages in other languages', () => {
+    afterEach(() => {
+        applyLanguage('en', 'en-US');
+    });
+
+    it('translates the title and the hint of a matched rule but keeps the raw output', () => {
+        applyLanguage('pt', 'en-US');
+        expect(mapDownloadError('ERROR: Video unavailable', 1)).toEqual({
+            code: 'UNAVAILABLE',
+            title: 'Vídeo indisponível',
+            hint: 'O vídeo pode ser privado, ter sido removido ou estar bloqueado na sua região.',
+            raw: 'ERROR: Video unavailable'
+        });
+    });
+
+    it('translates the unknown failure and the exit code text', () => {
+        applyLanguage('es', 'en-US');
+        expect(mapDownloadError('', 7)).toEqual({
+            code: 'UNKNOWN',
+            title: 'La descarga falló',
+            hint: 'Consulta los detalles a continuación.',
+            raw: 'yt-dlp terminó con el código 7'
+        });
+        expect(mapDownloadError('', null).raw).toBe('yt-dlp terminó con el código desconocido');
+    });
+
+    it('translates the spawn errors', () => {
+        applyLanguage('ja', 'en-US');
+        const missing = Object.assign(new Error('spawn yt-dlp ENOENT'), { code: 'ENOENT' });
+        expect(mapSpawnError(missing)).toEqual({
+            code: 'BINARY_MISSING',
+            title: 'yt-dlp が見つかりません',
+            hint: 'yt-dlp をインストールするか、設定でパスを指定してください。',
+            raw: 'spawn yt-dlp ENOENT'
+        });
+        const denied = Object.assign(new Error('spawn EACCES'), { code: 'EACCES' });
+        expect(mapSpawnError(denied)).toEqual({
+            code: 'UNKNOWN',
+            title: 'yt-dlp を起動できませんでした',
+            hint: '詳細は以下をご覧ください。',
+            raw: 'spawn EACCES'
+        });
+    });
+});

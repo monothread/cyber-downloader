@@ -1,3 +1,5 @@
+import { translateMain } from './language';
+
 export type CloseAction = 'allow' | 'hide' | 'ask-quit';
 
 export interface CloseState {
@@ -19,7 +21,7 @@ export function decideCloseAction(state: CloseState): CloseAction {
 }
 
 export function describePending(pending: number): string {
-    return pending === 1 ? '1 download is still in progress.' : `${pending} downloads are still in progress.`;
+    return pending === 1 ? translateMain('dialog.pendingOne') : translateMain('dialog.pendingMany', { count: pending });
 }
 
 export async function requestQuit(deps: QuitDependencies): Promise<boolean> {

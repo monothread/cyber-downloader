@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import { EMPTY_LINKS_MESSAGE, UrlInput } from '@renderer/components/UrlInput';
+import { UrlInput } from '@renderer/components/UrlInput';
 import { useAppStore } from '@renderer/store/appStore';
 import { installMockApi, type MockApiHandle } from '../../helpers/mockApi';
 
@@ -132,7 +132,7 @@ describe('UrlInput submit', () => {
     it('shows an error on the first row when everything is empty and does not call the API', async () => {
         render(<UrlInput />);
         await submit();
-        expect(await screen.findByRole('alert')).toHaveTextContent(EMPTY_LINKS_MESSAGE);
+        expect(await screen.findByRole('alert')).toHaveTextContent('Paste at least one video URL.');
         expect(link(1)).toHaveAttribute('aria-invalid', 'true');
         expect(mock.api.addDownload).not.toHaveBeenCalled();
     });
@@ -304,6 +304,197 @@ describe('UrlInput folder for one link', () => {
             expect(link(1)).toHaveValue('');
         });
         expect(screen.queryByText(/Saving to:/)).not.toBeInTheDocument();
+    });
+});
+
+describe('UrlInput options of one download', () => {
+    async function openOptions(index: number): Promise<void> {
+        await userEvent.setup().click(screen.getByRole('button', { name: `Options for link ${index}` }));
+    }
+
+    async function choose(label: string, value: string): Promise<void> {
+        await userEvent.setup().selectOptions(within(screen.getByRole('dialog')).getByLabelText(label), value);
+    }
+
+    async function apply(): Promise<void> {
+        await userEvent.setup().click(screen.getByRole('button', { name: 'APPLY' }));
+    }
+
+    it('has an options button on every row and no window until it is pressed', async () => {
+        render(<UrlInput />);
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveTextContent('OPTIONS');
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveAttribute('aria-haspopup', 'dialog');
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        await userEvent.setup().click(screen.getByRole('button', { name: '+ ADD LINK' }));
+        expect(screen.getByRole('button', { name: 'Options for link 2' })).toBeInTheDocument();
+    });
+
+    it('opens the window of the row that was pressed, with the settings as the defaults', async () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, maxResolution: '1080' } });
+        render(<UrlInput />);
+        await userEvent.setup().click(screen.getByRole('button', { name: '+ ADD LINK' }));
+        await openOptions(2);
+        expect(screen.getByRole('dialog', { name: 'Options for link 2' })).toBeInTheDocument();
+        expect(within(screen.getByRole('dialog')).getByLabelText('Video quality').querySelector('option')).toHaveTextContent('Use the setting (Up to 1080p)');
+    });
+
+    it('sends the options chosen for a link with its URL', async () => {
+        render(<UrlInput />);
+        fireEvent.change(link(1), { target: { value: 'https://a.com/v' } });
+        await openOptions(1);
+        await choose('Video quality', '720');
+        await choose('Wait for scheduled live streams to start', 'on');
+        await apply();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        await submit();
+        await waitFor(() => {
+            expect(mock.api.addDownload).toHaveBeenCalledTimes(1);
+        });
+        expect(mock.api.addDownload).toHaveBeenCalledWith('https://a.com/v', '', { maxResolution: '720', waitForLive: true });
+    });
+
+    it('highlights the button of a link that has options and not the others', async () => {
+        render(<UrlInput />);
+        await userEvent.setup().click(screen.getByRole('button', { name: '+ ADD LINK' }));
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveClass('btn--ghost');
+        await openOptions(2);
+        await choose('Audio only', 'on');
+        await apply();
+        expect(screen.getByRole('button', { name: 'Options for link 2' })).toHaveClass('btn--hot');
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveClass('btn--ghost');
+    });
+
+    it('does not highlight the button when the options were chosen and then reset', async () => {
+        render(<UrlInput />);
+        await openOptions(1);
+        await choose('Audio only', 'on');
+        await apply();
+        await openOptions(1);
+        await userEvent.setup().click(screen.getByRole('button', { name: 'RESET' }));
+        await apply();
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveClass('btn--ghost');
+    });
+
+    it('keeps the options of each row separate', async () => {
+        render(<UrlInput />);
+        await userEvent.setup().click(screen.getByRole('button', { name: '+ ADD LINK' }));
+        fireEvent.change(link(1), { target: { value: 'https://a.com/1' } });
+        fireEvent.change(link(2), { target: { value: 'https://b.com/2' } });
+        await openOptions(1);
+        await choose('Video container', 'mkv');
+        await apply();
+        await openOptions(2);
+        await choose('Audio format', 'opus');
+        await choose('Audio only', 'on');
+        await apply();
+        await submit();
+        await waitFor(() => {
+            expect(mock.api.addDownload).toHaveBeenCalledTimes(2);
+        });
+        expect(mock.api.addDownload.mock.calls).toEqual([
+            ['https://a.com/1', '', { videoContainer: 'mkv' }],
+            ['https://b.com/2', '', { audioFormat: 'opus', audioOnly: true }]
+        ]);
+    });
+
+    it('sends the options together with the folder of the link', async () => {
+        mock.api.chooseDirectory.mockResolvedValue('/media/videos');
+        render(<UrlInput />);
+        fireEvent.change(link(1), { target: { value: 'https://a.com/v' } });
+        await userEvent.setup().click(screen.getByRole('button', { name: 'Choose folder for link 1' }));
+        await screen.findByText('Saving to: /media/videos');
+        await openOptions(1);
+        await choose('Video quality', '480');
+        await apply();
+        await submit();
+        await waitFor(() => {
+            expect(mock.api.addDownload).toHaveBeenCalledTimes(1);
+        });
+        expect(mock.api.addDownload).toHaveBeenCalledWith('https://a.com/v', '/media/videos', { maxResolution: '480' });
+    });
+
+    it('does not keep what was chosen when the window is cancelled', async () => {
+        render(<UrlInput />);
+        fireEvent.change(link(1), { target: { value: 'https://a.com/v' } });
+        await openOptions(1);
+        await choose('Video quality', '720');
+        await userEvent.setup().click(screen.getByRole('button', { name: 'CANCEL' }));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveClass('btn--ghost');
+        await submit();
+        await waitFor(() => {
+            expect(mock.api.addDownload).toHaveBeenCalledTimes(1);
+        });
+        expect(mock.api.addDownload).toHaveBeenCalledWith('https://a.com/v');
+    });
+
+    it('opens again with the options the link already has, and Escape keeps them', async () => {
+        render(<UrlInput />);
+        await openOptions(1);
+        await choose('Video quality', '720');
+        await apply();
+        await openOptions(1);
+        expect(within(screen.getByRole('dialog')).getByLabelText('Video quality')).toHaveValue('720');
+        await userEvent.setup().keyboard('{Escape}');
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveClass('btn--hot');
+    });
+
+    it('starts the next download without options once the links were added', async () => {
+        render(<UrlInput />);
+        fireEvent.change(link(1), { target: { value: 'https://a.com/v' } });
+        await openOptions(1);
+        await choose('Video quality', '720');
+        await apply();
+        await submit();
+        await waitFor(() => {
+            expect(link(1)).toHaveValue('');
+        });
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveClass('btn--ghost');
+        fireEvent.change(link(1), { target: { value: 'https://b.com/v' } });
+        await submit();
+        await waitFor(() => {
+            expect(mock.api.addDownload).toHaveBeenCalledTimes(2);
+        });
+        expect(mock.api.addDownload.mock.calls[1]).toEqual(['https://b.com/v']);
+    });
+
+    it('keeps the options of a link that could not be added', async () => {
+        mock.api.addDownload.mockResolvedValueOnce({ ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' });
+        render(<UrlInput />);
+        fireEvent.change(link(1), { target: { value: 'nope' } });
+        await openOptions(1);
+        await choose('Audio only', 'on');
+        await apply();
+        await submit();
+        expect(await screen.findByRole('alert')).toHaveTextContent('Invalid URL. Use an http(s) link.');
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveClass('btn--hot');
+        await openOptions(1);
+        expect(within(screen.getByRole('dialog')).getByLabelText('Audio only')).toHaveValue('on');
+    });
+
+    it('moves the options with the row when an earlier row is removed', async () => {
+        render(<UrlInput />);
+        await userEvent.setup().click(screen.getByRole('button', { name: '+ ADD LINK' }));
+        fireEvent.change(link(2), { target: { value: 'https://b.com/2' } });
+        await openOptions(2);
+        await choose('Video container', 'webm');
+        await apply();
+        await userEvent.setup().click(screen.getByRole('button', { name: 'Remove link 1' }));
+        expect(screen.getByRole('button', { name: 'Options for link 1' })).toHaveClass('btn--hot');
+        await submit();
+        await waitFor(() => {
+            expect(mock.api.addDownload).toHaveBeenCalledTimes(1);
+        });
+        expect(mock.api.addDownload).toHaveBeenCalledWith('https://b.com/2', '', { videoContainer: 'webm' });
+    });
+
+    it('is translated', async () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'es' } });
+        render(<UrlInput />);
+        const button = screen.getByRole('button', { name: 'Opciones del enlace 1' });
+        expect(button).toHaveTextContent('OPCIONES');
+        await userEvent.setup().click(button);
+        expect(screen.getByRole('dialog', { name: 'Opciones del enlace 1' })).toBeInTheDocument();
     });
 });
 

@@ -1,6 +1,8 @@
 import {
     FILE_PREFIX,
     FILE_PRINT_TEMPLATE,
+    WAIT_PREFIX,
+    isWaitLine,
     INFO_PREFIX,
     INFO_PRINT_TEMPLATE,
     PROGRESS_PREFIX,
@@ -102,6 +104,23 @@ describe('parseInfoLine', () => {
         expect(parseInfoLine(`${INFO_PREFIX}True`)).toBeNull();
         expect(parseInfoLine('CYBERFILE|/d/v.mp4')).toBeNull();
         expect(parseInfoLine('')).toBeNull();
+    });
+});
+
+describe('isWaitLine', () => {
+    it('recognises the lines yt-dlp prints while it waits for a scheduled live stream', () => {
+        expect(WAIT_PREFIX).toBe('[wait]');
+        expect(isWaitLine('[wait] Waiting for 00:59:59 - Press Ctrl+C to try now')).toBe(true);
+        expect(isWaitLine('[wait] Remaining time until next attempt: 00:59:59')).toBe(true);
+        expect(isWaitLine('[wait]')).toBe(true);
+    });
+
+    it('ignores every other line', () => {
+        expect(isWaitLine('[FakeLive] Extracting URL: https://x.test/a')).toBe(false);
+        expect(isWaitLine('WARNING: [FakeLive] abc: This live event will begin in 1 hour')).toBe(false);
+        expect(isWaitLine('CYBERPROG|1%|1|1|t')).toBe(false);
+        expect(isWaitLine(' [wait] indented')).toBe(false);
+        expect(isWaitLine('')).toBe(false);
     });
 });
 

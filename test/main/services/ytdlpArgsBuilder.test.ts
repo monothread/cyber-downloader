@@ -314,6 +314,12 @@ describe('buildYtdlpArgs for live streams', () => {
         expect(args).not.toContain('--live-from-start');
     });
 
+    it('is not quiet while it waits, so yt-dlp prints its "[wait]" lines, and stays as it was otherwise', () => {
+        expect(build({ waitForLive: true })).toContain('--no-quiet');
+        expect(build({ waitForLive: false })).not.toContain('--no-quiet');
+        expect(build({ liveFromStart: true })).not.toContain('--no-quiet');
+    });
+
     it('records from the start through yt-dlp (YouTube, Twitch) and through ffmpeg (HLS)', () => {
         const args = build({ liveFromStart: true });
         expect(args).toContain('--live-from-start');
@@ -325,6 +331,42 @@ describe('buildYtdlpArgs for live streams', () => {
         const args = build({ waitForLive: true, liveFromStart: true });
         expect(args).toEqual(expect.arrayContaining(['--wait-for-video', '30', '--live-from-start', '--downloader-args', 'ffmpeg_i:-live_start_index 0']));
         expect(args.slice(-2)).toEqual(['--', URL]);
+    });
+
+    describe('attempts to record a stream that came back', () => {
+        const resume = (overrides: Partial<Settings>, resumedPart = 2, extras = {}) => {
+            return buildYtdlpArgs(URL, { ...DEFAULT_SETTINGS, ...overrides }, DEFAULT_DIR, null, { ...extras, resumedPart });
+        };
+
+        it('only record when the video is live', () => {
+            const args = resume({});
+            expect(args[args.indexOf('--match-filter') + 1]).toBe('is_live');
+            expect(args.slice(-2)).toEqual(['--', URL]);
+        });
+
+        it('write to a file with the part number', () => {
+            expect(resume({}, 2)[resume({}, 2).indexOf('-o') + 1]).toBe('%(title).80s [%(id)s] (part 2).%(ext)s');
+            expect(resume({}, 5, { title: 'Show' })[resume({}, 5, { title: 'Show' }).indexOf('-o') + 1]).toBe('Show [%(id)s] (part 5).%(ext)s');
+        });
+
+        it('neither wait for a scheduled stream nor start from the beginning again', () => {
+            const args = resume({ waitForLive: true, liveFromStart: true });
+            expect(args).not.toContain('--wait-for-video');
+            expect(args).not.toContain('--no-quiet');
+            expect(args).not.toContain('--live-from-start');
+            expect(args).not.toContain('--downloader-args');
+        });
+
+        it('keep everything else of the request', () => {
+            const args = resume({ useBrowserCookies: true, cookiesBrowser: 'chrome' }, 2, { referer: 'https://page.test/' });
+            expect(args).toEqual(expect.arrayContaining(['--referer', 'https://page.test/', '--cookies-from-browser']));
+        });
+
+        it('do not add a part number to the first recording or a filter', () => {
+            const args = build({});
+            expect(args).not.toContain('--match-filter');
+            expect(args[args.indexOf('-o') + 1]).toBe('%(title).80s [%(id)s].%(ext)s');
+        });
     });
 
     it('always asks yt-dlp to announce each download so live streams can be recognised', () => {

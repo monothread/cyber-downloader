@@ -1,8 +1,11 @@
 import {
     AUDIO_FORMATS,
+    LANGUAGE_SETTINGS,
     MAX_CONCURRENT,
+    MAX_LIVE_END_CHECK_SECONDS,
     MAX_TITLE_LENGTH,
     MIN_CONCURRENT,
+    MIN_LIVE_END_CHECK_SECONDS,
     MIN_TITLE_LENGTH,
     RESOLUTIONS,
     THEMES,
@@ -10,35 +13,27 @@ import {
 } from '@shared/constants';
 import { useEffect } from 'react';
 import { chosenBrowserWarning, findChosenBrowser, NO_BROWSER_CHOSEN } from '@shared/browserChoice';
-import { hasUnboundedAutoSubtitles, UNBOUNDED_AUTO_SUBTITLES_MESSAGE } from '@shared/subtitles';
-import type { DetectedBrowser, MaxResolution, ThemeName } from '@shared/types';
+import { LANGUAGE_NAMES, type Translator } from '@shared/i18n';
+import { hasUnboundedAutoSubtitles } from '@shared/subtitles';
+import type { DetectedBrowser, LanguageSetting, ThemeName } from '@shared/types';
 import { useAutoSaveSettings, type SaveStatus } from '../hooks/useAutoSaveSettings';
+import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 import { NumberField, SelectField, TextField, ToggleField } from './fields';
+import { formatResolution } from './settingsFormat';
 import { UpdateActions } from './UpdateActions';
 import { updateSummary } from './updateText';
 
-const SAVE_STATUS_TEXT: Record<SaveStatus, string> = {
-    idle: 'Changes are saved automatically.',
-    pending: 'Unsaved changes…',
-    saving: 'Saving…',
-    saved: 'All changes saved.',
-    error: 'Could not save the settings.'
-};
-
-function formatResolution(resolution: MaxResolution): string {
-    return resolution === 'best' ? 'Best available' : `Up to ${resolution}p`;
+function formatSaveStatus(status: SaveStatus, t: Translator): string {
+    return t(`settings.save.${status}`);
 }
 
-const THEME_LABELS: Record<ThemeName, string> = {
-    device: 'Device (follows the system)',
-    cyberpunk: 'Cyberpunk (neon)',
-    dark: 'Dark',
-    light: 'Light'
-};
+function formatTheme(theme: ThemeName, t: Translator): string {
+    return t(`theme.${theme}`);
+}
 
-function formatTheme(theme: ThemeName): string {
-    return THEME_LABELS[theme];
+function formatLanguage(language: LanguageSetting, t: Translator): string {
+    return language === 'device' ? t('language.device') : LANGUAGE_NAMES[language];
 }
 
 function findBrowserByDir(browsers: readonly DetectedBrowser[], dataDir: string): DetectedBrowser | undefined {
@@ -57,24 +52,25 @@ function profileOptions(browser: DetectedBrowser, saved: string): string[] {
     return [AUTOMATIC_PROFILE, ...ids, ...(saved.length > 0 && !ids.includes(saved) ? [saved] : [])];
 }
 
-function formatProfile(browser: DetectedBrowser, id: string): string {
+function formatProfile(browser: DetectedBrowser, id: string, t: Translator): string {
     if (id === AUTOMATIC_PROFILE) {
-        return 'Automatic (most recently used)';
+        return t('profile.automatic');
     }
     const profile = browser.profiles.find((candidate) => {
         return candidate.id === id;
     });
     if (!profile) {
-        return `${id} (not found)`;
+        return t('profile.notFound', { id });
     }
     return profile.name === profile.id ? profile.id : `${profile.name} (${profile.id})`;
 }
 
-function formatBrowser(browsers: readonly DetectedBrowser[], dataDir: string): string {
-    return findBrowserByDir(browsers, dataDir)?.label ?? 'Choose a browser…';
+function formatBrowser(browsers: readonly DetectedBrowser[], dataDir: string, t: Translator): string {
+    return findBrowserByDir(browsers, dataDir)?.label ?? t('settings.browser.choose');
 }
 
 export function SettingsPanel() {
+    const t = useTranslator();
     const stored = useAppStore((state) => {
         return state.settings;
     });
@@ -114,7 +110,7 @@ export function SettingsPanel() {
     const { draft, status, change, edit, changeMany } = useAutoSaveSettings(stored, saveSettings);
     const detectedBrowsers = browsers ?? [];
     const chosenBrowser = findChosenBrowser(detectedBrowsers, draft);
-    const browserWarning = chosenBrowserWarning(browsers, draft);
+    const browserWarning = chosenBrowserWarning(browsers, draft, t);
     const detectedDirs = detectedBrowsers.map((browser) => {
         return browser.dataDir;
     });
@@ -139,28 +135,41 @@ export function SettingsPanel() {
     }
 
     return (
-        <section className="settings" aria-label="Settings">
+        <section className="settings" aria-label={t('settings.aria')}>
             <p className={`save-status save-status--${status}`} aria-live="polite">
-                {SAVE_STATUS_TEXT[status]}
+                {formatSaveStatus(status, t)}
             </p>
 
             <fieldset className="panel">
-                <legend>APPEARANCE & WINDOW</legend>
+                <legend>{t('settings.appearance')}</legend>
                 <SelectField
-                    label="Theme"
+                    label={t('settings.theme')}
                     value={draft.theme}
                     options={THEMES}
-                    formatOption={formatTheme}
-                    hint="Device follows the light or dark mode of your system. Saved and restored the next time the app opens."
+                    formatOption={(theme) => {
+                        return formatTheme(theme, t);
+                    }}
+                    hint={t('settings.theme.hint')}
                     onChange={(value) => {
                         change('theme', value);
                     }}
                 />
-            
+                <SelectField
+                    label={t('settings.language')}
+                    value={draft.language}
+                    options={LANGUAGE_SETTINGS}
+                    formatOption={(language) => {
+                        return formatLanguage(language, t);
+                    }}
+                    hint={t('settings.language.hint')}
+                    onChange={(value) => {
+                        change('language', value);
+                    }}
+                />
                 <ToggleField
-                    label="Keep running in the system tray when the window is closed"
+                    label={t('settings.closeToTray')}
                     checked={draft.closeToTray}
-                    hint="Downloads keep going in the background. Right-click the tray icon to quit completely."
+                    hint={t('settings.closeToTray.hint')}
                     onChange={(value) => {
                         change('closeToTray', value);
                     }}
@@ -173,12 +182,12 @@ export function SettingsPanel() {
             </fieldset>
 
             <fieldset className="panel">
-                <legend>OUTPUT</legend>
+                <legend>{t('settings.output')}</legend>
                 <div className="field-row">
                     <TextField
-                        label="Download folder"
+                        label={t('settings.downloadDir')}
                         value={draft.downloadDir}
-                        placeholder="Default: system Downloads folder"
+                        placeholder={t('settings.downloadDir.placeholder')}
                         onChange={(value) => {
                             edit('downloadDir', value);
                         }}
@@ -190,30 +199,30 @@ export function SettingsPanel() {
                             void handleChooseDirectory();
                         }}
                     >
-                        BROWSE
+                        {t('settings.browse')}
                     </button>
                 </div>
                 <NumberField
-                    label="Max title length (characters)"
+                    label={t('settings.maxTitleLength')}
                     value={draft.maxTitleLength}
                     min={MIN_TITLE_LENGTH}
                     max={MAX_TITLE_LENGTH}
-                    hint="Long titles are cut in the file name so the download does not fail."
+                    hint={t('settings.maxTitleLength.hint')}
                     onChange={(value) => {
                         edit('maxTitleLength', value);
                     }}
                 />
                 <ToggleField
-                    label="Restrict file names (ASCII only)"
+                    label={t('settings.restrictFilenames')}
                     checked={draft.restrictFilenames}
                     onChange={(value) => {
                         change('restrictFilenames', value);
                     }}
                 />
                 <ToggleField
-                    label="Delete partial files when a download fails or is cancelled"
+                    label={t('settings.deletePartials')}
                     checked={draft.deletePartialsOnFailure}
-                    hint="Live recordings are always kept, because they can still be saved. A retry starts over once the partial file is gone."
+                    hint={t('settings.deletePartials.hint')}
                     onChange={(value) => {
                         change('deletePartialsOnFailure', value);
                     }}
@@ -221,19 +230,21 @@ export function SettingsPanel() {
             </fieldset>
 
             <fieldset className="panel">
-                <legend>QUALITY & FORMAT</legend>
+                <legend>{t('settings.quality')}</legend>
                 <SelectField
-                    label="Video quality"
+                    label={t('settings.maxResolution')}
                     value={draft.maxResolution}
                     options={RESOLUTIONS}
-                    formatOption={formatResolution}
-                    hint="Always picks the best video + best audio within the limit."
+                    formatOption={(resolution) => {
+                        return formatResolution(resolution, t);
+                    }}
+                    hint={t('settings.maxResolution.hint')}
                     onChange={(value) => {
                         change('maxResolution', value);
                     }}
                 />
                 <SelectField
-                    label="Video container"
+                    label={t('settings.videoContainer')}
                     value={draft.videoContainer}
                     options={VIDEO_CONTAINERS}
                     onChange={(value) => {
@@ -241,14 +252,14 @@ export function SettingsPanel() {
                     }}
                 />
                 <ToggleField
-                    label="Audio only"
+                    label={t('settings.audioOnly')}
                     checked={draft.audioOnly}
                     onChange={(value) => {
                         change('audioOnly', value);
                     }}
                 />
                 <SelectField
-                    label="Audio format"
+                    label={t('settings.audioFormat')}
                     value={draft.audioFormat}
                     options={AUDIO_FORMATS}
                     onChange={(value) => {
@@ -258,44 +269,44 @@ export function SettingsPanel() {
             </fieldset>
 
             <fieldset className="panel">
-                <legend>PLAYLISTS & SUBTITLES</legend>
+                <legend>{t('settings.subtitles')}</legend>
                 <ToggleField
-                    label="Download whole playlist"
+                    label={t('settings.playlist')}
                     checked={draft.downloadPlaylist}
                     onChange={(value) => {
                         change('downloadPlaylist', value);
                     }}
                 />
                 <ToggleField
-                    label="Download subtitles"
+                    label={t('settings.writeSubtitles')}
                     checked={draft.writeSubtitles}
                     onChange={(value) => {
                         change('writeSubtitles', value);
                     }}
                 />
                 <TextField
-                    label="Subtitle languages"
+                    label={t('settings.subtitleLangs')}
                     value={draft.subtitleLangs}
-                    hint="Comma separated, e.g. en,pt"
+                    hint={t('settings.subtitleLangs.hint')}
                     onChange={(value) => {
                         edit('subtitleLangs', value);
                     }}
                 />
                 <ToggleField
-                    label="Include auto-generated subtitles"
+                    label={t('settings.autoSubtitles')}
                     checked={draft.autoSubtitles}
-                    hint="Also downloads the captions YouTube generates automatically when the author did not upload any for the language."
+                    hint={t('settings.autoSubtitles.hint')}
                     onChange={(value) => {
                         change('autoSubtitles', value);
                     }}
                 />
                 {unboundedAutoSubtitles && (
                     <p className="field__warning" role="alert">
-                        {UNBOUNDED_AUTO_SUBTITLES_MESSAGE}
+                        {t('subtitles.unbounded')}
                     </p>
                 )}
                 <ToggleField
-                    label="Embed subtitles in the video"
+                    label={t('settings.embedSubtitles')}
                     checked={draft.embedSubtitles}
                     onChange={(value) => {
                         change('embedSubtitles', value);
@@ -304,43 +315,62 @@ export function SettingsPanel() {
             </fieldset>
 
             <fieldset className="panel">
-                <legend>LIVE STREAMS</legend>
+                <legend>{t('settings.live')}</legend>
                 <ToggleField
-                    label="Record live streams from the start"
+                    label={t('settings.liveFromStart')}
                     checked={draft.liveFromStart}
-                    hint="Works when the broadcaster keeps the past part of the stream available (DVR); otherwise it starts from the oldest part still offered."
+                    hint={t('settings.liveFromStart.hint')}
                     onChange={(value) => {
                         change('liveFromStart', value);
                     }}
                 />
                 <ToggleField
-                    label="Wait for scheduled live streams to start"
+                    label={t('settings.waitForLive')}
                     checked={draft.waitForLive}
-                    hint="Keeps checking every 30 seconds until the stream goes live. Cancel to stop waiting."
+                    hint={t('settings.waitForLive.hint')}
                     onChange={(value) => {
                         change('waitForLive', value);
+                    }}
+                />
+                <ToggleField
+                    label={t('settings.verifyLiveEnd')}
+                    checked={draft.verifyLiveEnd}
+                    hint={t('settings.verifyLiveEnd.hint')}
+                    onChange={(value) => {
+                        change('verifyLiveEnd', value);
+                    }}
+                />
+                <NumberField
+                    label={t('settings.verifyLiveEndSeconds')}
+                    value={draft.verifyLiveEndSeconds}
+                    min={MIN_LIVE_END_CHECK_SECONDS}
+                    max={MAX_LIVE_END_CHECK_SECONDS}
+                    hint={t('settings.verifyLiveEndSeconds.hint')}
+                    disabled={!draft.verifyLiveEnd}
+                    onChange={(value) => {
+                        edit('verifyLiveEndSeconds', value);
                     }}
                 />
             </fieldset>
 
             <fieldset className="panel">
-                <legend>BROWSER COOKIES</legend>
+                <legend>{t('settings.cookies')}</legend>
                 <ToggleField
-                    label="Use cookies from my browser"
+                    label={t('settings.useCookies')}
                     checked={draft.useBrowserCookies}
-                    hint="Needed for age-restricted, private or members-only videos."
+                    hint={t('settings.useCookies.hint')}
                     onChange={(value) => {
                         change('useBrowserCookies', value);
                     }}
                 />
                 <SelectField
-                    label="Browser"
+                    label={t('settings.browser')}
                     value={chosenBrowser?.dataDir ?? NO_BROWSER_CHOSEN}
                     options={browserOptions}
                     formatOption={(dataDir) => {
-                        return formatBrowser(detectedBrowsers, dataDir);
+                        return formatBrowser(detectedBrowsers, dataDir, t);
                     }}
-                    hint="Browsers found on this system when the app opened."
+                    hint={t('settings.browser.hint')}
                     onChange={(dataDir) => {
                         const browser = findBrowserByDir(detectedBrowsers, dataDir);
                         if (browser) {
@@ -361,16 +391,16 @@ export function SettingsPanel() {
                             void loadBrowsers(true);
                         }}
                     >
-                        RESCAN BROWSERS
+                        {t('settings.rescan')}
                     </button>
                 </div>
                 {chosenBrowser && chosenBrowser.profiles.length > 0 ? (
                     <SelectField
-                        label="Browser profile (optional)"
+                        label={t('settings.profile')}
                         value={draft.cookiesProfile}
                         options={profileOptions(chosenBrowser, draft.cookiesProfile)}
                         formatOption={(id) => {
-                            return formatProfile(chosenBrowser, id);
+                            return formatProfile(chosenBrowser, id, t);
                         }}
                         onChange={(id) => {
                             change('cookiesProfile', id);
@@ -378,7 +408,7 @@ export function SettingsPanel() {
                     />
                 ) : (
                     <TextField
-                        label="Browser profile (optional)"
+                        label={t('settings.profile')}
                         value={draft.cookiesProfile}
                         onChange={(value) => {
                             edit('cookiesProfile', value);
@@ -390,7 +420,9 @@ export function SettingsPanel() {
             <fieldset className="panel">
                 <legend>YT-DLP</legend>
                 <p className="update-status" aria-live="polite">
-                    {binaries?.ytdlp.found ? `Installed version: ${binaries.ytdlp.version ?? 'unknown'}` : 'yt-dlp was not found.'}
+                    {binaries?.ytdlp.found
+                        ? t('settings.ytdlp.installed', { version: binaries.ytdlp.version ?? t('settings.ytdlp.versionUnknown') })
+                        : t('settings.ytdlp.notFound')}
                 </p>
                 <div className="field-row">
                     <button
@@ -401,16 +433,16 @@ export function SettingsPanel() {
                             void updateYtdlp();
                         }}
                     >
-                        {updatingYtdlp ? 'UPDATING…' : 'UPDATE YT-DLP'}
+                        {updatingYtdlp ? t('settings.ytdlp.updating') : t('settings.ytdlp.update')}
                     </button>
                 </div>
-                <span className="field__hint">Downloads the latest yt-dlp into the app data folder. Sites change often, so update it when a download suddenly stops working.</span>
+                <span className="field__hint">{t('settings.ytdlp.hint')}</span>
             </fieldset>
 
             <fieldset className="panel">
-                <legend>APP UPDATES</legend>
+                <legend>{t('settings.appUpdates')}</legend>
                 <p className="update-status" aria-live="polite">
-                    {updateSummary(appUpdate)}
+                    {updateSummary(appUpdate, t)}
                 </p>
                 <div className="field-row">
                     <button
@@ -421,12 +453,12 @@ export function SettingsPanel() {
                             void checkAppUpdate();
                         }}
                     >
-                        CHECK FOR UPDATES
+                        {t('settings.checkUpdates')}
                     </button>
                     <UpdateActions />
                 </div>
                 <ToggleField
-                    label="Check for updates on startup"
+                    label={t('settings.checkOnStart')}
                     checked={draft.checkUpdatesOnStart}
                     onChange={(value) => {
                         change('checkUpdatesOnStart', value);
@@ -435,9 +467,9 @@ export function SettingsPanel() {
             </fieldset>
 
             <fieldset className="panel panel--wide">
-                <legend>ADVANCED</legend>
+                <legend>{t('settings.advanced')}</legend>
                 <NumberField
-                    label="Simultaneous downloads"
+                    label={t('settings.maxConcurrent')}
                     value={draft.maxConcurrent}
                     min={MIN_CONCURRENT}
                     max={MAX_CONCURRENT}
@@ -446,42 +478,42 @@ export function SettingsPanel() {
                     }}
                 />
                 <TextField
-                    label="Speed limit"
+                    label={t('settings.rateLimit')}
                     value={draft.rateLimit}
-                    placeholder="e.g. 2M or 500K"
+                    placeholder={t('settings.rateLimit.placeholder')}
                     onChange={(value) => {
                         edit('rateLimit', value);
                     }}
                 />
                 <TextField
-                    label="yt-dlp path"
+                    label={t('settings.ytdlpPath')}
                     value={draft.ytdlpPath}
-                    placeholder="Default: bundled yt-dlp"
+                    placeholder={t('settings.ytdlpPath.placeholder')}
                     onChange={(value) => {
                         edit('ytdlpPath', value);
                     }}
                 />
                 <TextField
-                    label="ffmpeg path"
+                    label={t('settings.ffmpegPath')}
                     value={draft.ffmpegPath}
-                    placeholder="Default: bundled ffmpeg"
+                    placeholder={t('settings.ffmpegPath.placeholder')}
                     onChange={(value) => {
                         edit('ffmpegPath', value);
                     }}
                 />
                 <TextField
-                    label="JavaScript runtime"
+                    label={t('settings.jsRuntime')}
                     value={draft.jsRuntime}
-                    placeholder="Default: bundled deno"
-                    hint="Optional override, e.g. node or RUNTIME:/path/to/binary."
+                    placeholder={t('settings.jsRuntime.placeholder')}
+                    hint={t('settings.jsRuntime.hint')}
                     onChange={(value) => {
                         edit('jsRuntime', value);
                     }}
                 />
                 <TextField
-                    label="Extra yt-dlp arguments"
+                    label={t('settings.extraArgs')}
                     value={draft.extraArgs}
-                    hint="Passed as-is to yt-dlp, including options that run commands (e.g. --exec). Only use arguments you trust."
+                    hint={t('settings.extraArgs.hint')}
                     onChange={(value) => {
                         edit('extraArgs', value);
                     }}

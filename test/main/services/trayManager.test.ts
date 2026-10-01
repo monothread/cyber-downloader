@@ -1,5 +1,6 @@
+import { en } from '@shared/i18n/en';
 import type { TraySupport } from '@shared/types';
-import { TRAY_CREATE_FAILED_MESSAGE, TrayManager } from '@main/services/trayManager';
+import { TrayManager } from '@main/services/trayManager';
 
 const AVAILABLE: TraySupport = { available: true, reason: null };
 const UNAVAILABLE: TraySupport = { available: false, reason: 'no tray here' };
@@ -15,6 +16,43 @@ function setup(support: TraySupport = AVAILABLE) {
     const manager = new TrayManager({ createTray, checkSupport });
     return { manager, createTray, checkSupport, destroy };
 }
+
+describe('TrayManager rebuild', () => {
+    it('does nothing while there is no tray', async () => {
+        const { manager, createTray, destroy } = setup();
+        await manager.rebuild();
+        expect(createTray).not.toHaveBeenCalled();
+        expect(destroy).not.toHaveBeenCalled();
+    });
+
+    it('does nothing while the tray is disabled', async () => {
+        const { manager, createTray, destroy } = setup();
+        await manager.sync(false);
+        await manager.rebuild();
+        expect(createTray).not.toHaveBeenCalled();
+        expect(destroy).not.toHaveBeenCalled();
+    });
+
+    it('replaces the existing tray so its menu gets the new language', async () => {
+        const { manager, createTray, destroy } = setup();
+        await manager.sync(true);
+        await manager.rebuild();
+        expect(destroy).toHaveBeenCalledTimes(1);
+        expect(createTray).toHaveBeenCalledTimes(2);
+        expect(manager.canHideToTray()).toBe(true);
+    });
+
+    it('reports an unsupported tray when the new icon cannot be created', async () => {
+        const { manager, createTray } = setup();
+        await manager.sync(true);
+        createTray.mockImplementationOnce(() => {
+            throw new Error('boom');
+        });
+        await manager.rebuild();
+        expect(manager.canHideToTray()).toBe(false);
+        expect(manager.getSupport()).toEqual({ available: false, reason: en['tray.createFailed'] });
+    });
+});
 
 describe('TrayManager', () => {
     it('starts disabled: no tray and no hiding', () => {
@@ -99,7 +137,7 @@ describe('TrayManager', () => {
         });
         await manager.sync(true);
         expect(manager.canHideToTray()).toBe(false);
-        expect(manager.getSupport()).toEqual({ available: false, reason: TRAY_CREATE_FAILED_MESSAGE });
+        expect(manager.getSupport()).toEqual({ available: false, reason: en['tray.createFailed'] });
     });
 
     it('serializes overlapping syncs so the last request wins', async () => {

@@ -1,9 +1,8 @@
 import type { TraySupport } from '@shared/types';
+import { translateMain } from './language';
 import { defaultExecFile, type ExecFileFn } from './binaryLocator';
 
 export const WATCHER_NAME = 'org.kde.StatusNotifierWatcher';
-export const NO_TRAY_MESSAGE =
-    'No system tray was detected. On GNOME, install the “AppIndicator and KStatusNotifierItem Support” extension. Until then, closing the window quits the app.';
 
 export const WATCHER_CHECK_ARGS = [
     'call',
@@ -52,7 +51,7 @@ export async function checkTraySupport(
         return { available: true, reason: null };
     }
     if (isGnomeDesktop(env.XDG_CURRENT_DESKTOP)) {
-        return { available: false, reason: NO_TRAY_MESSAGE };
+        return { available: false, reason: translateMain('tray.noTray') };
     }
     return { available: true, reason: null };
 }

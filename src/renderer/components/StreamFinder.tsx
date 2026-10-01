@@ -1,14 +1,17 @@
-import type { StreamKind } from '@shared/types';
+import type { MessageKey } from '@shared/i18n';
+import type { StreamKind, StreamSource } from '@shared/types';
+import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 
 const KIND_LABELS: Record<StreamKind, string> = { hls: 'HLS', dash: 'DASH', mp4: 'MP4', webm: 'WEBM', other: 'VIDEO' };
-const SOURCE_LABELS = { page: 'found in the page', network: 'seen on the network' } as const;
+const SOURCE_LABEL_KEYS: Record<StreamSource, MessageKey> = { page: 'stream.sourcePage', network: 'stream.sourceNetwork' };
 
 interface StreamFinderProps {
     jobId: string;
 }
 
 export function StreamFinder({ jobId }: StreamFinderProps) {
+    const t = useTranslator();
     const search = useAppStore((state) => {
         return state.streamSearches[jobId];
     });
@@ -30,13 +33,13 @@ export function StreamFinder({ jobId }: StreamFinderProps) {
     }
 
     return (
-        <section className="stream-finder" aria-label="Stream finder">
+        <section className="stream-finder" aria-label={t('stream.aria')}>
             <header className="stream-finder__head">
-                <strong>STREAM FINDER</strong>
+                <strong>{t('stream.title')}</strong>
                 <button
                     type="button"
                     className="btn btn--small btn--ghost"
-                    aria-label="Close stream finder"
+                    aria-label={t('stream.close')}
                     onClick={() => {
                         closeStreamSearch(jobId);
                     }}
@@ -47,7 +50,7 @@ export function StreamFinder({ jobId }: StreamFinderProps) {
 
             {search.status === 'searching' && (
                 <div className="stream-finder__status" role="status">
-                    <span>{search.stage === 'scanning' ? 'Scanning the page for video links…' : 'Watching the page’s network activity (up to 25 s)…'}</span>
+                    <span>{search.stage === 'scanning' ? t('stream.scanning') : t('stream.watching')}</span>
                     <button
                         type="button"
                         className="btn btn--small btn--hot"
@@ -55,7 +58,7 @@ export function StreamFinder({ jobId }: StreamFinderProps) {
                             void cancelStreamSearch(jobId);
                         }}
                     >
-                        CANCEL
+                        {t('stream.cancel')}
                     </button>
                 </div>
             )}
@@ -68,7 +71,7 @@ export function StreamFinder({ jobId }: StreamFinderProps) {
 
             {search.status === 'done' && search.candidates.length > 0 && (
                 <>
-                    <p className="stream-finder__hint">Pick the stream to download ({search.candidates.length} found):</p>
+                    <p className="stream-finder__hint">{t('stream.pick', { count: search.candidates.length })}</p>
                     <ul className="stream-finder__list">
                         {search.candidates.map((candidate, index) => {
                             return (
@@ -79,19 +82,19 @@ export function StreamFinder({ jobId }: StreamFinderProps) {
                                             {candidate.url}
                                         </span>
                                         <span className="stream-candidate__meta">
-                                            {candidate.host} · {SOURCE_LABELS[candidate.source]}
-                                            {candidate.duplicates > 0 && ` · +${candidate.duplicates} alternate ${candidate.duplicates === 1 ? 'address' : 'addresses'}`}
+                                            {candidate.host} · {t(SOURCE_LABEL_KEYS[candidate.source])}
+                                            {candidate.duplicates > 0 && ` · ${t(candidate.duplicates === 1 ? 'stream.alternateOne' : 'stream.alternateMany', { count: candidate.duplicates })}`}
                                         </span>
                                     </span>
                                     <button
                                         type="button"
                                         className="btn btn--small btn--primary"
-                                        aria-label={`Download stream ${index + 1}`}
+                                        aria-label={t('stream.downloadN', { n: index + 1 })}
                                         onClick={() => {
                                             void downloadStream(jobId, candidate.id);
                                         }}
                                     >
-                                        DOWNLOAD
+                                        {t('stream.download')}
                                     </button>
                                 </li>
                             );
@@ -105,13 +108,13 @@ export function StreamFinder({ jobId }: StreamFinderProps) {
                                 void findStreams(jobId, true);
                             }}
                         >
-                            NOT THE ONE? SEARCH DEEPER
+                            {t('stream.searchDeeper')}
                         </button>
                     )}
                 </>
             )}
 
-            <p className="stream-finder__note">Protected (DRM) streams cannot be downloaded. Downloads are at your own risk: you are responsible for what you download.</p>
+            <p className="stream-finder__note">{t('stream.note')}</p>
         </section>
     );
 }

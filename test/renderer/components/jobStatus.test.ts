@@ -1,13 +1,16 @@
+import { createTranslator } from '@shared/i18n';
 import type { DownloadError, ErrorCode } from '@shared/types';
-import { canFindStream, formatBytes, formatDuration, formatPercent, statusLabel } from '@renderer/components/jobStatus';
+import { canFindStream, formatBytes, formatDuration, formatPercent, livePhase, statusLabel } from '@renderer/components/jobStatus';
+
+const t = createTranslator('en');
 
 describe('statusLabel', () => {
     it('maps every status to its label', () => {
-        expect(statusLabel('queued')).toBe('QUEUED');
-        expect(statusLabel('running')).toBe('DOWNLOADING');
-        expect(statusLabel('done')).toBe('COMPLETE');
-        expect(statusLabel('error')).toBe('FAILED');
-        expect(statusLabel('cancelled')).toBe('CANCELLED');
+        expect(statusLabel('queued', false, t)).toBe('QUEUED');
+        expect(statusLabel('running', false, t)).toBe('DOWNLOADING');
+        expect(statusLabel('done', false, t)).toBe('COMPLETE');
+        expect(statusLabel('error', false, t)).toBe('FAILED');
+        expect(statusLabel('cancelled', false, t)).toBe('CANCELLED');
     });
 });
 
@@ -54,19 +57,19 @@ describe('canFindStream', () => {
 
 describe('statusLabel for live recordings', () => {
     it('says RECORDING for a live job that is running', () => {
-        expect(statusLabel('running', true)).toBe('RECORDING');
+        expect(statusLabel('running', true, t)).toBe('RECORDING');
     });
 
     it('keeps the other statuses for live jobs', () => {
-        expect(statusLabel('done', true)).toBe('COMPLETE');
-        expect(statusLabel('error', true)).toBe('FAILED');
-        expect(statusLabel('cancelled', true)).toBe('CANCELLED');
-        expect(statusLabel('queued', true)).toBe('QUEUED');
+        expect(statusLabel('done', true, t)).toBe('COMPLETE');
+        expect(statusLabel('error', true, t)).toBe('FAILED');
+        expect(statusLabel('cancelled', true, t)).toBe('CANCELLED');
+        expect(statusLabel('queued', true, t)).toBe('QUEUED');
     });
 
     it('says DOWNLOADING for a running job that is not live', () => {
-        expect(statusLabel('running', false)).toBe('DOWNLOADING');
-        expect(statusLabel('running')).toBe('DOWNLOADING');
+        expect(statusLabel('running', false, t)).toBe('DOWNLOADING');
+        expect(statusLabel('running', false, t)).toBe('DOWNLOADING');
     });
 });
 
@@ -105,3 +108,39 @@ describe('formatBytes', () => {
     });
 });
 
+
+describe('livePhase', () => {
+    const END_CHECK = { secondsLeft: 7, totalSeconds: 10 };
+
+    it('is verifying while the end of a running job is checked', () => {
+        expect(livePhase({ status: 'running', endCheck: END_CHECK, waitingForLive: false })).toBe('verifying');
+    });
+
+    it('is waiting while a running job waits for a scheduled live stream', () => {
+        expect(livePhase({ status: 'running', endCheck: null, waitingForLive: true })).toBe('waiting');
+    });
+
+    it('prefers verifying when both are set', () => {
+        expect(livePhase({ status: 'running', endCheck: END_CHECK, waitingForLive: true })).toBe('verifying');
+    });
+
+    it('is null for a running job doing neither', () => {
+        expect(livePhase({ status: 'running', endCheck: null, waitingForLive: false })).toBeNull();
+    });
+
+    it.each(['queued', 'done', 'error', 'cancelled'] as const)('is null for a job that is %s', (status) => {
+        expect(livePhase({ status, endCheck: END_CHECK, waitingForLive: true })).toBeNull();
+    });
+});
+
+describe('statusLabel for the live phases', () => {
+    it('says VERIFYING END and WAITING FOR LIVE', () => {
+        expect(statusLabel('running', true, t, 'verifying')).toBe('VERIFYING END');
+        expect(statusLabel('running', false, t, 'waiting')).toBe('WAITING FOR LIVE');
+    });
+
+    it('keeps the usual labels without a phase', () => {
+        expect(statusLabel('running', true, t, null)).toBe('RECORDING');
+        expect(statusLabel('running', false, t, null)).toBe('DOWNLOADING');
+    });
+});

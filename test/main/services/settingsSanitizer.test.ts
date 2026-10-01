@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import { sanitizeSettings } from '@main/services/settingsSanitizer';
+import { sanitizeDownloadOptions, sanitizeSettings } from '@main/services/settingsSanitizer';
 
 describe('sanitizeSettings', () => {
     it('returns the defaults for non-object input', () => {
@@ -41,9 +41,20 @@ describe('sanitizeSettings', () => {
             liveFromStart: true,
             waitForLive: true,
             theme: 'light',
+            language: 'ja',
+            verifyLiveEnd: false,
+            verifyLiveEndSeconds: 45,
             extraArgs: '--no-mtime'
         };
         expect(sanitizeSettings(valid)).toEqual(valid);
+    });
+
+    it.each(['device', 'en', 'pt', 'es', 'zh', 'ja'])('keeps the language "%s"', (language) => {
+        expect(sanitizeSettings({ language }).language).toBe(language);
+    });
+
+    it.each(['fr', 'PT', '', 42, null])('falls back to "device" for the invalid language %j', (language) => {
+        expect(sanitizeSettings({ language }).language).toBe('device');
     });
 
     it('falls back to defaults for invalid enum values', () => {
@@ -86,6 +97,36 @@ describe('sanitizeSettings', () => {
         expect(result.maxConcurrent).toBe(2);
     });
 
+    it('checks the end of live streams for 10 seconds by default', () => {
+        expect(DEFAULT_SETTINGS.verifyLiveEnd).toBe(true);
+        expect(DEFAULT_SETTINGS.verifyLiveEndSeconds).toBe(10);
+        expect(sanitizeSettings({})).toMatchObject({ verifyLiveEnd: true, verifyLiveEndSeconds: 10 });
+    });
+
+    it.each([false, true])('keeps verifyLiveEnd %j', (value) => {
+        expect(sanitizeSettings({ verifyLiveEnd: value }).verifyLiveEnd).toBe(value);
+    });
+
+    it.each(['no', 0, null])('falls back to the default for the invalid verifyLiveEnd %j', (value) => {
+        expect(sanitizeSettings({ verifyLiveEnd: value }).verifyLiveEnd).toBe(true);
+    });
+
+    it.each([
+        [1, 1],
+        [30, 30],
+        [120, 120],
+        [0, 1],
+        [-5, 1],
+        [500, 120],
+        [7.6, 8]
+    ])('clamps and rounds verifyLiveEndSeconds %j to %j', (value, expected) => {
+        expect(sanitizeSettings({ verifyLiveEndSeconds: value }).verifyLiveEndSeconds).toBe(expected);
+    });
+
+    it.each(['20', NaN, Infinity, null, undefined])('falls back to 10 seconds for the invalid verifyLiveEndSeconds %j', (value) => {
+        expect(sanitizeSettings({ verifyLiveEndSeconds: value }).verifyLiveEndSeconds).toBe(10);
+    });
+
     it('clamps and rounds numeric values', () => {
         expect(sanitizeSettings({ maxTitleLength: 5 }).maxTitleLength).toBe(20);
         expect(sanitizeSettings({ maxTitleLength: 9999 }).maxTitleLength).toBe(200);
@@ -121,3 +162,64 @@ describe('sanitizeSettings theme', () => {
     });
 });
 
+
+describe('sanitizeDownloadOptions', () => {
+    it.each([null, undefined, 'text', 42, true, []])('returns no options for the non-object input %j', (input) => {
+        expect(sanitizeDownloadOptions(input)).toEqual({});
+    });
+
+    it('returns no options for an empty object', () => {
+        expect(sanitizeDownloadOptions({})).toEqual({});
+    });
+
+    it('keeps every valid option', () => {
+        const valid = {
+            maxResolution: '720',
+            videoContainer: 'mkv',
+            audioOnly: true,
+            audioFormat: 'opus',
+            liveFromStart: true,
+            waitForLive: false,
+            verifyLiveEnd: false,
+            verifyLiveEndSeconds: 30
+        };
+        expect(sanitizeDownloadOptions(valid)).toEqual(valid);
+    });
+
+    it('keeps only the options that were given, so the others follow the settings', () => {
+        expect(sanitizeDownloadOptions({ maxResolution: 'best' })).toEqual({ maxResolution: 'best' });
+        expect(sanitizeDownloadOptions({ audioOnly: false })).toEqual({ audioOnly: false });
+    });
+
+    it('drops invalid values', () => {
+        expect(
+            sanitizeDownloadOptions({
+                maxResolution: '99',
+                videoContainer: 'avi',
+                audioOnly: 'yes',
+                audioFormat: 'wav',
+                liveFromStart: 1,
+                waitForLive: null,
+                verifyLiveEnd: 'true',
+                verifyLiveEndSeconds: '20'
+            })
+        ).toEqual({});
+        expect(sanitizeDownloadOptions({ verifyLiveEndSeconds: NaN })).toEqual({});
+        expect(sanitizeDownloadOptions({ verifyLiveEndSeconds: Infinity })).toEqual({});
+        expect(sanitizeDownloadOptions({ maxResolution: 720 })).toEqual({});
+    });
+
+    it('drops anything that is not a per-download option, including other settings', () => {
+        expect(sanitizeDownloadOptions({ downloadDir: '/etc', extraArgs: '--exec rm', ytdlpPath: '/bin/sh', theme: 'dark', maxResolution: '480' })).toEqual({ maxResolution: '480' });
+    });
+
+    it.each([
+        [0, 1],
+        [-3, 1],
+        [500, 120],
+        [7.6, 8],
+        [10, 10]
+    ])('clamps and rounds the seconds %j to %j', (value, expected) => {
+        expect(sanitizeDownloadOptions({ verifyLiveEndSeconds: value })).toEqual({ verifyLiveEndSeconds: expected });
+    });
+});

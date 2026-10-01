@@ -1,4 +1,4 @@
-import { hasUnboundedAutoSubtitles, UNBOUNDED_AUTO_SUBTITLES_MESSAGE } from '@shared/subtitles';
+import { hasUnboundedAutoSubtitles } from '@shared/subtitles';
 
 describe('hasUnboundedAutoSubtitles', () => {
     it('flags auto-generated subtitles with no language', () => {
@@ -23,11 +23,5 @@ describe('hasUnboundedAutoSubtitles', () => {
 
     it('does not flag anything when subtitles are off', () => {
         expect(hasUnboundedAutoSubtitles({ writeSubtitles: false, autoSubtitles: true, subtitleLangs: '' })).toBe(false);
-    });
-
-    it('explains how to fix the problem', () => {
-        expect(UNBOUNDED_AUTO_SUBTITLES_MESSAGE).toBe(
-            'Auto-generated subtitles need a language. Fill in "Subtitle languages" in Settings (e.g. ja), or turn off "Include auto-generated subtitles".'
-        );
     });
 });

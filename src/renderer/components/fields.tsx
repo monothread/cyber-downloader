@@ -47,10 +47,11 @@ interface NumberFieldProps {
     min: number;
     max: number;
     hint?: string;
+    disabled?: boolean;
     onChange: (value: number) => void;
 }
 
-export function NumberField({ label, value, min, max, hint, onChange }: NumberFieldProps) {
+export function NumberField({ label, value, min, max, hint, disabled = false, onChange }: NumberFieldProps) {
     return (
         <FieldShell label={label} hint={hint}>
             <input
@@ -60,6 +61,7 @@ export function NumberField({ label, value, min, max, hint, onChange }: NumberFi
                 value={value}
                 min={min}
                 max={max}
+                disabled={disabled}
                 onChange={(event) => {
                     const parsed = Number(event.target.value);
                     if (Number.isFinite(parsed)) {

@@ -1,13 +1,15 @@
 import type { BinaryInfo } from '@shared/types';
+import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 
 function BinaryChip({ label, info }: { label: string; info: BinaryInfo | undefined }) {
+    const t = useTranslator();
     if (!info) {
         return <span className="chip chip--pending">{label} …</span>;
     }
     if (!info.found) {
         return <span className="chip chip--bad" title={info.path}>
-                {label} MISSING
+                {label} {t('binary.missing')}
             </span>;
     }
     return (

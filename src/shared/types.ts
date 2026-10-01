@@ -1,12 +1,27 @@
 export type VideoContainer = 'mp4' | 'mkv' | 'webm';
 export type AudioFormat = 'mp3' | 'm4a' | 'opus';
-// A link to download, optionally into a folder other than the one in the settings.
+// Settings that can be chosen for one download only. A missing field follows the setting.
+export interface DownloadOptions {
+    maxResolution?: MaxResolution;
+    videoContainer?: VideoContainer;
+    audioOnly?: boolean;
+    audioFormat?: AudioFormat;
+    liveFromStart?: boolean;
+    waitForLive?: boolean;
+    verifyLiveEnd?: boolean;
+    verifyLiveEndSeconds?: number;
+}
+
+// A link to download, optionally into a folder other than the one in the settings and with options of its own.
 export interface LinkRequest {
     url: string;
     downloadDir: string | null;
+    options: DownloadOptions;
 }
 
 export type ThemeName = 'device' | 'cyberpunk' | 'dark' | 'light';
+export type LanguageCode = 'en' | 'pt' | 'es' | 'zh' | 'ja';
+export type LanguageSetting = 'device' | LanguageCode;
 export type BrowserName = 'chrome' | 'firefox' | 'brave' | 'chromium' | 'edge' | 'opera' | 'vivaldi';
 // A browser profile that has cookies: `id` is its folder inside the browser's data folder.
 export interface BrowserProfile {
@@ -50,7 +65,10 @@ export interface Settings {
     closeToTray: boolean;
     liveFromStart: boolean;
     waitForLive: boolean;
+    verifyLiveEnd: boolean;
+    verifyLiveEndSeconds: number;
     theme: ThemeName;
+    language: LanguageSetting;
     extraArgs: string;
 }
 
@@ -74,6 +92,12 @@ export interface DownloadError {
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 
+// A live stream that seems to have ended is checked for a few seconds before the download is considered finished.
+export interface LiveEndCheck {
+    secondsLeft: number;
+    totalSeconds: number;
+}
+
 export interface DownloadJob {
     id: string;
     url: string;
@@ -91,6 +115,12 @@ export interface DownloadJob {
     downloadedBytes: number;
     // Unfinished files of this download are still in the folder (after an error or a cancel).
     hasPartial: boolean;
+    // The download has options of its own that replace some settings.
+    customized: boolean;
+    // yt-dlp is waiting for a scheduled live stream to start.
+    waitingForLive: boolean;
+    // Set while the app checks whether a live stream really ended.
+    endCheck: LiveEndCheck | null;
 }
 
 export interface ProgressInfo {
@@ -195,7 +225,7 @@ export interface StreamFindProgress {
 export interface CyberApi {
     getSettings: () => Promise<Settings>;
     saveSettings: (settings: Settings) => Promise<Settings>;
-    addDownload: (url: string, downloadDir?: string) => Promise<AddJobResult>;
+    addDownload: (url: string, downloadDir?: string, options?: DownloadOptions) => Promise<AddJobResult>;
     listJobs: () => Promise<DownloadJob[]>;
     cancelJob: (id: string) => Promise<void>;
     stopJob: (id: string) => Promise<void>;

@@ -51,6 +51,25 @@ body {
     line-height: 1.5;
 }
 
+/* Neon that follows the mouse (see useCursorGlow): below the content, above the page background. */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    background:
+        radial-gradient(circle 360px at var(--mx, 50%) var(--my, 50%), rgba(0, 240, 255, 0.2) 0%, rgba(0, 240, 255, 0.08) 40%, transparent 70%),
+        radial-gradient(circle 220px at var(--mx, 50%) var(--my, 50%), rgba(255, 43, 214, 0.14) 0%, transparent 70%);
+    mix-blend-mode: screen;
+}
+
+html[data-theme='cyberpunk'][data-glow='on'] body::before {
+    opacity: 1;
+}
+
 body::after {
     content: '';
     position: fixed;
@@ -268,7 +287,11 @@ body::after {
 .job--done { border-left-color: var(--green); }
 .job--error { border-left-color: var(--red); }
 .job--cancelled, .job--queued { border-left-color: var(--muted); }
+.job--verifying { border-left-color: var(--yellow); animation: job-verify-pulse 1.2s ease-in-out infinite; }
+.job--waiting { border-left-color: var(--magenta); animation: job-wait-pulse 2s ease-in-out infinite; }
 
+.job__badges { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.badge--custom { color: var(--yellow); }
 .job__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 .job__title {
@@ -292,6 +315,8 @@ body::after {
 .badge--done { color: var(--green); }
 .badge--error { color: var(--red); }
 .badge--queued, .badge--cancelled { color: var(--muted); }
+.badge--verifying { color: var(--yellow); animation: badge-blink 0.8s steps(2, jump-none) infinite; }
+.badge--waiting { color: var(--magenta); animation: badge-blink 1.4s ease-in-out infinite; }
 
 .progress {
     height: 8px;
@@ -407,7 +432,7 @@ body::after {
 
 @media (prefers-reduced-motion: reduce) {
     .logo::before, .logo::after { animation: none; }
-    .progress__bar, .btn { transition: none; }
+    .progress__bar, .btn, body::before { transition: none; }
 }
 
 .update-banner {
@@ -463,5 +488,82 @@ body::after {
 .job__live { color: var(--red); font-weight: 700; letter-spacing: 1px; }
 @keyframes live-stripes { from { background-position: 0 0; } to { background-position: 28px 0; } }
 @media (prefers-reduced-motion: reduce) { .progress--live .progress__bar { animation: none; } }
+
+/* The stream seems to have ended: the bar drains over the checking time while a scan line sweeps it. */
+.progress--verify { position: relative; }
+.progress--verify .progress__bar {
+    background: var(--yellow);
+    box-shadow: 0 0 10px var(--yellow);
+    transition: none;
+    animation: verify-drain linear forwards;
+}
+.progress--verify::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 28%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    animation: scan-sweep 1s linear infinite;
+}
+.job__verifying { color: var(--yellow); font-weight: 700; letter-spacing: 1px; }
+
+/* Waiting for a scheduled live stream to start: a radar sweep that never reaches an end. */
+.progress--waiting { position: relative; }
+.progress--waiting .progress__bar {
+    width: 100%;
+    background: repeating-linear-gradient(90deg, var(--magenta) 0 4px, transparent 4px 12px);
+    box-shadow: 0 0 10px var(--magenta);
+    opacity: 0.55;
+}
+.progress--waiting::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 22%;
+    background: linear-gradient(90deg, transparent, var(--magenta), transparent);
+    animation: scan-sweep 1.8s ease-in-out infinite alternate;
+}
+.job__waiting { color: var(--magenta); font-weight: 700; letter-spacing: 1px; }
+.job__waiting::after { content: '...'; display: inline-block; width: 1.5em; text-align: left; animation: wait-dots 1.4s steps(4, end) infinite; overflow: hidden; vertical-align: bottom; }
+
+@keyframes verify-drain { from { width: 100%; } to { width: 0%; } }
+@keyframes scan-sweep { from { left: -28%; } to { left: 100%; } }
+@keyframes badge-blink { 50% { opacity: 0.35; } }
+@keyframes wait-dots { from { width: 0; } to { width: 1.5em; } }
+@keyframes job-verify-pulse { 50% { box-shadow: var(--glow-yellow), inset 0 0 18px var(--tint-yellow); } }
+@keyframes job-wait-pulse { 50% { box-shadow: var(--glow-hot), inset 0 0 18px var(--tint-cyan); } }
+@media (prefers-reduced-motion: reduce) {
+    .job--verifying, .job--waiting, .badge--verifying, .badge--waiting, .progress--verify::after, .progress--waiting::after, .job__waiting::after { animation: none; }
+    .progress--verify .progress__bar { animation: none; width: 100%; }
+}
 .link-row__folder { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; color: var(--muted); font-size: 12px; min-width: 0; }
 .link-row__folder span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* Window with the options of one download. */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(3, 2, 10, 0.7);
+}
+
+.modal {
+    width: min(520px, 100%);
+    max-height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 18px;
+    background: var(--panel);
+    border: 1px solid var(--cyan);
+    box-shadow: var(--glow-strong);
+}
+
+.modal__title { margin: 0; font-size: 15px; letter-spacing: 1px; color: var(--cyan); text-shadow: var(--text-glow); }
+.modal__hint { margin: 0; color: var(--muted); font-size: 12px; }
+.modal__actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }

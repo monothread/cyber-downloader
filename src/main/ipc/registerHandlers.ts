@@ -14,6 +14,9 @@ import type {
 } from '@shared/types';
 import { checkBinaries } from '../services/binaryLocator';
 import type { BinaryResolver } from '../services/binaryResolver';
+import { sanitizeDownloadOptions } from '../services/settingsSanitizer';
+import type { RequestExtras } from '../services/ytdlpArgsBuilder';
+import { translateMain } from '../services/language';
 import { updateYtdlp } from '../services/updater';
 import type { BrowserCatalog } from '../services/browserCatalog';
 import type { AppUpdateService } from '../services/appUpdateService';
@@ -57,12 +60,14 @@ export function registerHandlers(deps: HandlerDependencies): void {
         deps.onSettingsSaved(saved);
         return saved;
     });
-    ipcMain.handle(IPC.queueAdd, (_event, url, downloadDir) => {
+    ipcMain.handle(IPC.queueAdd, (_event, url, downloadDir, options) => {
         const directory = asString(downloadDir);
-        if (directory.length > 0 && isAbsolute(directory)) {
-            return queue.add(asString(url), { downloadDir: directory });
-        }
-        return queue.add(asString(url));
+        const chosen = sanitizeDownloadOptions(options);
+        const extras: RequestExtras = {
+            ...(directory.length > 0 && isAbsolute(directory) ? { downloadDir: directory } : {}),
+            ...(Object.keys(chosen).length > 0 ? { options: chosen } : {})
+        };
+        return Object.keys(extras).length > 0 ? queue.add(asString(url), extras) : queue.add(asString(url));
     });
     ipcMain.handle(IPC.queueList, () => {
         return queue.list();
@@ -118,7 +123,7 @@ export function registerHandlers(deps: HandlerDependencies): void {
     ipcMain.handle(IPC.streamFind, (_event, jobId, deep): Promise<StreamFindResult> | StreamFindResult => {
         const job = queue.getJob(asString(jobId));
         if (!job) {
-            return { ok: false, candidates: [], message: 'That download no longer exists.', usedBrowser: false };
+            return { ok: false, candidates: [], message: translateMain('stream.noDownload'), usedBrowser: false };
         }
         // A download that came from a stream search is searched again on the page it came from, for a fresh address.
         return deps.streamFinder.find(job.id, job.pageUrl ?? job.url, deep === true, (stage) => {
@@ -131,7 +136,7 @@ export function registerHandlers(deps: HandlerDependencies): void {
     ipcMain.handle(IPC.streamDownload, (_event, candidateId): AddJobResult => {
         const candidate = deps.streamFinder.getCandidate(asString(candidateId));
         if (!candidate) {
-            return { ok: false, job: null, message: 'That stream is no longer available. Search again.' };
+            return { ok: false, job: null, message: translateMain('stream.noLongerAvailable') };
         }
         return queue.add(candidate.url, {
             referer: candidate.referer,

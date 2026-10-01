@@ -2,15 +2,18 @@ import {
     AUDIO_FORMATS,
     BROWSERS,
     DEFAULT_SETTINGS,
+    LANGUAGE_SETTINGS,
     MAX_CONCURRENT,
+    MAX_LIVE_END_CHECK_SECONDS,
     MAX_TITLE_LENGTH,
     MIN_CONCURRENT,
+    MIN_LIVE_END_CHECK_SECONDS,
     MIN_TITLE_LENGTH,
     RESOLUTIONS,
     THEMES,
     VIDEO_CONTAINERS
 } from '@shared/constants';
-import type { Settings } from '@shared/types';
+import type { DownloadOptions, Settings } from '@shared/types';
 
 const RATE_LIMIT_PATTERN = /^\d+(\.\d+)?[KkMmGg]?$/;
 
@@ -70,7 +73,47 @@ export function sanitizeSettings(input: unknown): Settings {
         closeToTray: pickBoolean(raw.closeToTray, defaults.closeToTray),
         liveFromStart: pickBoolean(raw.liveFromStart, defaults.liveFromStart),
         waitForLive: pickBoolean(raw.waitForLive, defaults.waitForLive),
+        verifyLiveEnd: pickBoolean(raw.verifyLiveEnd, defaults.verifyLiveEnd),
+        verifyLiveEndSeconds: pickClampedInteger(raw.verifyLiveEndSeconds, MIN_LIVE_END_CHECK_SECONDS, MAX_LIVE_END_CHECK_SECONDS, defaults.verifyLiveEndSeconds),
         theme: pickEnum(raw.theme, THEMES, defaults.theme),
+        language: pickEnum(raw.language, LANGUAGE_SETTINGS, defaults.language),
         extraArgs: pickString(raw.extraArgs, defaults.extraArgs)
     };
+}
+
+const OPTION_KEYS = ['maxResolution', 'videoContainer', 'audioOnly', 'audioFormat', 'liveFromStart', 'waitForLive', 'verifyLiveEnd', 'verifyLiveEndSeconds'] as const;
+
+function isOneOf(allowed: readonly string[], value: unknown): boolean {
+    return typeof value === 'string' && allowed.includes(value);
+}
+
+function isOptionValid(key: (typeof OPTION_KEYS)[number], value: unknown): boolean {
+    switch (key) {
+        case 'maxResolution':
+            return isOneOf(RESOLUTIONS, value);
+        case 'videoContainer':
+            return isOneOf(VIDEO_CONTAINERS, value);
+        case 'audioFormat':
+            return isOneOf(AUDIO_FORMATS, value);
+        case 'verifyLiveEndSeconds':
+            return typeof value === 'number' && Number.isFinite(value);
+        default:
+            return typeof value === 'boolean';
+    }
+}
+
+// The options a download may carry: only the known fields with valid values; anything else (or nothing) follows the settings.
+export function sanitizeDownloadOptions(input: unknown): DownloadOptions {
+    if (typeof input !== 'object' || input === null) {
+        return {};
+    }
+    const raw = input as Record<string, unknown>;
+    const options: Record<string, unknown> = {};
+    OPTION_KEYS.forEach((key) => {
+        if (!(key in raw) || !isOptionValid(key, raw[key])) {
+            return;
+        }
+        options[key] = key === 'verifyLiveEndSeconds' ? pickClampedInteger(raw[key], MIN_LIVE_END_CHECK_SECONDS, MAX_LIVE_END_CHECK_SECONDS, DEFAULT_SETTINGS.verifyLiveEndSeconds) : raw[key];
+    });
+    return options as DownloadOptions;
 }

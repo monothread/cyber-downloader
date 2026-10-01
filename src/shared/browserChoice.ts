@@ -1,4 +1,5 @@
-import type { DetectedBrowser, Settings } from '@shared/types';
+import type { Translator } from './i18n';
+import type { DetectedBrowser, Settings } from './types';
 
 export const NO_BROWSER_CHOSEN = '';
 
@@ -14,15 +15,17 @@ export function findChosenBrowser(browsers: readonly DetectedBrowser[], settings
     );
 }
 
-export function chosenBrowserWarning(browsers: readonly DetectedBrowser[] | null, settings: Pick<Settings, 'useBrowserCookies' | 'cookiesBrowser' | 'cookiesBrowserDir'>): string | null {
+export function chosenBrowserWarning(browsers: readonly DetectedBrowser[] | null, settings: Pick<Settings, 'useBrowserCookies' | 'cookiesBrowser' | 'cookiesBrowserDir'>,
+    t: Translator
+): string | null {
     if (browsers === null || !settings.useBrowserCookies) {
         return null;
     }
     if (browsers.length === 0) {
-        return 'No browser with saved cookies was found on this system.';
+        return t('browser.noneFound');
     }
     if (findChosenBrowser(browsers, settings) !== null) {
         return null;
     }
-    return `The saved browser (${settings.cookiesBrowser}) was not found on this system. Choose one of the detected browsers.`;
+    return t('browser.savedNotFound', { browser: settings.cookiesBrowser });
 }

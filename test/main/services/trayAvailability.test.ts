@@ -1,11 +1,13 @@
+import { en } from '@shared/i18n/en';
 import {
-    NO_TRAY_MESSAGE,
     WATCHER_CHECK_ARGS,
     WATCHER_NAME,
     checkTraySupport,
     hasStatusNotifierWatcher,
     isGnomeDesktop
 } from '@main/services/trayAvailability';
+
+const NO_TRAY_MESSAGE = en['tray.noTray'];
 
 describe('hasStatusNotifierWatcher', () => {
     it('asks the session bus whether the StatusNotifierWatcher name has an owner', async () => {

@@ -34,6 +34,13 @@ describe('NumberField', () => {
         expect(screen.getByText('between')).toBeInTheDocument();
     });
 
+    it('is enabled by default and can be disabled', () => {
+        const { rerender } = render(<NumberField label="Count" value={3} min={1} max={5} onChange={vi.fn()} />);
+        expect(screen.getByLabelText('Count')).toBeEnabled();
+        rerender(<NumberField label="Count" value={3} min={1} max={5} disabled onChange={vi.fn()} />);
+        expect(screen.getByLabelText('Count')).toBeDisabled();
+    });
+
     it('ignores non-numeric input', () => {
         const onChange = vi.fn();
         render(<NumberField label="Count" value={3} min={1} max={5} onChange={onChange} />);

@@ -57,6 +57,99 @@ if (url.includes('partialfail') || url.includes('livefail')) {
         process.stderr.write('ERROR: unable to download video data: <urlopen error [Errno 104] Connection reset by peer>\n');
         process.exit(1);
     }, 300);
+} else if (url.includes('liveend') || url.includes('liveback')) {
+    // A live stream that stops by itself after a moment. The attempts that look for it again (they carry --match-filter)
+    // find it offline for `liveend`, and live again for `liveback`, like a broadcaster who lost the connection and reconnected.
+    const attempt = args.includes('--match-filter');
+    const name = url.includes('liveback') ? 'Live Back' : 'Live End';
+    fs.mkdirSync(downloadDir, { recursive: true });
+    if (attempt && url.includes('liveend')) {
+        process.exit(0);
+    }
+    const finalPath = `${downloadDir}/${name} [abc]${attempt ? ' (part 2)' : ''}.mp4`;
+    let writer = null;
+    const finish = () => {
+        if (writer === null) {
+            process.exit(0);
+        }
+        clearInterval(writer);
+        fs.renameSync(`${finalPath}.part`, finalPath);
+        process.stdout.write(`CYBERFILE|${finalPath}\n`);
+        process.exit(0);
+    };
+    const goLive = () => {
+        fs.writeFileSync(`${finalPath}.part`, '');
+        process.stdout.write(`CYBERINFO|True|${finalPath}\n`);
+        writer = setInterval(() => {
+            fs.appendFileSync(`${finalPath}.part`, Buffer.alloc(2048));
+        }, 50);
+    };
+    process.on('SIGINT', finish);
+    if (attempt) {
+        // Reconnecting takes a moment, as a real attempt does.
+        setTimeout(goLive, 1500);
+    } else {
+        goLive();
+        setTimeout(finish, 500);
+    }
+} else if (url.includes('livewait')) {
+    // A scheduled live stream: waits (printing "[wait]" lines only when yt-dlp is not quiet, as the real one does) and
+    // goes live after a while.
+    const finalPath = `${downloadDir}/Live Wait [abc].mp4`;
+    fs.mkdirSync(downloadDir, { recursive: true });
+    if (args.includes('--no-quiet')) {
+        process.stdout.write('[wait] Waiting for 00:00:03 - Press Ctrl+C to try now\n');
+    }
+    let remaining = 3;
+    const counter = setInterval(() => {
+        remaining -= 1;
+        if (args.includes('--no-quiet')) {
+            process.stdout.write(`[wait] Remaining time until next attempt: 00:00:0${Math.max(remaining, 0)}\r`);
+        }
+    }, 500);
+    setTimeout(() => {
+        clearInterval(counter);
+        fs.writeFileSync(`${finalPath}.part`, '');
+        process.stdout.write(`CYBERINFO|True|${finalPath}\n`);
+        setInterval(() => {
+            fs.appendFileSync(`${finalPath}.part`, Buffer.alloc(2048));
+        }, 50);
+    }, 2500);
+    process.on('SIGINT', () => {
+        if (fs.existsSync(`${finalPath}.part`)) {
+            fs.renameSync(`${finalPath}.part`, finalPath);
+            process.stdout.write(`CYBERFILE|${finalPath}\n`);
+        }
+        process.exit(0);
+    });
+} else if (url.includes('liveorphan') || url.includes('liveleftover')) {
+    // A live recording like the real one with ffmpeg: a child process (the "ffmpeg") that holds the pipes open and keeps on
+    // running when yt-dlp is gone. `liveorphan` also ignores Ctrl+C, `liveleftover` exits on it but leaves the child behind.
+    const finalPath = `${downloadDir}/Live Orphan [abc].mp4`;
+    fs.mkdirSync(downloadDir, { recursive: true });
+    fs.writeFileSync(`${finalPath}.part`, '');
+    process.stdout.write(`CYBERINFO|True|${finalPath}\n`);
+    const orphan = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' });
+    if (logPath) {
+        fs.writeFileSync(`${logPath}.orphan`, String(orphan.pid));
+    }
+    setInterval(() => {
+        fs.appendFileSync(`${finalPath}.part`, Buffer.alloc(2048));
+    }, 50);
+    process.on('SIGTERM', () => {
+        process.exit(0);
+    });
+    if (url.includes('liveorphan')) {
+        process.on('SIGINT', () => {
+            return undefined;
+        });
+    } else {
+        process.on('SIGINT', () => {
+            fs.renameSync(`${finalPath}.part`, finalPath);
+            process.stdout.write(`CYBERFILE|${finalPath}\n`);
+            process.exit(0);
+        });
+    }
 } else if (url.includes('livestream')) {
     // Like a real live recording: announces it is live, grows a .part file and, on SIGINT, finishes and keeps the file.
     const finalPath = `${downloadDir}/Live Show [abc].mp4`;

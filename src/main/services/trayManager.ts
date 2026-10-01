@@ -1,6 +1,5 @@
 import type { TraySupport } from '@shared/types';
-
-export const TRAY_CREATE_FAILED_MESSAGE = 'The tray icon could not be created. Closing the window quits the app.';
+import { translateMain } from './language';
 
 export interface TrayHandle {
     destroy: () => void;
@@ -22,6 +21,18 @@ export class TrayManager {
     sync(enabled: boolean): Promise<void> {
         this.queue = this.queue.then(() => {
             return this.apply(enabled);
+        });
+        return this.queue;
+    }
+
+    // The menu of an existing tray icon is fixed when it is created, so a new language needs a new icon.
+    rebuild(): Promise<void> {
+        this.queue = this.queue.then(() => {
+            if (this.tray === null) {
+                return;
+            }
+            this.destroyTray();
+            this.createTray();
         });
         return this.queue;
     }
@@ -61,7 +72,7 @@ export class TrayManager {
             this.tray = this.deps.createTray();
         } catch {
             this.tray = null;
-            this.support = { available: false, reason: TRAY_CREATE_FAILED_MESSAGE };
+            this.support = { available: false, reason: translateMain('tray.createFailed') };
         }
     }
 

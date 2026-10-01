@@ -1,4 +1,5 @@
 import type { AppUpdateState } from '@shared/types';
+import { translateMain } from './language';
 
 export interface UpdateInfoLike {
     version: string;
@@ -29,10 +30,8 @@ export interface AppUpdateOptions {
     currentVersion: string;
 }
 
-export const UNSUPPORTED_MESSAGE = 'Updates are only available in the installed app.';
-
 function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Update failed.';
+    return error instanceof Error ? error.message : translateMain('update.failed');
 }
 
 export class AppUpdateService {
@@ -53,7 +52,7 @@ export class AppUpdateService {
 
     async check(): Promise<void> {
         if (!this.options.supported) {
-            this.setState({ status: 'unsupported', message: UNSUPPORTED_MESSAGE });
+            this.setState({ status: 'unsupported', message: translateMain('update.unsupported') });
             return;
         }
         if (this.blocksCheck()) {
@@ -103,7 +102,7 @@ export class AppUpdateService {
             this.setState({
                 status: 'not-available',
                 version: null,
-                message: `You are on the latest version (${this.options.currentVersion}).`
+                message: translateMain('update.latest', { version: this.options.currentVersion })
             });
         });
         this.updater.on('download-progress', (progress) => {

@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events';
 import type { Mock } from 'vitest';
+import { en } from '@shared/i18n/en';
+import { applyLanguage } from '@main/services/language';
 import type { AppUpdateState } from '@shared/types';
 import {
     AppUpdateService,
-    UNSUPPORTED_MESSAGE,
     type UpdaterEvents,
     type UpdaterLike
 } from '@main/services/appUpdateService';
@@ -57,12 +58,40 @@ describe('AppUpdateService initial state', () => {
     });
 });
 
+describe('AppUpdateService messages in another language', () => {
+    afterEach(() => {
+        applyLanguage('en', 'en-US');
+    });
+
+    it('translates the unsupported message', async () => {
+        applyLanguage('pt', 'en-US');
+        const { service } = setup(false);
+        await service.check();
+        expect(service.getState().message).toBe('As atualizações só estão disponíveis no aplicativo instalado.');
+    });
+
+    it('translates the latest-version message', () => {
+        applyLanguage('es', 'en-US');
+        const { service, updater } = setup();
+        updater.emitter.emit('update-not-available', { version: '0.1.0' });
+        expect(service.getState()).toEqual({ ...IDLE, status: 'not-available', message: 'Tienes la última versión (0.1.0).' });
+    });
+
+    it('translates the fallback of an error that is not an Error', async () => {
+        applyLanguage('ja', 'en-US');
+        const { service, updater } = setup();
+        updater.checkForUpdates.mockRejectedValueOnce('boom');
+        await service.check();
+        expect(service.getState()).toEqual({ ...IDLE, status: 'error', message: '更新に失敗しました。' });
+    });
+});
+
 describe('AppUpdateService.check', () => {
     it('reports unsupported without touching the updater when not supported', async () => {
         const { service, updater, states } = setup(false);
         await service.check();
         expect(updater.checkForUpdates).not.toHaveBeenCalled();
-        expect(service.getState()).toEqual({ ...IDLE, status: 'unsupported', message: UNSUPPORTED_MESSAGE });
+        expect(service.getState()).toEqual({ ...IDLE, status: 'unsupported', message: en['update.unsupported'] });
         expect(states).toHaveLength(1);
     });
 

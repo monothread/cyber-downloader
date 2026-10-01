@@ -1,3 +1,4 @@
+import { applyLanguage } from '@main/services/language';
 import { createQuitRequester, decideCloseAction, describePending, requestQuit } from '@main/services/windowClose';
 
 describe('decideCloseAction', () => {
@@ -22,6 +23,18 @@ describe('describePending', () => {
 
     it('uses the plural otherwise', () => {
         expect(describePending(3)).toBe('3 downloads are still in progress.');
+    });
+
+    describe('in another language', () => {
+        afterEach(() => {
+            applyLanguage('en', 'en-US');
+        });
+
+        it('translates the singular and the plural', () => {
+            applyLanguage('pt', 'en-US');
+            expect(describePending(1)).toBe('1 download ainda está em andamento.');
+            expect(describePending(3)).toBe('3 downloads ainda estão em andamento.');
+        });
     });
 });
 

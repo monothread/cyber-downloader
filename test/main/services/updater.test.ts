@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import { BinaryResolver } from '@main/services/binaryResolver';
+import { applyLanguage } from '@main/services/language';
 import {
     defaultUpdateExec,
     defaultUpdaterDependencies,
@@ -42,6 +43,38 @@ function makeDeps(overrides: Partial<UpdaterDependencies> = {}): UpdaterDependen
         ...overrides
     };
 }
+
+describe('updateYtdlp messages in another language', () => {
+    afterEach(() => {
+        applyLanguage('en', 'en-US');
+    });
+
+    it('translates the checksum failure', async () => {
+        applyLanguage('es', 'en-US');
+        const deps = makeDeps({
+            fetchBuffer: vi.fn(async () => {
+                return Buffer.from('tampered');
+            })
+        });
+        await expect(updateYtdlp(DEFAULT_SETTINGS, makeResolver(makeTempDir()), deps)).resolves.toEqual({
+            ok: false,
+            output: 'La verificación del checksum falló. Se descartó la descarga.'
+        });
+    });
+
+    it('translates the up-to-date message', async () => {
+        applyLanguage('pt', 'en-US');
+        const deps = makeDeps({
+            exec: vi.fn(async () => {
+                return { ok: true, output: '2026.09.01\n' };
+            })
+        });
+        await expect(updateYtdlp(DEFAULT_SETTINGS, makeResolver(makeTempDir()), deps)).resolves.toEqual({
+            ok: true,
+            output: 'O yt-dlp já está atualizado (2026.09.01).'
+        });
+    });
+});
 
 describe('parseChecksum', () => {
     it('finds the hash for a file name, lowercased', () => {

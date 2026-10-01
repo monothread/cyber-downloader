@@ -1,4 +1,5 @@
 import { chosenBrowserWarning, findChosenBrowser, NO_BROWSER_CHOSEN } from '@shared/browserChoice';
+import { createTranslator } from '@shared/i18n';
 import type { DetectedBrowser } from '@shared/types';
 
 const ORIGIN: DetectedBrowser = {
@@ -33,27 +34,32 @@ describe('findChosenBrowser', () => {
 });
 
 describe('chosenBrowserWarning', () => {
+    const t = createTranslator('en');
     const SAVED = { useBrowserCookies: true, cookiesBrowser: 'brave' as const, cookiesBrowserDir: '' };
 
     it('says nothing before the browsers are known', () => {
-        expect(chosenBrowserWarning(null, SAVED)).toBeNull();
+        expect(chosenBrowserWarning(null, SAVED, t)).toBeNull();
     });
 
     it('says nothing when the cookies are not used', () => {
-        expect(chosenBrowserWarning([], { ...SAVED, useBrowserCookies: false })).toBeNull();
+        expect(chosenBrowserWarning([], { ...SAVED, useBrowserCookies: false }, t)).toBeNull();
     });
 
     it('says that no browser was found', () => {
-        expect(chosenBrowserWarning([], SAVED)).toBe('No browser with saved cookies was found on this system.');
+        expect(chosenBrowserWarning([], SAVED, t)).toBe('No browser with saved cookies was found on this system.');
     });
 
     it('says that the saved browser was not found among the detected ones', () => {
-        expect(chosenBrowserWarning([FIREFOX], SAVED)).toBe(
+        expect(chosenBrowserWarning([FIREFOX], SAVED, t)).toBe(
             'The saved browser (brave) was not found on this system. Choose one of the detected browsers.'
         );
     });
 
+    it('warns in the language of the translator', () => {
+        expect(chosenBrowserWarning([], SAVED, createTranslator('es'))).toBe('No se encontró ningún navegador con cookies guardadas en este sistema.');
+    });
+
     it('says nothing when the saved browser is among the detected ones', () => {
-        expect(chosenBrowserWarning([ORIGIN], { ...SAVED, cookiesBrowserDir: ORIGIN.dataDir })).toBeNull();
+        expect(chosenBrowserWarning([ORIGIN], { ...SAVED, cookiesBrowserDir: ORIGIN.dataDir }, t)).toBeNull();
     });
 });

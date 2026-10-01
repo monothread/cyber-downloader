@@ -1,6 +1,8 @@
+import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 
 export function Toast() {
+    const t = useTranslator();
     const notice = useAppStore((state) => {
         return state.notice;
     });
@@ -16,7 +18,7 @@ export function Toast() {
             <button
                 type="button"
                 className="btn btn--small btn--ghost"
-                aria-label="Dismiss notification"
+                aria-label={t('toast.dismiss')}
                 onClick={() => {
                     setNotice(null);
                 }}

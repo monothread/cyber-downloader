@@ -1,17 +1,24 @@
 import { randomUUID } from 'node:crypto';
-import { hasUnboundedAutoSubtitles, UNBOUNDED_AUTO_SUBTITLES_MESSAGE } from '@shared/subtitles';
+import { hasUnboundedAutoSubtitles } from '@shared/subtitles';
 import { isValidHttpUrl } from '@shared/url';
 import { statSync } from 'node:fs';
 import type { AddJobResult, DownloadJob, DownloadError, DownloadInfo, HistoryEntry, ProgressInfo, Settings } from '@shared/types';
 import type { RunHandle, RunResult } from './ytdlpRunner';
 import { buildYtdlpArgs, type RequestExtras } from './ytdlpArgsBuilder';
+import { translateMain } from './language';
 
 export interface QueueDependencies {
     getSettings: () => Settings;
     defaultDownloadDir: string;
     resolveYtdlpPath: (settings: Settings) => string;
     resolveFfmpegLocation: (settings: Settings) => string | null;
-    startRun: (binary: string, args: string[], onProgress: (progress: ProgressInfo) => void, onInfo: (info: DownloadInfo) => void) => RunHandle;
+    startRun: (
+        binary: string,
+        args: string[],
+        onProgress: (progress: ProgressInfo) => void,
+        onInfo: (info: DownloadInfo) => void,
+        onWaiting?: () => void
+    ) => RunHandle;
     // Size of a file on disk, or null when it does not exist (used to show how much of a live stream is recorded).
     fileSize?: (path: string) => number | null;
     // Turns the partial file of a recording that was ended by killing yt-dlp into the final file; returns its path.
@@ -29,6 +36,8 @@ export interface QueueDependencies {
 
 export const LIVE_TICK_MS = 1000;
 export const LIVE_STOP_TIMEOUT_MS = 8000;
+// Pause between two attempts to find out whether a live stream that stopped is back.
+export const LIVE_END_RETRY_MS = 2000;
 
 function defaultFileSize(path: string): number | null {
     try {
@@ -45,6 +54,15 @@ const SALVAGE_FAILED_ERROR: DownloadError = {
     raw: 'ffmpeg could not copy the partial recording into the final file.'
 };
 
+// A live stream that seems to have ended, while the app checks whether it really did.
+interface EndCheck {
+    original: RunResult;
+    secondsLeft: number;
+    attempts: number;
+    interval: ReturnType<typeof setInterval>;
+    retry: ReturnType<typeof setTimeout> | null;
+}
+
 const FINISHED_STATUSES: ReadonlyArray<DownloadJob['status']> = ['done', 'error', 'cancelled'];
 
 function isFinished(job: DownloadJob): boolean {
@@ -59,6 +77,11 @@ export class QueueManager {
     private readonly livePaths = new Map<string, string>();
     private readonly outputPaths = new Map<string, Set<string>>();
     private readonly tickers = new Map<string, ReturnType<typeof setInterval>>();
+    private readonly endChecks = new Map<string, EndCheck>();
+    // Live recordings that were asked to stop on purpose (STOP & SAVE): their end is final, so it is not double-checked.
+    private readonly stopRequested = new Set<string>();
+    // The part of the recording each live job is in (1 for the first file, +1 each time the stream came back).
+    private readonly parts = new Map<string, number>();
     private closed = false;
     private readonly generateId: () => string;
     private readonly now: () => number;
@@ -89,18 +112,31 @@ export class QueueManager {
     // Stops a live recording keeping what was recorded so far (the download then completes normally).
     stop(id: string): void {
         const job = this.find(id);
-        if (job?.status === 'running' && job.live) {
-            this.handles.get(id)?.stop();
+        if (job?.status !== 'running' || !job.live) {
+            return;
         }
+        if (this.endChecks.has(id)) {
+            this.concludeEndCheck(job);
+            return;
+        }
+        this.stopRequested.add(id);
+        this.handles.get(id)?.stop();
     }
 
     // Live recordings are asked to finish (and given a moment to save their file); everything else is cancelled.
     async shutdown(timeoutMs: number = LIVE_STOP_TIMEOUT_MS): Promise<void> {
         this.closed = true;
+        this.jobs.forEach((job) => {
+            if (this.endChecks.has(job.id)) {
+                this.concludeEndCheck(job);
+            }
+        });
         const waiting: Array<Promise<unknown>> = [];
+        const stopped: RunHandle[] = [];
         this.handles.forEach((handle, id) => {
             if (this.find(id)?.live) {
                 handle.stop();
+                stopped.push(handle);
                 waiting.push(handle.result);
             } else {
                 handle.cancel();
@@ -116,6 +152,12 @@ export class QueueManager {
                 })
             ]);
         }
+        // A recording that did not finish in time is ended, so nothing is left running (and writing) after the app is gone.
+        this.handles.forEach((handle) => {
+            if (stopped.includes(handle)) {
+                handle.cancel();
+            }
+        });
     }
 
     getJob(id: string): DownloadJob | undefined {
@@ -126,10 +168,10 @@ export class QueueManager {
     add(url: string, options: RequestExtras = {}): AddJobResult {
         const trimmed = url.trim();
         if (!isValidHttpUrl(trimmed)) {
-            return { ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' };
+            return { ok: false, job: null, message: translateMain('url.invalid') };
         }
         if (hasUnboundedAutoSubtitles(this.deps.getSettings())) {
-            return { ok: false, job: null, message: UNBOUNDED_AUTO_SUBTITLES_MESSAGE };
+            return { ok: false, job: null, message: translateMain('subtitles.unbounded') };
         }
         const job: DownloadJob = {
             id: this.generateId(),
@@ -146,7 +188,10 @@ export class QueueManager {
             live: false,
             elapsedSeconds: 0,
             downloadedBytes: 0,
-            hasPartial: false
+            hasPartial: false,
+            customized: Object.keys(options.options ?? {}).length > 0,
+            waitingForLive: false,
+            endCheck: null
         };
         this.jobs.push(job);
         this.extras.set(job.id, options);
@@ -161,6 +206,10 @@ export class QueueManager {
             return;
         }
         if (job.status === 'running') {
+            if (this.endChecks.has(id)) {
+                this.concludeEndCheck(job);
+                return;
+            }
             this.handles.get(id)?.cancel();
             return;
         }
@@ -175,8 +224,10 @@ export class QueueManager {
         if (!job || (job.status !== 'error' && job.status !== 'cancelled')) {
             return;
         }
-        Object.assign(job, { status: 'queued', percent: 0, speed: '', eta: '', error: null, filePath: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false });
+        Object.assign(job, { status: 'queued', percent: 0, speed: '', eta: '', error: null, filePath: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false, waitingForLive: false, endCheck: null });
         this.outputPaths.delete(job.id);
+        this.parts.delete(job.id);
+        this.stopRequested.delete(job.id);
         this.emit(job);
         this.pump();
     }
@@ -188,6 +239,7 @@ export class QueueManager {
             return;
         }
         if (job.status === 'running') {
+            this.abandonEndCheck(id);
             this.handles.get(id)?.cancel();
         } else if (job.hasPartial) {
             this.deleteLeftovers(job, options.deleteLiveRecording ?? true);
@@ -198,6 +250,8 @@ export class QueueManager {
             this.outputPaths.delete(id);
         }
         this.stopTicker(id);
+        this.parts.delete(id);
+        this.stopRequested.delete(id);
         this.deps.onJobRemoved(id);
         this.pump();
     }
@@ -244,16 +298,28 @@ export class QueueManager {
                 return;
             }
             if (job.status === 'queued') {
-                this.start(job, settings);
+                this.start(job);
                 running += 1;
             }
         }
     }
 
-    private start(job: DownloadJob, settings: Settings): void {
+    // The settings of a download: the ones saved, replaced by the options chosen for this download only.
+    private settingsFor(job: DownloadJob): Settings {
+        return { ...this.deps.getSettings(), ...this.extras.get(job.id)?.options };
+    }
+
+    private start(job: DownloadJob): void {
         job.status = 'running';
         this.emit(job);
-        const args = buildYtdlpArgs(job.url, settings, this.deps.defaultDownloadDir, this.deps.resolveFfmpegLocation(settings), this.extras.get(job.id));
+        this.launch(job, this.settingsFor(job), this.extras.get(job.id));
+    }
+
+    // Runs yt-dlp for a job. `resumedPart` is set for the attempts that look for a live stream that stopped: they only
+    // record when it is live again and write to a new file.
+    private launch(job: DownloadJob, settings: Settings, extras: RequestExtras | undefined, resumedPart?: number): void {
+        const args = buildYtdlpArgs(job.url, settings, this.deps.defaultDownloadDir, this.deps.resolveFfmpegLocation(settings), { ...extras, resumedPart });
+        let wentLive = false;
         const handle = this.deps.startRun(
             this.deps.resolveYtdlpPath(settings),
             args,
@@ -261,12 +327,25 @@ export class QueueManager {
                 this.applyProgress(job, progress);
             },
             (info) => {
+                if (info.live && resumedPart !== undefined && !wentLive) {
+                    wentLive = true;
+                    this.resumeRecording(job, resumedPart);
+                }
                 this.applyInfo(job, info);
+            },
+            () => {
+                this.applyWaiting(job);
             }
         );
         this.handles.set(job.id, handle);
         void handle.result.then((result) => {
-            this.handles.delete(job.id);
+            if (this.handles.get(job.id) === handle) {
+                this.handles.delete(job.id);
+            }
+            if (resumedPart !== undefined && !wentLive) {
+                this.endCheckAttemptEnded(job);
+                return;
+            }
             if (result.status === 'stopped') {
                 const salvage = this.finishStopped(job).finally(() => {
                     this.salvaging.delete(salvage);
@@ -274,8 +353,127 @@ export class QueueManager {
                 this.salvaging.add(salvage);
                 return;
             }
+            if (this.shouldCheckEnd(job, result)) {
+                this.beginEndCheck(job, result);
+                return;
+            }
             this.finish(job, result);
         });
+    }
+
+    // yt-dlp prints "[wait]" while it waits for a scheduled live stream; the first recording line ends the wait.
+    private applyWaiting(job: DownloadJob): void {
+        if (job.waitingForLive || job.live) {
+            return;
+        }
+        job.waitingForLive = true;
+        this.emit(job);
+    }
+
+    private shouldCheckEnd(job: DownloadJob, result: RunResult): boolean {
+        const settings = this.settingsFor(job);
+        return !this.closed && job.live && !this.stopRequested.has(job.id) && settings.verifyLiveEnd && (result.status === 'done' || result.status === 'error') && this.find(job.id) !== undefined;
+    }
+
+    // A live stream that ended (or dropped) is not finished right away: for a few seconds the app keeps asking yt-dlp whether
+    // it is live again. If it is, the recording goes on in a new file of the same card; if not, the card ends as it would have.
+    private beginEndCheck(job: DownloadJob, original: RunResult): void {
+        const totalSeconds = this.settingsFor(job).verifyLiveEndSeconds;
+        this.stopTicker(job.id);
+        const check: EndCheck = {
+            original,
+            secondsLeft: totalSeconds,
+            attempts: 0,
+            interval: setInterval(() => {
+                this.tickEndCheck(job);
+            }, LIVE_TICK_MS),
+            retry: null
+        };
+        this.endChecks.set(job.id, check);
+        Object.assign(job, { speed: '', eta: '', endCheck: { secondsLeft: totalSeconds, totalSeconds } });
+        this.emit(job);
+        this.attemptEndCheck(job);
+    }
+
+    private tickEndCheck(job: DownloadJob): void {
+        const check = this.endChecks.get(job.id);
+        if (!check || !job.endCheck) {
+            return;
+        }
+        check.secondsLeft -= 1;
+        if (check.secondsLeft <= 0) {
+            this.concludeEndCheck(job);
+            return;
+        }
+        job.endCheck = { ...job.endCheck, secondsLeft: check.secondsLeft };
+        this.emit(job);
+    }
+
+    private attemptEndCheck(job: DownloadJob): void {
+        const check = this.endChecks.get(job.id);
+        if (!check) {
+            return;
+        }
+        check.retry = null;
+        check.attempts += 1;
+        this.launch(job, this.settingsFor(job), this.extras.get(job.id), (this.parts.get(job.id) ?? 1) + 1);
+    }
+
+    // An attempt ended without the stream being live: try again shortly, while there is time left.
+    private endCheckAttemptEnded(job: DownloadJob): void {
+        const check = this.endChecks.get(job.id);
+        if (!check || check.retry !== null) {
+            return;
+        }
+        check.retry = setTimeout(() => {
+            this.attemptEndCheck(job);
+        }, LIVE_END_RETRY_MS);
+    }
+
+    private clearEndCheck(id: string): EndCheck | undefined {
+        const check = this.endChecks.get(id);
+        if (!check) {
+            return undefined;
+        }
+        clearInterval(check.interval);
+        if (check.retry !== null) {
+            clearTimeout(check.retry);
+        }
+        this.endChecks.delete(id);
+        const job = this.find(id);
+        if (job) {
+            job.endCheck = null;
+        }
+        return check;
+    }
+
+    // The time is up (or the user wants to stop waiting): the card ends the way the recording ended.
+    private concludeEndCheck(job: DownloadJob): void {
+        const check = this.clearEndCheck(job.id);
+        if (!check) {
+            return;
+        }
+        const attempt = this.handles.get(job.id);
+        this.handles.delete(job.id);
+        attempt?.cancel();
+        this.finish(job, check.original);
+    }
+
+    // The card was removed during the check: nothing to finish, only timers and the running attempt to stop.
+    private abandonEndCheck(id: string): void {
+        if (!this.clearEndCheck(id)) {
+            return;
+        }
+        const attempt = this.handles.get(id);
+        this.handles.delete(id);
+        attempt?.cancel();
+        this.outputPaths.delete(id);
+    }
+
+    // The stream is live again: the attempt is now the recording of this job.
+    private resumeRecording(job: DownloadJob, part: number): void {
+        this.clearEndCheck(job.id);
+        this.parts.set(job.id, part);
     }
 
     // A live stream has no end and no size to measure a percentage against: show how long it has been recording and
@@ -286,10 +484,13 @@ export class QueueManager {
             return;
         }
         job.live = true;
+        job.waitingForLive = false;
         this.livePaths.set(job.id, info.filePath);
         const startedAt = this.now();
+        // A recording that was resumed after the stream came back keeps counting from where the previous part stopped.
+        const elapsedBefore = job.elapsedSeconds;
         const tick = (): void => {
-            job.elapsedSeconds = Math.round((this.now() - startedAt) / 1000);
+            job.elapsedSeconds = elapsedBefore + Math.round((this.now() - startedAt) / 1000);
             const size = (this.deps.fileSize ?? defaultFileSize)(`${info.filePath}.part`) ?? (this.deps.fileSize ?? defaultFileSize)(info.filePath);
             job.downloadedBytes = size ?? job.downloadedBytes;
             this.emit(job);
@@ -308,6 +509,7 @@ export class QueueManager {
 
     private applyProgress(job: DownloadJob, progress: ProgressInfo): void {
         job.live = job.live || progress.live;
+        job.waitingForLive = false;
         job.downloadedBytes = progress.downloadedBytes ?? job.downloadedBytes;
         if (!this.tickers.has(job.id)) {
             job.elapsedSeconds = progress.elapsedSeconds ?? job.elapsedSeconds;
@@ -371,6 +573,9 @@ export class QueueManager {
 
     private finish(job: DownloadJob, result: RunResult): void {
         this.stopTicker(job.id);
+        this.parts.delete(job.id);
+        this.stopRequested.delete(job.id);
+        job.waitingForLive = false;
         if (!this.find(job.id)) {
             // The card was removed while the download was running: whatever it left behind goes too, except a live recording.
             this.deleteLeftovers(job, false);

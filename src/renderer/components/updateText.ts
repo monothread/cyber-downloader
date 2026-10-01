@@ -1,20 +1,24 @@
+import type { Translator } from '@shared/i18n';
 import type { AppUpdateState } from '@shared/types';
 
-export function updateSummary(state: AppUpdateState): string {
+export function updateSummary(state: AppUpdateState, t: Translator): string {
+    const version = state.version ?? '';
     switch (state.status) {
         case 'checking':
-            return 'Checking for updates…';
+            return t('update.checking');
         case 'available':
-            return `Version ${state.version ?? ''} is available.`;
+            return t('update.available', { version });
         case 'downloading':
-            return `Downloading version ${state.version ?? ''}… ${state.percent.toFixed(1)}%`;
+            return t('update.downloading', { version, percent: state.percent.toFixed(1) });
         case 'downloaded':
-            return `Version ${state.version ?? ''} is ready to install.`;
+            return t('update.downloaded', { version });
         case 'not-available':
-        case 'error':
+            return t('update.latest', { version: state.currentVersion });
         case 'unsupported':
-            return state.message ?? '';
+            return t('update.unsupported');
+        case 'error':
+            return state.message ?? t('update.failed');
         default:
-            return `Current version: ${state.currentVersion}`;
+            return t('update.current', { version: state.currentVersion });
     }
 }

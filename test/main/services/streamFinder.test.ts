@@ -3,7 +3,11 @@ import type { SniffResult } from '@main/services/browserSniffer';
 import type { StreamFinderDependencies } from '@main/services/streamFinder';
 import type { ScanResult } from '@main/services/pageScanner';
 import { STREAM_USER_AGENT } from '@main/services/pageScanner';
-import { CANCELLED_MESSAGE, NOTHING_FOUND_MESSAGE, StreamFinder } from '@main/services/streamFinder';
+import { en } from '@shared/i18n/en';
+import { StreamFinder } from '@main/services/streamFinder';
+
+const NOTHING_FOUND_MESSAGE = en['stream.nothingFound'];
+const CANCELLED_MESSAGE = en['stream.searchCancelled'];
 
 const PAGE = 'https://site.test/watch/ep-1';
 

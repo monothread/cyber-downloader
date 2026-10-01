@@ -1,4 +1,5 @@
 import { Menu, Tray, nativeImage } from 'electron';
+import { translateMain } from './language';
 import type { TrayHandle } from './trayManager';
 
 export interface TrayActions {
@@ -15,10 +16,10 @@ export function createElectronTray(iconPath: string, actions: TrayActions): Tray
     tray.setToolTip('Cyber Downloader');
     tray.setContextMenu(
         Menu.buildFromTemplate([
-            { label: 'Show Cyber Downloader', click: actions.show },
-            { label: 'Restart Cyber Downloader', click: actions.restart },
+            { label: translateMain('tray.show'), click: actions.show },
+            { label: translateMain('tray.restart'), click: actions.restart },
             { type: 'separator' },
-            { label: 'Quit', click: actions.quit }
+            { label: translateMain('tray.quit'), click: actions.quit }
         ])
     );
     tray.on('click', actions.toggle);

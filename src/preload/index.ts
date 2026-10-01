@@ -19,8 +19,8 @@ const api: CyberApi = {
     saveSettings: (settings) => {
         return ipcRenderer.invoke(IPC.settingsSave, settings);
     },
-    addDownload: (url, downloadDir) => {
-        return ipcRenderer.invoke(IPC.queueAdd, url, downloadDir);
+    addDownload: (url, downloadDir, options) => {
+        return ipcRenderer.invoke(IPC.queueAdd, url, downloadDir, options);
     },
     listJobs: () => {
         return ipcRenderer.invoke(IPC.queueList);

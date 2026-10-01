@@ -1,6 +1,7 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import type { DownloadError, DownloadInfo, DownloadJob, HistoryEntry, ProgressInfo, Settings } from '@shared/types';
-import { LIVE_TICK_MS, QueueManager, type QueueDependencies } from '@main/services/queueManager';
+import { applyLanguage } from '@main/services/language';
+import { LIVE_END_RETRY_MS, LIVE_TICK_MS, QueueManager, type QueueDependencies } from '@main/services/queueManager';
 import { buildYtdlpArgs } from '@main/services/ytdlpArgsBuilder';
 import type { RunHandle, RunResult } from '@main/services/ytdlpRunner';
 
@@ -9,6 +10,7 @@ interface ControlledRun {
     args: string[];
     onProgress: (progress: ProgressInfo) => void;
     onInfo: (info: DownloadInfo) => void;
+    onWaiting: (() => void) | undefined;
     resolve: (result: RunResult) => void;
     cancel: ReturnType<typeof vi.fn>;
     stop: ReturnType<typeof vi.fn>;
@@ -29,7 +31,7 @@ function setup(settings: Partial<Settings> = {}, extraDeps: Partial<QueueDepende
     let counter = 0;
     let clock = 1000;
     const fileSizes = new Map<string, number>();
-    const currentSettings: Settings = { ...DEFAULT_SETTINGS, maxConcurrent: 2, ...settings };
+    const currentSettings: Settings = { ...DEFAULT_SETTINGS, maxConcurrent: 2, verifyLiveEnd: false, ...settings };
     const queue = new QueueManager({
         getSettings: () => {
             return currentSettings;
@@ -44,7 +46,7 @@ function setup(settings: Partial<Settings> = {}, extraDeps: Partial<QueueDepende
         fileSize: (path) => {
             return fileSizes.get(path) ?? null;
         },
-        startRun: (binary, args, onProgress, onInfo): RunHandle => {
+        startRun: (binary, args, onProgress, onInfo, onWaiting): RunHandle => {
             let resolveResult: (result: RunResult) => void = () => {
                 return undefined;
             };
@@ -57,7 +59,7 @@ function setup(settings: Partial<Settings> = {}, extraDeps: Partial<QueueDepende
             const stop = vi.fn(() => {
                 resolveResult({ status: 'done', filePath: '/dl/recorded.mp4' });
             });
-            runs.push({ binary, args, onProgress, onInfo, resolve: resolveResult, cancel, stop });
+            runs.push({ binary, args, onProgress, onInfo, onWaiting, resolve: resolveResult, cancel, stop });
             return { result, cancel, stop };
         },
         addHistory: (entry) => {
@@ -95,6 +97,28 @@ async function flush(): Promise<void> {
 const URL_A = 'https://example.com/a';
 const URL_B = 'https://example.com/b';
 const URL_C = 'https://example.com/c';
+
+describe('QueueManager.add messages in another language', () => {
+    afterEach(() => {
+        applyLanguage('en', 'en-US');
+    });
+
+    it('translates the invalid URL message', () => {
+        applyLanguage('pt', 'en-US');
+        const { queue } = setup();
+        expect(queue.add('nope')).toEqual({ ok: false, job: null, message: 'URL inválida. Use um link http(s).' });
+    });
+
+    it('translates the unbounded auto-subtitles message', () => {
+        applyLanguage('zh', 'en-US');
+        const { queue } = setup({ writeSubtitles: true, autoSubtitles: true, subtitleLangs: '' });
+        expect(queue.add('https://example.com/a')).toEqual({
+            ok: false,
+            job: null,
+            message: '自动生成的字幕需要指定语言。请在“设置”中填写“字幕语言”（例如 ja），或关闭“包含自动生成的字幕”。'
+        });
+    });
+});
 
 describe('QueueManager.add', () => {
     it('rejects invalid URLs without creating a job', () => {
@@ -151,7 +175,10 @@ describe('QueueManager.add', () => {
             live: false,
             elapsedSeconds: 0,
             downloadedBytes: 0,
-            hasPartial: false
+            hasPartial: false,
+            customized: false,
+            waitingForLive: false,
+            endCheck: null
         });
         expect(updates.map((job) => {
             return job.status;
@@ -951,6 +978,33 @@ describe('QueueManager live recordings', () => {
             expect(finished).toBe(true);
         });
 
+        it('ends a recording that did not finish in time, so nothing keeps running after the app is gone', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+            runs[0]?.onInfo(liveInfo);
+            runs[0]?.stop.mockImplementation(() => {
+                return undefined;
+            });
+            const shutdown = queue.shutdown(5000);
+            await vi.advanceTimersByTimeAsync(4999);
+            expect(runs[0]?.cancel).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(1);
+            await shutdown;
+            expect(runs[0]?.stop).toHaveBeenCalledTimes(1);
+            expect(runs[0]?.cancel).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not end a recording again when it finished in time', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+            runs[0]?.onInfo(liveInfo);
+            const shutdown = queue.shutdown();
+            await vi.advanceTimersByTimeAsync(0);
+            await shutdown;
+            expect(runs[0]?.stop).toHaveBeenCalledTimes(1);
+            expect(runs[0]?.cancel).not.toHaveBeenCalled();
+        });
+
         it('resolves immediately when there are no live recordings and starts nothing new afterwards', async () => {
             const { queue, runs } = setup({ maxConcurrent: 1 });
             queue.add(URL_A);
@@ -1098,3 +1152,589 @@ describe('QueueManager with a folder chosen for one download', () => {
     });
 });
 
+
+describe('QueueManager end of live check', () => {
+    const LIVE_FILE = '/dl/Live Show [abc].mp4';
+    const NEXT_FILE = '/dl/Live Show [abc] (part 2).mp4';
+    const liveInfo = { live: true, filePath: LIVE_FILE };
+    const ENDED: RunResult = { status: 'done', filePath: LIVE_FILE };
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    async function settle(): Promise<void> {
+        await vi.advanceTimersByTimeAsync(0);
+    }
+
+    async function recordLive(settings: Partial<Settings> = {}) {
+        const context = setup({ verifyLiveEnd: true, verifyLiveEndSeconds: 10, ...settings });
+        context.queue.add(URL_A);
+        context.runs[0]?.onInfo(liveInfo);
+        return context;
+    }
+
+    async function endRecording(context: Awaited<ReturnType<typeof recordLive>>, result: RunResult = ENDED): Promise<void> {
+        context.runs[0]?.resolve(result);
+        await settle();
+    }
+
+    describe('opening the check', () => {
+        it('opens the check instead of finishing when a live recording ends normally', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            expect(context.queue.getJob('job-1')).toMatchObject({
+                status: 'running',
+                live: true,
+                speed: '',
+                eta: '',
+                endCheck: { secondsLeft: 10, totalSeconds: 10 }
+            });
+            expect(context.history).toEqual([]);
+            expect(context.onHistoryChanged).not.toHaveBeenCalled();
+        });
+
+        it('opens the check when a live recording fails, for instance when the connection drops', async () => {
+            const context = await recordLive();
+            await endRecording(context, { status: 'error', error: DOWNLOAD_ERROR });
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'running', error: null, endCheck: { secondsLeft: 10, totalSeconds: 10 } });
+            expect(context.history).toEqual([]);
+        });
+
+        it('uses the number of seconds from the settings', async () => {
+            const context = await recordLive({ verifyLiveEndSeconds: 45 });
+            await endRecording(context);
+            expect(context.queue.getJob('job-1')?.endCheck).toEqual({ secondsLeft: 45, totalSeconds: 45 });
+        });
+
+        it('keeps the concurrency slot while it checks', async () => {
+            const context = await recordLive({ maxConcurrent: 1 });
+            context.queue.add(URL_B);
+            await endRecording(context);
+            expect(context.queue.getJob('job-2')?.status).toBe('queued');
+            expect(context.runs).toHaveLength(2);
+        });
+
+        it('stops counting the recording time while it checks', async () => {
+            const context = await recordLive();
+            context.advanceClock(4000);
+            vi.advanceTimersByTime(LIVE_TICK_MS);
+            const before = context.queue.getJob('job-1')?.elapsedSeconds;
+            await endRecording(context);
+            context.advanceClock(5000);
+            vi.advanceTimersByTime(LIVE_TICK_MS);
+            expect(context.queue.getJob('job-1')?.elapsedSeconds).toBe(before);
+        });
+
+        it('emits the card when the check opens', async () => {
+            const context = await recordLive();
+            const before = context.updates.length;
+            await endRecording(context);
+            expect(context.updates.slice(before).at(0)).toMatchObject({ id: 'job-1', status: 'running', endCheck: { secondsLeft: 10, totalSeconds: 10 } });
+        });
+
+        it.each([
+            ['the setting is off', { verifyLiveEnd: false }],
+            ['the job is not a live stream', {}]
+        ])('finishes right away when %s', async (_name, settings) => {
+            const context = setup({ verifyLiveEnd: true, ...settings });
+            context.queue.add(URL_A);
+            if (_name === 'the setting is off') {
+                context.runs[0]?.onInfo(liveInfo);
+            }
+            context.runs[0]?.resolve(ENDED);
+            await settle();
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', endCheck: null });
+            expect(context.runs).toHaveLength(1);
+        });
+
+        it('does not check when the user stopped the recording on purpose with STOP & SAVE', async () => {
+            const context = await recordLive();
+            context.queue.stop('job-1');
+            await settle();
+            expect(context.runs[0]?.stop).toHaveBeenCalledTimes(1);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: '/dl/recorded.mp4', endCheck: null });
+            expect(context.runs).toHaveLength(1);
+            expect(context.history).toHaveLength(1);
+        });
+
+        it('forgets the stop request when the job is retried, so the next recording is checked again', async () => {
+            const context = await recordLive();
+            context.runs[0]?.stop.mockImplementation(() => {
+                context.runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+            });
+            context.queue.stop('job-1');
+            await settle();
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'error', endCheck: null });
+            context.queue.retry('job-1');
+            context.runs[1]?.onInfo(liveInfo);
+            context.runs[1]?.resolve(ENDED);
+            await settle();
+            expect(context.queue.getJob('job-1')?.endCheck).toEqual({ secondsLeft: 10, totalSeconds: 10 });
+        });
+
+        it('does not check when a live recording is cancelled', async () => {
+            const context = await recordLive();
+            context.queue.cancel('job-1');
+            await settle();
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'cancelled', endCheck: null });
+            expect(context.runs).toHaveLength(1);
+        });
+
+        it('does not check when the recording was ended on purpose by killing the process', async () => {
+            const context = await recordLive();
+            await endRecording(context, { status: 'stopped' });
+            expect(context.queue.getJob('job-1')?.endCheck).toBeNull();
+            expect(context.runs).toHaveLength(1);
+        });
+    });
+
+    describe('looking for the stream again', () => {
+        it('starts an attempt right away that only records when the stream is live, in a new file, and does not start over', async () => {
+            const context = await recordLive({ liveFromStart: true, waitForLive: true });
+            await endRecording(context);
+            expect(context.runs).toHaveLength(2);
+            expect(context.runs[1]?.args).toEqual(
+                buildYtdlpArgs(URL_A, { ...DEFAULT_SETTINGS, maxConcurrent: 2, verifyLiveEnd: true, verifyLiveEndSeconds: 10, liveFromStart: true, waitForLive: true }, '/dl', '/bundled/bin', { resumedPart: 2 })
+            );
+            expect(context.runs[1]?.args).toEqual(expect.arrayContaining(['--match-filter', 'is_live']));
+            expect(context.runs[1]?.args).not.toContain('--live-from-start');
+            expect(context.runs[1]?.args).not.toContain('--wait-for-video');
+            expect(context.runs[1]?.args).toContain('%(title).80s [%(id)s] (part 2).%(ext)s');
+        });
+
+        it('keeps the extras of the request in the attempts', async () => {
+            const context = setup({ verifyLiveEnd: true });
+            context.queue.add(URL_A, { referer: 'https://page.test/', title: 'Show' });
+            context.runs[0]?.onInfo(liveInfo);
+            context.runs[0]?.resolve(ENDED);
+            await settle();
+            expect(context.runs[1]?.args).toEqual(expect.arrayContaining(['--referer', 'https://page.test/']));
+            expect(context.runs[1]?.args).toContain('Show [%(id)s] (part 2).%(ext)s');
+        });
+
+        it('tries again shortly after an attempt that found nothing, as long as there is time', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            context.runs[1]?.resolve({ status: 'done', filePath: null });
+            await settle();
+            expect(context.runs).toHaveLength(2);
+            await vi.advanceTimersByTimeAsync(LIVE_END_RETRY_MS);
+            expect(context.runs).toHaveLength(3);
+            context.runs[2]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+            await settle();
+            await vi.advanceTimersByTimeAsync(LIVE_END_RETRY_MS);
+            expect(context.runs).toHaveLength(4);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'running', error: null });
+        });
+
+        it('counts down every second', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS);
+            expect(context.queue.getJob('job-1')?.endCheck).toEqual({ secondsLeft: 9, totalSeconds: 10 });
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 3);
+            expect(context.queue.getJob('job-1')?.endCheck).toEqual({ secondsLeft: 6, totalSeconds: 10 });
+            expect(context.updates.at(-1)).toMatchObject({ id: 'job-1', endCheck: { secondsLeft: 6, totalSeconds: 10 } });
+        });
+    });
+
+    describe('when the stream comes back', () => {
+        it('goes on recording in the same card and closes the check', async () => {
+            const context = await recordLive();
+            context.advanceClock(7000);
+            vi.advanceTimersByTime(LIVE_TICK_MS);
+            await endRecording(context);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 2);
+            context.runs[1]?.onInfo({ live: true, filePath: NEXT_FILE });
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'running', live: true, endCheck: null, elapsedSeconds: 7 });
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 20);
+            expect(context.runs).toHaveLength(2);
+            expect(context.queue.getJob('job-1')?.status).toBe('running');
+        });
+
+        it('keeps counting the recording time from where the previous part stopped and reads the new file', async () => {
+            const context = await recordLive();
+            context.advanceClock(7000);
+            vi.advanceTimersByTime(LIVE_TICK_MS);
+            await endRecording(context);
+            context.runs[1]?.onInfo({ live: true, filePath: NEXT_FILE });
+            context.fileSizes.set(`${NEXT_FILE}.part`, 4096);
+            context.advanceClock(3000);
+            vi.advanceTimersByTime(LIVE_TICK_MS);
+            expect(context.queue.getJob('job-1')).toMatchObject({ elapsedSeconds: 10, downloadedBytes: 4096 });
+        });
+
+        it('finishes with the file of the last part when the new recording ends and the check runs out', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            context.runs[1]?.onInfo({ live: true, filePath: NEXT_FILE });
+            context.runs[1]?.resolve({ status: 'done', filePath: NEXT_FILE });
+            await settle();
+            expect(context.queue.getJob('job-1')?.endCheck).toEqual({ secondsLeft: 10, totalSeconds: 10 });
+            expect(context.runs[2]?.args).toContain('%(title).80s [%(id)s] (part 3).%(ext)s');
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 10);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: NEXT_FILE, endCheck: null });
+            expect(context.history).toEqual([
+                { id: 'job-1', url: URL_A, title: URL_A, filePath: NEXT_FILE, status: 'done', errorTitle: null, finishedAt: expect.any(Number) }
+            ]);
+        });
+
+        it('can be stopped while it records again, as any live recording', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            context.runs[1]?.onInfo({ live: true, filePath: NEXT_FILE });
+            context.queue.stop('job-1');
+            await settle();
+            expect(context.runs[1]?.stop).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('when the time runs out', () => {
+        it('finishes the card as the recording ended: complete', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 10);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', percent: 100, filePath: LIVE_FILE, endCheck: null });
+            expect(context.history).toEqual([
+                { id: 'job-1', url: URL_A, title: URL_A, filePath: LIVE_FILE, status: 'done', errorTitle: null, finishedAt: expect.any(Number) }
+            ]);
+            expect(context.onHistoryChanged).toHaveBeenCalledTimes(1);
+        });
+
+        it('finishes the card as the recording ended: failed, keeping the recording', async () => {
+            const context = await recordLive();
+            await endRecording(context, { status: 'error', error: DOWNLOAD_ERROR });
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 10);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'error', error: DOWNLOAD_ERROR, endCheck: null });
+            expect(context.history).toEqual([
+                { id: 'job-1', url: URL_A, title: URL_A, filePath: null, status: 'error', errorTitle: 'Network failure', finishedAt: expect.any(Number) }
+            ]);
+        });
+
+        it('stops the attempt that is still running and the retry timer', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 10);
+            expect(context.runs[1]?.cancel).toHaveBeenCalledTimes(1);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 30);
+            expect(context.runs).toHaveLength(2);
+        });
+
+        it('does not try again once it ended, even if an attempt ends later', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            context.runs[1]?.resolve({ status: 'done', filePath: null });
+            await settle();
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 10);
+            const attempts = context.runs.length;
+            expect(attempts).toBe(3);
+            context.runs[2]?.resolve({ status: 'done', filePath: null });
+            await vi.advanceTimersByTimeAsync(LIVE_END_RETRY_MS * 5);
+            expect(context.runs).toHaveLength(attempts);
+            expect(context.queue.getJob('job-1')?.status).toBe('done');
+        });
+
+        it('starts the next download of the queue', async () => {
+            const context = await recordLive({ maxConcurrent: 1 });
+            context.queue.add(URL_B);
+            await endRecording(context);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 10);
+            expect(context.queue.getJob('job-2')?.status).toBe('running');
+        });
+    });
+
+    describe('ending the check by hand', () => {
+        it('stop finishes the card at once as the recording ended', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            context.queue.stop('job-1');
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: LIVE_FILE, endCheck: null });
+            expect(context.runs[1]?.cancel).toHaveBeenCalledTimes(1);
+            expect(context.runs[1]?.stop).not.toHaveBeenCalled();
+            expect(context.history).toHaveLength(1);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 30);
+            expect(context.runs).toHaveLength(2);
+        });
+
+        it('cancel does the same', async () => {
+            const context = await recordLive();
+            await endRecording(context, { status: 'error', error: DOWNLOAD_ERROR });
+            context.queue.cancel('job-1');
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'error', endCheck: null });
+            expect(context.runs[1]?.cancel).toHaveBeenCalledTimes(1);
+        });
+
+        it('stop works between two attempts, when none is running', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            context.runs[1]?.resolve({ status: 'done', filePath: null });
+            await settle();
+            context.queue.stop('job-1');
+            expect(context.queue.getJob('job-1')?.status).toBe('done');
+            await vi.advanceTimersByTimeAsync(LIVE_END_RETRY_MS * 5);
+            expect(context.runs).toHaveLength(2);
+        });
+
+        it('removing the card drops the check, stops the attempt and keeps the recording files', async () => {
+            const deleteFiles = vi.fn();
+            const context = setup({ verifyLiveEnd: true, verifyLiveEndSeconds: 10 }, { deleteFiles, findPartialFiles: () => {
+                return [`${LIVE_FILE}.part`];
+            } });
+            context.queue.add(URL_A);
+            context.runs[0]?.onInfo(liveInfo);
+            await endRecording(context);
+            context.queue.remove('job-1');
+            expect(context.removed).toEqual(['job-1']);
+            expect(context.queue.list()).toEqual([]);
+            expect(context.runs[1]?.cancel).toHaveBeenCalledTimes(1);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 30);
+            expect(context.runs).toHaveLength(2);
+            expect(context.history).toEqual([]);
+            expect(deleteFiles).not.toHaveBeenCalled();
+        });
+
+        it('quitting the app finishes the card instead of waiting for the check', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            await context.queue.shutdown(50);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', endCheck: null });
+            expect(context.runs[1]?.cancel).toHaveBeenCalledTimes(1);
+            expect(context.history).toHaveLength(1);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 30);
+            expect(context.runs).toHaveLength(2);
+        });
+
+        it('does not open a check once the app is closing', async () => {
+            const context = await recordLive();
+            const closing = context.queue.shutdown(50);
+            context.runs[0]?.resolve(ENDED);
+            await vi.advanceTimersByTimeAsync(100);
+            await closing;
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', endCheck: null });
+            expect(context.runs).toHaveLength(1);
+        });
+    });
+
+    describe('retry', () => {
+        it('starts over without a check or a part number', async () => {
+            const context = await recordLive();
+            await endRecording(context);
+            context.runs[1]?.onInfo({ live: true, filePath: NEXT_FILE });
+            context.queue.cancel('job-1');
+            context.runs[1]?.resolve({ status: 'cancelled' });
+            await settle();
+            expect(context.queue.getJob('job-1')?.status).toBe('cancelled');
+            context.queue.retry('job-1');
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'running', live: false, endCheck: null, waitingForLive: false });
+            expect(context.runs[2]?.args).not.toContain('--match-filter');
+            context.runs[2]?.onInfo(liveInfo);
+            context.runs[2]?.resolve(ENDED);
+            await settle();
+            expect(context.runs[3]?.args).toContain('%(title).80s [%(id)s] (part 2).%(ext)s');
+        });
+    });
+});
+
+describe('QueueManager waiting for a scheduled live stream', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('starts without waiting', () => {
+        const { queue } = setup({ waitForLive: true });
+        queue.add(URL_A);
+        expect(queue.getJob('job-1')?.waitingForLive).toBe(false);
+    });
+
+    it('marks the job as waiting when yt-dlp says so and emits it once', () => {
+        const { queue, runs, updates } = setup({ waitForLive: true });
+        queue.add(URL_A);
+        const before = updates.length;
+        runs[0]?.onWaiting?.();
+        runs[0]?.onWaiting?.();
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'running', waitingForLive: true, live: false });
+        expect(updates.slice(before)).toHaveLength(1);
+        expect(updates.at(-1)).toMatchObject({ id: 'job-1', waitingForLive: true });
+    });
+
+    it('stops waiting when the live stream starts being recorded', () => {
+        const { queue, runs } = setup({ waitForLive: true });
+        queue.add(URL_A);
+        runs[0]?.onWaiting?.();
+        runs[0]?.onInfo({ live: true, filePath: '/dl/Live [abc].mp4' });
+        expect(queue.getJob('job-1')).toMatchObject({ waitingForLive: false, live: true });
+    });
+
+    it('stops waiting when progress arrives', () => {
+        const { queue, runs } = setup({ waitForLive: true });
+        queue.add(URL_A);
+        runs[0]?.onWaiting?.();
+        runs[0]?.onProgress(progress({ percent: 3 }));
+        expect(queue.getJob('job-1')).toMatchObject({ waitingForLive: false, percent: 3 });
+    });
+
+    it('ignores a wait message once the stream is live', () => {
+        const { queue, runs, updates } = setup({ waitForLive: true });
+        queue.add(URL_A);
+        runs[0]?.onInfo({ live: true, filePath: '/dl/Live [abc].mp4' });
+        const before = updates.length;
+        runs[0]?.onWaiting?.();
+        expect(queue.getJob('job-1')?.waitingForLive).toBe(false);
+        expect(updates).toHaveLength(before);
+    });
+
+    it('stops waiting when the download ends or is cancelled', async () => {
+        const { queue, runs } = setup({ waitForLive: true });
+        queue.add(URL_A);
+        runs[0]?.onWaiting?.();
+        queue.cancel('job-1');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'cancelled', waitingForLive: false });
+    });
+
+    it('stops waiting when the job is retried', async () => {
+        const { queue, runs } = setup({ waitForLive: true });
+        queue.add(URL_A);
+        runs[0]?.onWaiting?.();
+        runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        await vi.advanceTimersByTimeAsync(0);
+        queue.retry('job-1');
+        expect(queue.getJob('job-1')?.waitingForLive).toBe(false);
+    });
+});
+
+describe('QueueManager download options', () => {
+    const LIVE_FILE = '/dl/Live Show [abc].mp4';
+    const liveInfo = { live: true, filePath: LIVE_FILE };
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    const effective = (overrides: Partial<Settings>): Settings => {
+        return { ...DEFAULT_SETTINGS, maxConcurrent: 2, verifyLiveEnd: false, ...overrides };
+    };
+
+    it('marks the job as customized only when it has options', () => {
+        const { queue } = setup();
+        expect(queue.add(URL_A).job?.customized).toBe(false);
+        expect(queue.add(URL_B, { options: {} }).job?.customized).toBe(false);
+        expect(queue.add(URL_C, { options: { maxResolution: '720' } }).job?.customized).toBe(true);
+        expect(queue.getJob('job-3')?.customized).toBe(true);
+    });
+
+    it('builds the arguments with the options replacing the settings', () => {
+        const { queue, runs } = setup({ maxResolution: 'best', videoContainer: 'mp4', audioOnly: false, audioFormat: 'mp3' });
+        queue.add(URL_A, { options: { maxResolution: '720', videoContainer: 'mkv', audioOnly: true, audioFormat: 'opus' } });
+        expect(runs[0]?.args).toEqual(
+            buildYtdlpArgs(URL_A, effective({ maxResolution: '720', videoContainer: 'mkv', audioOnly: true, audioFormat: 'opus' }), '/dl', '/bundled/bin', {})
+        );
+        expect(runs[0]?.args).toEqual(expect.arrayContaining(['-x', '--audio-format', 'opus']));
+        expect(runs[0]?.args).not.toContain('--merge-output-format');
+    });
+
+    it('does not change the arguments of the other downloads', () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A, { options: { maxResolution: '480' } });
+        queue.add(URL_B);
+        expect(runs[0]?.args).toEqual(buildYtdlpArgs(URL_A, effective({ maxResolution: '480' }), '/dl', '/bundled/bin', {}));
+        expect(runs[1]?.args).toEqual(buildYtdlpArgs(URL_B, effective({}), '/dl', '/bundled/bin', {}));
+    });
+
+    it('keeps following the settings for what the options do not choose, even when they change before it starts', async () => {
+        const { queue, runs, currentSettings } = setup({ maxConcurrent: 1 });
+        queue.add(URL_A);
+        queue.add(URL_B, { options: { maxResolution: '720' } });
+        currentSettings.videoContainer = 'webm';
+        currentSettings.maxResolution = '1080';
+        runs[0]?.resolve({ status: 'done', filePath: '/dl/a.mp4' });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(runs[1]?.args).toEqual(
+            buildYtdlpArgs(URL_B, { ...currentSettings, maxResolution: '720', videoContainer: 'webm' }, '/dl', '/bundled/bin', {})
+        );
+    });
+
+    it('applies the live options of the download', () => {
+        const { queue, runs } = setup({ liveFromStart: false, waitForLive: false });
+        queue.add(URL_A, { options: { liveFromStart: true, waitForLive: true } });
+        expect(runs[0]?.args).toEqual(expect.arrayContaining(['--live-from-start', '--wait-for-video', '30', '--no-quiet']));
+        queue.add(URL_B);
+        expect(runs[1]?.args).not.toContain('--live-from-start');
+        expect(runs[1]?.args).not.toContain('--wait-for-video');
+    });
+
+    it('turns the end check on for one download when it is off in the settings', async () => {
+        const { queue, runs } = setup({ verifyLiveEnd: false });
+        queue.add(URL_A, { options: { verifyLiveEnd: true, verifyLiveEndSeconds: 25 } });
+        runs[0]?.onInfo(liveInfo);
+        runs[0]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.getJob('job-1')?.endCheck).toEqual({ secondsLeft: 25, totalSeconds: 25 });
+        expect(runs).toHaveLength(2);
+    });
+
+    it('turns the end check off for one download when it is on in the settings', async () => {
+        const { queue, runs } = setup({ verifyLiveEnd: true, verifyLiveEndSeconds: 10 });
+        queue.add(URL_A, { options: { verifyLiveEnd: false } });
+        queue.add(URL_B);
+        runs[0]?.onInfo(liveInfo);
+        runs[1]?.onInfo(liveInfo);
+        runs[0]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        runs[1]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'done', endCheck: null });
+        expect(queue.getJob('job-2')).toMatchObject({ status: 'running', endCheck: { secondsLeft: 10, totalSeconds: 10 } });
+    });
+
+    it('uses the seconds of the options for the check while the setting keeps another value', async () => {
+        const { queue, runs } = setup({ verifyLiveEnd: true, verifyLiveEndSeconds: 10 });
+        queue.add(URL_A, { options: { verifyLiveEndSeconds: 3 } });
+        runs[0]?.onInfo(liveInfo);
+        runs[0]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.getJob('job-1')?.endCheck).toEqual({ secondsLeft: 3, totalSeconds: 3 });
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(queue.getJob('job-1')?.status).toBe('done');
+    });
+
+    it('keeps the options in the attempts that look for the stream again, without waiting or starting over', async () => {
+        const { queue, runs } = setup({ verifyLiveEnd: false });
+        queue.add(URL_A, { options: { verifyLiveEnd: true, waitForLive: true, liveFromStart: true, maxResolution: '720' } });
+        runs[0]?.onInfo(liveInfo);
+        runs[0]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(runs[1]?.args).toEqual(
+            buildYtdlpArgs(URL_A, effective({ verifyLiveEnd: true, waitForLive: true, liveFromStart: true, maxResolution: '720' }), '/dl', '/bundled/bin', { resumedPart: 2 })
+        );
+        expect(runs[1]?.args).not.toContain('--live-from-start');
+    });
+
+    it('keeps the options when the download is retried', async () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A, { options: { maxResolution: '720', audioOnly: true } });
+        runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        await vi.advanceTimersByTimeAsync(0);
+        queue.retry('job-1');
+        expect(queue.getJob('job-1')?.customized).toBe(true);
+        expect(runs[1]?.args).toEqual(runs[0]?.args);
+    });
+
+    it('keeps the folder and the options together', () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A, { downloadDir: '/media/videos', options: { maxResolution: '1080' } });
+        expect(runs[0]?.args).toEqual(buildYtdlpArgs(URL_A, effective({ maxResolution: '1080' }), '/dl', '/bundled/bin', { downloadDir: '/media/videos' }));
+    });
+});

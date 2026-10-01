@@ -14,6 +14,7 @@ import { defaultExecFile } from './services/binaryLocator';
 import { createElectronTray } from './services/electronTray';
 import { getElectronUpdater } from './services/electronUpdater';
 import { findPartialFiles, removeFiles } from './services/partialFiles';
+import { applyLanguage, translateMain } from './services/language';
 import { HistoryStore } from './services/historyStore';
 import { restartApplication } from './services/relaunch';
 import { salvageRecording } from './services/recordingSalvage';
@@ -134,24 +135,17 @@ function sendToRenderer(channel: string, payload?: unknown): void {
     }
 }
 
-interface PendingPrompt {
-    action: string;
-    title: string;
-    detail: string;
-}
-
-const QUIT_PROMPT: PendingPrompt = { action: 'Quit', title: 'Quit Cyber Downloader?', detail: 'Quitting now will cancel them.' };
-const RESTART_PROMPT: PendingPrompt = { action: 'Restart', title: 'Restart Cyber Downloader?', detail: 'Restarting now will cancel them.' };
+type PendingPrompt = 'quit' | 'restart';
 
 async function confirmPending(prompt: PendingPrompt, pending: number): Promise<boolean> {
     const options: Electron.MessageBoxOptions = {
         type: 'warning',
-        buttons: [prompt.action, 'Cancel'],
+        buttons: [translateMain(`dialog.${prompt}.action`), translateMain('dialog.cancel')],
         defaultId: 1,
         cancelId: 1,
-        title: prompt.title,
+        title: translateMain(`dialog.${prompt}.title`),
         message: describePending(pending),
-        detail: prompt.detail
+        detail: translateMain(`dialog.${prompt}.detail`)
     };
     const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options);
     return result.response === 0;
@@ -170,6 +164,7 @@ function bootstrap(): void {
     const dataDir = app.getPath('userData');
     const settingsStore = new SettingsStore(join(dataDir, 'settings.json'));
     const historyStore = new HistoryStore(join(dataDir, 'history.json'));
+    applyLanguage(settingsStore.get().language, app.getLocale());
     const resolver = new BinaryResolver({
         bundledDir: app.isPackaged ? join(process.resourcesPath, 'bin') : join(app.getAppPath(), 'resources', 'bin'),
         userBinDir: join(dataDir, 'bin')
@@ -194,8 +189,8 @@ function bootstrap(): void {
         deleteFiles: (paths) => {
             removeFiles(paths);
         },
-        startRun: (binary, args, onProgress, onInfo) => {
-            return runYtdlp({ binary, args, onProgress, onInfo, env: resolver.spawnEnv() });
+        startRun: (binary, args, onProgress, onInfo, onWaiting) => {
+            return runYtdlp({ binary, args, onProgress, onInfo, onWaiting, env: resolver.spawnEnv() });
         },
         addHistory: (entry) => {
             historyStore.add(entry);
@@ -224,7 +219,7 @@ function bootstrap(): void {
             return queue.pendingCount();
         },
         confirm: (pending) => {
-            return confirmPending(QUIT_PROMPT, pending);
+            return confirmPending('quit', pending);
         },
         quit: () => {
             app.quit();
@@ -235,7 +230,7 @@ function bootstrap(): void {
             return queue.pendingCount();
         },
         confirm: (pending) => {
-            return confirmPending(RESTART_PROMPT, pending);
+            return confirmPending('restart', pending);
         },
         quit: () => {
             restartApplication({
@@ -329,7 +324,10 @@ function bootstrap(): void {
             sendToRenderer(IPC.eventStreamProgress, progress);
         },
         onSettingsSaved: (settings) => {
-            void manager.sync(settings.closeToTray);
+            applyLanguage(settings.language, app.getLocale());
+            void manager.sync(settings.closeToTray).then(() => {
+                return manager.rebuild();
+            });
         },
         chooseDirectory: async () => {
             const options = { properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'> };
