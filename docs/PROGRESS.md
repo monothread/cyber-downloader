@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-10-01 · Anime section implemented and **v0.9.0 published** at `github.com/monothread/pullwave` (Windows installer, AppImage, deb, rpm, pacman).
+Last updated: 2026-10-01 · **v0.10.0 published** at `github.com/monothread/pullwave` (Windows installer, AppImage, deb, rpm, pacman): the anime section now also works on Windows.
 
 | ID | Phase | Task | Depends on | Files | Status | Owner | Notes |
 |---|---|---|---|---|---|---|---|
@@ -35,6 +35,7 @@ Last updated: 2026-10-01 · Anime section implemented and **v0.9.0 published** a
 | 14.3 | 14 | Friendly HTTP 403 error and grouping of near-identical stream addresses (D-022) | 14.2 | errorMapper.ts, streamGrouping.ts, StreamFinder UI | DONE | session-2026-09-30-a | Anonymised fixtures; e2e 38/38 |
 | 14.2 | 14 | Hidden browser improvements for embedded players (D-021) + user-responsibility disclaimer (D-020) | 14.1 | src/main/services/browserSniffer.ts, DISCLAIMER.md | DONE | session-2026-09-30-a | Verified with local pages only (e2e 36/36) |
 | 16.1 | 16 | Anime section on Windows (D-039): busybox-w32 + curl.exe bundled, shell wrapper, Windows environment and file names, Test Windows workflow | 15.2 | scripts/fetch-binaries.mjs, electron-builder.yml, .gitattributes, resources/ani-scripts/pullwave-run.sh, aniCliLocator.ts, animeFiles.ts, animeRuntime.ts, animeDb.ts, .github/workflows/test-windows.yml, tests | DONE | session-2026-10-01-a | Verified on a real Windows runner: unit tests, end-to-end with a fake ani-cli and against the real source. Not verified on a real machine or with other antivirus programs |
+| 16.2 | 16 | Release 0.10.0 (the anime section on Windows) | 16.1 | package.json, GitHub Release | DONE | session-2026-10-01-a | Release Linux and Release Windows (the latter now also runs the anime unit tests) ran green from `1b88716`, one draft with 8 files, published. Tag `v0.10.0` = `1b88716` |
 | 15.2 | 15 | Release 0.9.0 | 15.1 | package.json, GitHub Release | DONE | session-2026-10-01-a | Release Linux (built from `cf1ab5d`) and Release Windows (from `34b15cf`, docs only on top) ran green, one draft with 8 files, published. Tag `v0.9.0` = `34b15cf` |
 | 15.1 | 15 | Anime section (Linux): search, download episodes/seasons, SQLite library, player, watch without downloading, subtitles, ani-cli update (D-036 to D-038) | 14.1 | src/main/services/ani*.ts, anime*.ts, mediaProtocol.ts, streamProxy.ts, animeRuntime.ts, ipc/registerAnimeHandlers.ts, src/shared/anime.ts, renderer Anime* + animeStore, resources/ani-scripts, scripts/fetch-binaries.mjs | DONE | session-2026-10-01-a | Verified end to end against the real ani-cli and source (search, a 104 MB episode, player, stream); e2e with a fake ani-cli and a local HLS server. Not verified: dub, a real season, other sources failing, the packaged build on a clean machine |
 | 14.1 | 14 | Stream finder: find and download the video stream of a page yt-dlp does not understand (D-019) | 13.1 | src/main/services/{mediaKinds,pageScanner,sniffRules,browserSniffer,playlistFilter,streamFinder}.ts, JobCard/StreamFinder UI | DONE | session-2026-09-30-a | On branch `feature/stream-sniffer` (not merged, not released). Verified with local pages (e2e) and a public hls.js/Mux test stream |
@@ -47,11 +48,13 @@ Last updated: 2026-10-01 · Anime section implemented and **v0.9.0 published** a
 ## Verification status (2026-10-01)
 - `npx tsc --noEmit --project tsconfig.json`: OK
 - `npx eslint src/ test/ --max-warnings=0`: OK
-- `npx vitest run`: 2245 unit tests OK (94 files)
-- `npx playwright test` (after `npm run build`): 140 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`) and, for the anime section, a fake ani-cli (`test/e2e/fixtures/fake-ani-cli.sh`) and a local HLS server
+- `npx vitest run`: 2299 unit tests OK, 1 skipped (95 files). On a Windows runner (the "Test Windows" workflow): 1278 OK (55 files: the anime section and the interface)
+- `npx playwright test` (after `npm run build`): 144 e2e tests on Linux (141 OK, 3 skipped: the ones that use the real source, run with `PULLWAVE_LIVE=1`; those pass too) and 37 on a Windows runner (all OK, including the real-source ones), with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`) and, for the anime section, a fake ani-cli (`test/e2e/fixtures/fake-ani-cli.sh`) and a local HLS server
 - yt-dlp args validated manually against the real yt-dlp (short download of the test video `jNQXAC9IVRw`).
 
 ## Pending / follow-ups
+- Windows installer (one click, per user): checked on a clean Windows runner with the published 0.9.0 installer. It does install (`%LOCALAPPDATA%\Programs\pullwave`, Start Menu and Desktop shortcuts, the uninstall entry "Pullwave 0.9.0") and starts the app from there, but it takes a minute or more (it unpacks ~220 MB) showing only a small progress window and has no wizard, which can look as if the app "just ran" without being installed (a friend reported exactly that). Not changed. An assisted installer (`oneClick: false`: wizard, progress, a finish page) would make it obvious; it is a decision for the maintainer.
+- Anime on Windows: not tried on a real machine, only on GitHub's Windows runners; other antivirus programs may distrust the unsigned BusyBox and curl.
 - Anime: dubbed audio and a whole real season were not run against the real source; the packaged build (AppImage/deb) was not opened on a clean machine; there is no quality menu while watching a stream and no "go back to the bundled ani-cli" button (deleting `userData/bin/ani-cli` does it); the source ani-cli reads can change or block at any time.
 - Stream finder: review and merge `feature/stream-sniffer`, then release (new version). Not tried on Windows; the hidden browser window and the network rules are the same code, but its behaviour there was not observed.
 - Stream finder ideas not done: choosing the quality of a master playlist in the list, showing a preview/duration, remembering which sites needed the browser, cookies from the user's real browser for sites that need a login.
