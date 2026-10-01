@@ -25,7 +25,7 @@ jobs:
           $url = "https://github.com/monothread/pullwave/releases/download/v$env:VERSION/pullwave-$env:VERSION-setup.exe"
           Invoke-WebRequest -Uri $url -OutFile setup.exe
           Get-Item setup.exe | Format-List Name, Length
-          "sha512 (base64) = " + [Convert]::ToBase64String((Get-FileHash setup.exe -Algorithm SHA512).Hash -split '(?<=\G..)' | Where-Object { $_ } | ForEach-Object { [Convert]::ToByte($_, 16) })
+          "sha512 (base64) = " + [Convert]::ToBase64String([Security.Cryptography.SHA512]::Create().ComputeHash([IO.File]::ReadAllBytes((Resolve-Path setup.exe))))
           Get-AuthenticodeSignature setup.exe | Format-List Status, StatusMessage
           "Mark of the web (Zone.Identifier) present: " + (Test-Path 'setup.exe:Zone.Identifier')
 
