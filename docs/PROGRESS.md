@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-10-01 · Anime section (v0.9.0) implemented; release in progress. Previous: **v0.8.0 published** at `github.com/monothread/pullwave`.
+Last updated: 2026-10-01 · Anime section implemented and **v0.9.0 published** at `github.com/monothread/pullwave` (Windows installer, AppImage, deb, rpm, pacman).
 
 | ID | Phase | Task | Depends on | Files | Status | Owner | Notes |
 |---|---|---|---|---|---|---|---|
@@ -34,7 +34,7 @@ Last updated: 2026-10-01 · Anime section (v0.9.0) implemented; release in progr
 | 14.4 | 14 | Same IP family for IP-bound addresses and a fresh link after a 403 (D-023) | 14.3 | mediaKinds.ts, ytdlpArgsBuilder.ts, streamFinder.ts, JobCard | DONE | session-2026-09-30-a | Generic code; verified with local servers. Not verified against any real site |
 | 14.3 | 14 | Friendly HTTP 403 error and grouping of near-identical stream addresses (D-022) | 14.2 | errorMapper.ts, streamGrouping.ts, StreamFinder UI | DONE | session-2026-09-30-a | Anonymised fixtures; e2e 38/38 |
 | 14.2 | 14 | Hidden browser improvements for embedded players (D-021) + user-responsibility disclaimer (D-020) | 14.1 | src/main/services/browserSniffer.ts, DISCLAIMER.md | DONE | session-2026-09-30-a | Verified with local pages only (e2e 36/36) |
-| 15.2 | 15 | Release 0.9.0 | 15.1 | package.json, GitHub Release | DOING | session-2026-10-01-a | Linux and Windows workflows dispatched from `main`; the draft is published after both finish |
+| 15.2 | 15 | Release 0.9.0 | 15.1 | package.json, GitHub Release | DONE | session-2026-10-01-a | Release Linux (built from `cf1ab5d`) and Release Windows (from `34b15cf`, docs only on top) ran green, one draft with 8 files, published. Tag `v0.9.0` = `34b15cf` |
 | 15.1 | 15 | Anime section (Linux): search, download episodes/seasons, SQLite library, player, watch without downloading, subtitles, ani-cli update (D-036 to D-038) | 14.1 | src/main/services/ani*.ts, anime*.ts, mediaProtocol.ts, streamProxy.ts, animeRuntime.ts, ipc/registerAnimeHandlers.ts, src/shared/anime.ts, renderer Anime* + animeStore, resources/ani-scripts, scripts/fetch-binaries.mjs | DONE | session-2026-10-01-a | Verified end to end against the real ani-cli and source (search, a 104 MB episode, player, stream); e2e with a fake ani-cli and a local HLS server. Not verified: dub, a real season, other sources failing, the packaged build on a clean machine |
 | 14.1 | 14 | Stream finder: find and download the video stream of a page yt-dlp does not understand (D-019) | 13.1 | src/main/services/{mediaKinds,pageScanner,sniffRules,browserSniffer,playlistFilter,streamFinder}.ts, JobCard/StreamFinder UI | DONE | session-2026-09-30-a | On branch `feature/stream-sniffer` (not merged, not released). Verified with local pages (e2e) and a public hls.js/Mux test stream |
 
