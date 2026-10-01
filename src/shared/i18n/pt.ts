@@ -353,7 +353,7 @@ export const pt: Messages = {
     'anime.error.BINARY_MISSING': 'Um programa que a seção de animes precisa não foi encontrado. Reinstale o aplicativo.',
     'anime.error.UNKNOWN': 'Algo deu errado. Veja os detalhes.',
     'anime.error.details': 'DETALHES',
-    'settings.anime': 'ANIME (LINUX)',
+    'settings.anime': 'ANIME',
     'settings.animeDownloadDir': 'Pasta de download dos animes',
     'settings.animeDownloadDir.placeholder': 'Padrão: Downloads/Pullwave Anime',
     'settings.animeQuality': 'Qualidade dos animes',

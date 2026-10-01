@@ -7,7 +7,8 @@ import { join, resolve } from 'node:path';
 const ROOT = resolve(__dirname, '../..');
 const ELECTRON_PATH = createRequire(__filename)('electron') as unknown as string;
 const FAKE_ANI_CLI = resolve(__dirname, 'fixtures/fake-ani-cli.sh');
-const HAS_ANI_TOOLS = ['busybox', 'curl', 'ani-cli'].every((name) => {
+const EXE = process.platform === 'win32' ? '.exe' : '';
+const HAS_ANI_TOOLS = [`busybox${EXE}`, `curl${EXE}`, 'ani-cli'].every((name) => {
     return existsSync(join(ROOT, 'resources', 'bin', 'ani', name));
 });
 const LONG_TITLE = 'An extremely long title that goes on and on and on for a very long time so that it has to be cut short somewhere '.repeat(4);

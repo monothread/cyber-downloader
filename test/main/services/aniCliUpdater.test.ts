@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { applyLanguage } from '@main/services/language';
+import { executableName } from '@main/services/binaryResolver';
 import { AniCliLocator, type AniLocations, type AniToolsFs } from '@main/services/aniCliLocator';
 import {
     COMMIT_API_URL,
@@ -13,7 +14,7 @@ import {
 } from '@main/services/aniCliUpdater';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
 
-const BUSYBOX = join(__dirname, '../../../resources/bin/ani/busybox');
+const BUSYBOX = join(__dirname, '../../../resources/bin/ani', executableName('busybox'));
 const SHA = 'a'.repeat(40);
 const LOCATIONS: AniLocations = { bundledDir: '/app/resources/bin', scriptsDir: '/app/scripts', userBinDir: '/data/bin', dataDir: '/data/anime' };
 const BUNDLED = '/app/resources/bin/ani/ani-cli';
@@ -58,7 +59,7 @@ function setup(options: { installed?: string | null; latest?: string; commit?: s
             return undefined;
         }
     };
-    const locator = new AniCliLocator(LOCATIONS, fs);
+    const locator = new AniCliLocator(LOCATIONS, fs, 'linux');
     const calls = { fetched: [] as string[], written: [] as Array<[string, string]>, replaced: [] as Array<[string, string]>, removed: [] as string[], directories: [] as string[], checked: [] as string[] };
     const deps: AniCliUpdaterDependencies = {
         fetchText: async (url) => {

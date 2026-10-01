@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AnimeJob } from '@shared/anime';
 import { DEFAULT_SETTINGS, IPC } from '@shared/constants';
-import { createAnimeRuntime, type AnimeRuntimeOptions } from '@main/animeRuntime';
+import { createAnimeRuntime, REMOVE_RETRY_MS, type AnimeRuntimeOptions } from '@main/animeRuntime';
 import { AnimeDb } from '@main/services/animeDb';
 import { BinaryResolver } from '@main/services/binaryResolver';
 import { cleanTempDirs, makeTempDir } from '../helpers/tempDir';
@@ -15,7 +15,7 @@ function options(overrides: Partial<AnimeRuntimeOptions> = {}) {
     const root = makeTempDir();
     const send = vi.fn();
     const base: AnimeRuntimeOptions = {
-        platform: 'linux',
+        platform: process.platform,
         dataDir: join(root, 'data'),
         bundledDir: join(root, 'resources', 'bin'),
         scriptsDir: join(root, 'resources', 'ani-scripts'),
@@ -37,9 +37,14 @@ async function flush(): Promise<void> {
 }
 
 describe('createAnimeRuntime', () => {
-    it('does not exist outside Linux', () => {
-        expect(createAnimeRuntime(options({ platform: 'win32' }).options)).toBeNull();
+    it('does not exist where the section is not available', () => {
         expect(createAnimeRuntime(options({ platform: 'darwin' }).options)).toBeNull();
+        expect(createAnimeRuntime(options({ platform: 'freebsd' }).options)).toBeNull();
+    });
+
+    it('exists on Linux and on Windows', () => {
+        expect(createAnimeRuntime(options({ platform: 'linux' }).options)).not.toBeNull();
+        expect(createAnimeRuntime(options({ platform: 'win32' }).options)).not.toBeNull();
     });
 
     it('creates the library under the data folder', () => {
@@ -168,6 +173,69 @@ describe('createAnimeRuntime', () => {
     it('uses the anime folder of the settings', () => {
         const { options: given } = options({ getSettings: () => { return { ...DEFAULT_SETTINGS, animeDownloadDir: '/media/anime' }; } });
         expect(createAnimeRuntime(given)?.handlers.baseDirectory()).toBe('/media/anime');
+    });
+
+    describe('removing again what could not be removed at once', () => {
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('tries again for what is still there after a moment, but not before', () => {
+            vi.useFakeTimers();
+            const { root, options: given } = options({ removeRetryMs: 500 });
+            const video = join(root, 'a.mp4');
+            writeFileSync(video, 'x');
+            const files = vi.fn();
+            const runtime = createAnimeRuntime({ ...given, remover: { files, folders: vi.fn() } });
+
+            runtime?.handlers.removeFiles([video, join(root, 'gone.vtt')]);
+            expect(files.mock.calls).toEqual([[[video, join(root, 'gone.vtt')]]]);
+            vi.advanceTimersByTime(499);
+            expect(files).toHaveBeenCalledTimes(1);
+            vi.advanceTimersByTime(1);
+            expect(files.mock.calls[1]).toEqual([[video]]);
+        });
+
+        it('does not try again when everything is gone', () => {
+            vi.useFakeTimers();
+            const { root, options: given } = options({ removeRetryMs: 500 });
+            const files = vi.fn();
+            createAnimeRuntime({ ...given, remover: { files, folders: vi.fn() } })?.handlers.removeFiles([join(root, 'gone.mp4')]);
+            vi.advanceTimersByTime(1000);
+            expect(files).toHaveBeenCalledTimes(1);
+        });
+
+        it('does the same for folders', () => {
+            vi.useFakeTimers();
+            const { root, options: given } = options({ removeRetryMs: 100 });
+            const folder = join(root, 'Naruto');
+            mkdirSync(folder);
+            const folders = vi.fn();
+            createAnimeRuntime({ ...given, remover: { files: vi.fn(), folders } })?.handlers.removeFolders([folder]);
+            vi.advanceTimersByTime(100);
+            expect(folders.mock.calls).toEqual([[[folder]], [[folder]]]);
+        });
+
+        it('waits 500 ms by default', () => {
+            vi.useFakeTimers();
+            const { root, options: given } = options();
+            const video = join(root, 'a.mp4');
+            writeFileSync(video, 'x');
+            const files = vi.fn();
+            createAnimeRuntime({ ...given, remover: { files, folders: vi.fn() } })?.handlers.removeFiles([video]);
+            vi.advanceTimersByTime(REMOVE_RETRY_MS - 1);
+            expect(files).toHaveBeenCalledTimes(1);
+            vi.advanceTimersByTime(1);
+            expect(files).toHaveBeenCalledTimes(2);
+        });
+
+        it('really removes with the default removers', () => {
+            const { root, options: given } = options({ removeRetryMs: 10 });
+            const video = join(root, 'a.mp4');
+            writeFileSync(video, 'x');
+            createAnimeRuntime(given)?.handlers.removeFiles([video]);
+            expect(existsSync(video)).toBe(false);
+        });
     });
 
     it('wires the queue to the folders, the screen and ani-cli', async () => {

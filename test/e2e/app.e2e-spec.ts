@@ -1058,7 +1058,7 @@ test.describe('settings layout', () => {
         });
         expect(boxes.map((box) => {
             return box.legend;
-        })).toEqual(['APPEARANCE & WINDOW', 'OUTPUT', 'ANIME (LINUX)', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'APP UPDATES', 'ADVANCED']);
+        })).toEqual(['APPEARANCE & WINDOW', 'OUTPUT', 'ANIME', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'APP UPDATES', 'ADVANCED']);
         const regular = boxes.filter((box) => {
             return !box.wide;
         });
@@ -1080,7 +1080,7 @@ test.describe('settings layout', () => {
         });
         expect(wide.map((box) => {
             return box.legend;
-        })).toEqual(['ANIME (LINUX)', 'ADVANCED']);
+        })).toEqual(['ANIME', 'ADVANCED']);
         wide.forEach((box) => {
             expect(box.width).toBeGreaterThan((regular[0]?.width ?? 0) * 1.8);
         });

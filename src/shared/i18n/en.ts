@@ -369,7 +369,7 @@ export const en = {
     'anime.error.BINARY_MISSING': 'A program the anime section needs was not found. Reinstall the app.',
     'anime.error.UNKNOWN': 'Something went wrong. See the details.',
     'anime.error.details': 'DETAILS',
-    'settings.anime': 'ANIME (LINUX)',
+    'settings.anime': 'ANIME',
     'settings.animeDownloadDir': 'Anime download folder',
     'settings.animeDownloadDir.placeholder': 'Default: Downloads/Pullwave Anime',
     'settings.animeQuality': 'Anime quality',

@@ -1,5 +1,6 @@
-import { mkdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { isAnimeSupported } from '@shared/anime';
 import { IPC } from '@shared/constants';
 import { resolveLanguage } from '@shared/i18n';
 import type { Settings } from '@shared/types';
@@ -16,6 +17,10 @@ import type { MediaSource } from './services/mediaProtocol';
 import { createStreamHandler, StreamSessions } from './services/streamProxy';
 import { removeFiles } from './services/partialFiles';
 
+// A file the player has just let go of can still be held for a moment (Windows will not delete it then): what is left is
+// removed again after this long.
+export const REMOVE_RETRY_MS = 500;
+
 export interface AnimeRuntimeOptions {
     platform: NodeJS.Platform;
     // userData: the library lives in <dataDir>/anime.
@@ -30,6 +35,10 @@ export interface AnimeRuntimeOptions {
     systemLocale: string;
     // A different ani-cli to run instead of the one that ships with the app (used by the end-to-end tests).
     customScriptPath?: () => string;
+    // How files and folders are deleted (the tests replace it).
+    remover?: { files: (paths: string[]) => void; folders: (paths: string[]) => void };
+    // How long to wait before removing again what could not be removed at first (the tests make it short).
+    removeRetryMs?: number;
     // How the update of ani-cli reaches the network and checks what it got (the end-to-end tests replace it).
     updaterDependencies?: AniCliUpdaterDependencies;
     send: (channel: string, payload?: unknown) => void;
@@ -53,21 +62,36 @@ function fileSize(path: string): number | null {
     }
 }
 
-// Everything the anime section needs, or null where it does not exist (it is Linux only).
+function removeAgainLater(paths: string[], remove: (paths: string[]) => void, milliseconds: number): void {
+    setTimeout(() => {
+        const left = paths.filter((path) => {
+            return existsSync(path);
+        });
+        if (left.length > 0) {
+            remove(left);
+        }
+    }, milliseconds).unref();
+}
+
+// Everything the anime section needs, or null where it does not exist (it is available on Linux and Windows).
 export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime | null {
-    if (options.platform !== 'linux') {
+    if (!isAnimeSupported(options.platform)) {
         return null;
     }
     const animeDir = join(options.dataDir, 'anime');
     const db = new AnimeDb(join(animeDir, 'anime.db'));
     // The queue lives in memory: what was not finished when the app closed has to be started again by the user.
     db.failInterrupted();
-    const locator = new AniCliLocator({
-        bundledDir: options.bundledDir,
-        scriptsDir: options.scriptsDir,
-        userBinDir: join(options.dataDir, 'bin'),
-        dataDir: animeDir
-    });
+    const locator = new AniCliLocator(
+        {
+            bundledDir: options.bundledDir,
+            scriptsDir: options.scriptsDir,
+            userBinDir: join(options.dataDir, 'bin'),
+            dataDir: animeDir
+        },
+        undefined,
+        options.platform
+    );
     const customScriptPath = options.customScriptPath ?? ((): string => {
         return '';
     });
@@ -90,6 +114,7 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
         },
         getSettings: options.getSettings,
         defaultDownloadDir: options.defaultDownloadDir,
+        platform: options.platform,
         ensureDirectory: (path) => {
             mkdirSync(path, { recursive: true });
         },
@@ -128,13 +153,18 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
             queue,
             db,
             removeFiles: (paths) => {
-                removeFiles(paths);
+                const remove = options.remover?.files ?? removeFiles;
+                remove(paths);
+                removeAgainLater(paths, remove, options.removeRetryMs ?? REMOVE_RETRY_MS);
             },
             removeFolders: (paths) => {
-                removeDirectories(paths);
+                const remove = options.remover?.folders ?? removeDirectories;
+                remove(paths);
+                removeAgainLater(paths, remove, options.removeRetryMs ?? REMOVE_RETRY_MS);
             },
+            platform: options.platform,
             baseDirectory: () => {
-                return animeBaseDirectory(options.getSettings(), options.defaultDownloadDir);
+                return animeBaseDirectory(options.getSettings(), options.defaultDownloadDir, options.platform);
             },
             onLibraryChanged: () => {
                 options.send(IPC.eventAnimeLibrary);

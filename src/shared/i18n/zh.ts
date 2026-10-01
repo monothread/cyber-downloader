@@ -344,7 +344,7 @@ export const zh: Messages = {
     'anime.error.BINARY_MISSING': '找不到动漫功能所需的程序。请重新安装应用。',
     'anime.error.UNKNOWN': '出错了，请查看详情。',
     'anime.error.details': '详情',
-    'settings.anime': '动漫 (LINUX)',
+    'settings.anime': '动漫',
     'settings.animeDownloadDir': '动漫下载文件夹',
     'settings.animeDownloadDir.placeholder': '默认：Downloads/Pullwave Anime',
     'settings.animeQuality': '动漫画质',

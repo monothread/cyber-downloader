@@ -82,12 +82,13 @@ export class AniCliService {
         if (script === null) {
             return null;
         }
-        this.deps.locator.prepareTools(this.deps.tools());
+        const tools = this.deps.tools();
+        this.deps.locator.prepareTools(tools);
         const command = this.deps.locator.command(this.deps.locator.withPatches(script));
         return this.run({
             binary: command.binary,
             args: [...command.args, ...args],
-            env: this.deps.locator.env({ audio, downloadDir, subtitleLabels: this.deps.subtitleLabels?.() ?? [], player }),
+            env: this.deps.locator.env({ audio, downloadDir, subtitleLabels: this.deps.subtitleLabels?.() ?? [], player, tools }),
             ...extra
         });
     }

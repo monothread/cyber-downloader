@@ -33,6 +33,8 @@ export interface AnimeHandlerDependencies {
     removeFolders: (paths: string[]) => void;
     // The folder all the anime go into, as the settings say now.
     baseDirectory: () => string;
+    // The system the files are on (decides the rules of folder names); this one by default.
+    platform?: NodeJS.Platform;
     onLibraryChanged: () => void;
 }
 
@@ -230,7 +232,7 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
         );
         const files = db.removeAnime(id);
         deps.removeFiles(files.flatMap(filesOfEpisode));
-        deps.removeFolders(animeFoldersToRemove(anime.title, files, deps.baseDirectory()));
+        deps.removeFolders(animeFoldersToRemove(anime.title, files, deps.baseDirectory(), deps.platform));
         deps.onLibraryChanged();
     });
     ipcMain.handle(IPC.animeStreamOpen, async (_event, input): Promise<AnimeStreamResponse> => {

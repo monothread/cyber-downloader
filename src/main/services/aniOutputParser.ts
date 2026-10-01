@@ -1,6 +1,6 @@
 import type { AniDownloadProgress, AniError, AniErrorCode, AnimeSearchResult } from '@shared/anime';
 
-// Prefix of every choice that `pullwave-menu` (the stand-in for fzf) reports on stderr: PULLWAVE_MENU<TAB>prompt<TAB>line.
+// Prefix of every choice that `pullwave_menu` (the stand-in for fzf, see pullwave-run.sh) reports on stderr: PULLWAVE_MENU<TAB>prompt<TAB>line.
 export const MENU_PREFIX = 'PULLWAVE_MENU';
 export const ANIME_PROMPT = 'Select anime:';
 export const EPISODE_PROMPT = 'Select episode:';

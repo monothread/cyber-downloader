@@ -732,7 +732,7 @@ describe('SettingsPanel yt-dlp update', () => {
 describe('SettingsPanel anime section', () => {
     it('is left out where the section does not exist', () => {
         render(<SettingsPanel />);
-        expect(screen.queryByText('ANIME (LINUX)')).not.toBeInTheDocument();
+        expect(screen.queryByText('ANIME')).not.toBeInTheDocument();
         expect(screen.queryByLabelText('Anime download folder')).not.toBeInTheDocument();
     });
 
@@ -744,7 +744,7 @@ describe('SettingsPanel anime section', () => {
         it('shows the stored values', () => {
             useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, animeDownloadDir: '/media/anime', animeQuality: '720p', animeAudio: 'dub' } });
             render(<SettingsPanel />);
-            expect(screen.getByText('ANIME (LINUX)')).toBeInTheDocument();
+            expect(screen.getByText('ANIME')).toBeInTheDocument();
             expect(screen.getByLabelText('Anime download folder')).toHaveValue('/media/anime');
             expect(screen.getByLabelText('Anime download folder')).toHaveAttribute('placeholder', 'Default: Downloads/Pullwave Anime');
             expect(screen.getByLabelText('Anime quality')).toHaveValue('720p');

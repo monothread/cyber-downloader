@@ -153,3 +153,8 @@ export interface AnimeStream {
 }
 
 export type AnimeStreamResponse = { ok: true; stream: AnimeStream } | { ok: false; error: AniError };
+
+// The anime section needs a POSIX shell and a few tools that ship with the app for these systems.
+export function isAnimeSupported(platform: string): boolean {
+    return platform === 'linux' || platform === 'win32';
+}

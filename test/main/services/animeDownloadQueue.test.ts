@@ -18,7 +18,7 @@ interface Download {
 const DOWNLOADS = '/home/me/Downloads';
 const REQUEST: AnimeDownloadRequest = { title: 'Naruto', query: 'naruto', index: 2, audio: 'sub', episodes: ['1', '2', '3'] };
 
-function setup(settings: Partial<Settings> = {}, files: Record<string, number> = {}) {
+function setup(settings: Partial<Settings> = {}, files: Record<string, number> = {}, system: { platform?: NodeJS.Platform; downloads?: string } = {}) {
     const db = new AnimeDb(':memory:', () => {
         return 1000;
     });
@@ -44,7 +44,8 @@ function setup(settings: Partial<Settings> = {}, files: Record<string, number> =
         getSettings: () => {
             return state.settings;
         },
-        defaultDownloadDir: DOWNLOADS,
+        defaultDownloadDir: system.downloads ?? DOWNLOADS,
+        platform: system.platform,
         ensureDirectory,
         fileSize: (path) => {
             return state.files[path] ?? null;
@@ -158,6 +159,42 @@ describe('AnimeDownloadQueue.enqueue', () => {
         expect(downloads).toHaveLength(2);
         expect(queue.list()).toHaveLength(1);
         expect(queue.list()[0]).toMatchObject({ status: 'running', error: null });
+    });
+});
+
+describe('AnimeDownloadQueue on Windows', () => {
+    const WINDOWS_DOWNLOADS = 'C:\\Users\\me\\Downloads';
+
+    it('saves in a folder named after the anime with Windows rules, inside Downloads', () => {
+        const { queue, downloads, ensureDirectory } = setup({}, {}, { platform: 'win32', downloads: WINDOWS_DOWNLOADS });
+        queue.enqueue({ ...REQUEST, title: 'NUL', episodes: ['1'] });
+        const folder = 'C:\\Users\\me\\Downloads\\Pullwave Anime\\_NUL';
+        expect(downloads[0]?.options.downloadDir).toBe(folder);
+        expect(ensureDirectory).toHaveBeenCalledWith(folder);
+    });
+
+    it('uses the folder of the settings', () => {
+        const { queue, downloads } = setup({ animeDownloadDir: 'D:\\Anime' }, {}, { platform: 'win32', downloads: WINDOWS_DOWNLOADS });
+        queue.enqueue({ ...REQUEST, title: 'Re:Zero', episodes: ['1'] });
+        expect(downloads[0]?.options.downloadDir).toBe('D:\\Anime\\Re_Zero');
+    });
+
+    it('looks for the file in that folder when yt-dlp did not say where it wrote', async () => {
+        const path = 'D:\\Anime\\Re_Zero\\Re_Zero Episode 1.mp4';
+        const { queue, db, downloads } = setup({ animeDownloadDir: 'D:\\Anime' }, { [path]: 10 }, { platform: 'win32', downloads: WINDOWS_DOWNLOADS });
+        queue.enqueue({ ...REQUEST, title: 'Re:Zero', episodes: ['1'] });
+        downloads[0]?.finish(doneAt(null));
+        await settleResults();
+        expect(db.getEpisode(1)).toMatchObject({ status: 'done', filePath: path });
+    });
+
+    it('keeps the path of a long title inside the limit of Windows', () => {
+        const base = `C:\\${'a'.repeat(120)}`;
+        const { queue, downloads } = setup({ animeDownloadDir: base }, {}, { platform: 'win32', downloads: WINDOWS_DOWNLOADS });
+        const title = 'T'.repeat(60);
+        queue.enqueue({ ...REQUEST, title, episodes: ['1'] });
+        const folder = downloads[0]?.options.downloadDir ?? '';
+        expect(`${folder}\\${title} Episode 999.mp4`.length).toBeLessThanOrEqual(240);
     });
 });
 

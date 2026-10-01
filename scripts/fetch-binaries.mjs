@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Downloads the third-party binaries bundled with the app (yt-dlp, ffmpeg/ffprobe, deno and, on Linux, the ani-cli
-// toolset in resources/bin/ani) into resources/bin.
+// Downloads the third-party binaries bundled with the app (yt-dlp, ffmpeg/ffprobe, deno and the ani-cli toolset in
+// resources/bin/ani) into resources/bin.
 // Every download is verified against the checksum published by its source.
 //
 //   node scripts/fetch-binaries.mjs [--platform=linux|win32] [--out=<dir>] [--force]
@@ -76,27 +76,50 @@ if (!TARGET) {
     process.exit(1);
 }
 
-// The anime section (ani-cli) exists on Linux only. Everything it needs ships inside the app, pinned to one version and
-// one checksum each: busybox provides sh and the core utilities the script calls, curl does its HTTPS requests.
+// The anime section (ani-cli) needs a shell and a few tools that must not come from the system. Everything ships inside the
+// app, pinned to one version and one checksum each: busybox provides sh and the core utilities the script calls (busybox-w32
+// on Windows), curl does its HTTPS requests.
 const ANI_DIR = join(BIN_DIR, 'ani');
 const ANI_MARKER = join(ANI_DIR, '.sources');
-const ANI_SOURCES = {
-    aniCli: {
-        // A commit of the master branch (version 5.1.4): the latest tagged release is much older.
-        url: 'https://raw.githubusercontent.com/pystardust/ani-cli/3ad53631ef2433b0c26e25ab011a5b149706c120/ani-cli',
-        sha256: '32ae0965b7abb102ab85f381411b980d1a9196f06bf2756d48fef16695b41d47'
+const ANI_CLI_SOURCE = {
+    // A commit of the master branch (version 5.1.4): the latest tagged release is much older.
+    url: 'https://raw.githubusercontent.com/pystardust/ani-cli/3ad53631ef2433b0c26e25ab011a5b149706c120/ani-cli',
+    sha256: '32ae0965b7abb102ab85f381411b980d1a9196f06bf2756d48fef16695b41d47'
+};
+const BUSYBOX_W32_BASE = 'https://frippery.org/files/busybox';
+const ANI_TOOLS = {
+    linux: {
+        // busybox.net publishes no checksums, so the hash of the downloaded file is pinned here.
+        busybox: {
+            url: 'https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox',
+            sha256: '6e123e7f3202a8c1e9b1f94d8941580a25135382b99e8d3e34fb858bba311348'
+        },
+        busyboxFile: 'busybox',
+        curl: {
+            url: 'https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-x86_64-musl-8.22.0.tar.xz',
+            sha256: 'dfb02460ba2abe513087538f12a3cf79b74b64a5ea3787ce8ac0cdb11251f884'
+        },
+        curlFile: 'curl'
     },
-    // busybox.net publishes no checksums, so the hash of the downloaded file is pinned here.
-    busybox: {
-        url: 'https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox',
-        sha256: '6e123e7f3202a8c1e9b1f94d8941580a25135382b99e8d3e34fb858bba311348'
-    },
-    curl: {
-        url: 'https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-x86_64-musl-8.22.0.tar.xz',
-        sha256: 'dfb02460ba2abe513087538f12a3cf79b74b64a5ea3787ce8ac0cdb11251f884'
+    win32: {
+        // The 64-bit Unicode build (Windows 10 1903 or newer). Its site also publishes a signed SHA256SUM, which is checked too.
+        busybox: {
+            url: `${BUSYBOX_W32_BASE}/busybox-w64u-FRP-6075-g169694ebd.exe`,
+            sha256: '6e263d154d8548d1eb936f65d1d8312c80df31c45974e48d6335e4dcc0f4f34c',
+            publishedSums: `${BUSYBOX_W32_BASE}/SHA256SUM`,
+            publishedName: 'busybox-w64u-FRP-6075-g169694ebd.exe'
+        },
+        busyboxFile: 'busybox.exe',
+        curl: {
+            url: 'https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-windows-x86_64-8.22.0.tar.xz',
+            sha256: '8a57d1a52ea246f50be9e3f24a1d539d4fd23884405efbe18c6eb44eaf8ca524'
+        },
+        curlFile: 'curl.exe'
     }
 };
-const ANI_FILES = ['ani-cli', 'busybox', 'curl'];
+const ANI = ANI_TOOLS[PLATFORM];
+const ANI_SOURCES = { aniCli: ANI_CLI_SOURCE, busybox: ANI.busybox, curl: ANI.curl };
+const ANI_FILES = ['ani-cli', ANI.busyboxFile, ANI.curlFile];
 
 async function download(url) {
     const response = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'pullwave-build' } });
@@ -141,6 +164,17 @@ function extractZip(archivePath, destination) {
         return;
     }
     execFileSync('unzip', ['-o', '-q', archivePath, '-d', destination]);
+}
+
+// A .tar.xz archive. Windows' own bsdtar reads it; the "tar" first in PATH there may be Git for Windows' GNU tar.
+function extractTarXz(archivePath, destination) {
+    mkdirSync(destination, { recursive: true });
+    if (process.platform === 'win32') {
+        const systemTar = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
+        execFileSync(existsSync(systemTar) ? systemTar : 'tar', ['-xf', archivePath, '-C', destination]);
+        return;
+    }
+    execFileSync('tar', ['-xJf', archivePath, '-C', destination]);
 }
 
 function findFile(directory, fileName) {
@@ -301,24 +335,42 @@ async function fetchVerified(source, label) {
     return data;
 }
 
+// Where the maintainer publishes the checksums of a binary, they must agree with the one pinned here. An entry that is gone (old
+// builds are deleted after a while) is not an error: the pinned hash is what is trusted.
+async function crossCheckPublishedHash(source, label) {
+    if (!source.publishedSums) {
+        return;
+    }
+    const line = (await download(source.publishedSums)).toString('utf-8').split('\n').find((candidate) => {
+        return candidate.trim().endsWith(source.publishedName);
+    });
+    if (!line) {
+        console.warn(`${label}: not listed in ${source.publishedSums} any more; trusting the pinned hash`);
+        return;
+    }
+    if (extractHash(line, 64).toLowerCase() !== source.sha256) {
+        throw new Error(`${label}: the checksum published at ${source.publishedSums} differs from the pinned one`);
+    }
+}
+
 async function fetchAniTools(workDir) {
-    if (PLATFORM !== 'linux' || isAniCurrent()) {
+    if (isAniCurrent()) {
         return;
     }
     console.log('> ani-cli + busybox + curl');
     mkdirSync(ANI_DIR, { recursive: true });
     writeFileSync(join(workDir, 'ani-cli'), await fetchVerified(ANI_SOURCES.aniCli, 'ani-cli'));
-    writeFileSync(join(workDir, 'busybox'), await fetchVerified(ANI_SOURCES.busybox, 'busybox'));
+    writeFileSync(join(workDir, ANI.busyboxFile), await fetchVerified(ANI_SOURCES.busybox, 'busybox'));
+    await crossCheckPublishedHash(ANI_SOURCES.busybox, 'busybox');
     const curlArchive = join(workDir, 'curl.tar.xz');
     writeFileSync(curlArchive, await fetchVerified(ANI_SOURCES.curl, 'curl'));
     const extracted = join(workDir, 'curl');
-    mkdirSync(extracted, { recursive: true });
-    execFileSync('tar', ['-xJf', curlArchive, '-C', extracted]);
-    const curl = findFile(extracted, 'curl');
+    extractTarXz(curlArchive, extracted);
+    const curl = findFile(extracted, ANI.curlFile);
     if (!curl) {
-        throw new Error('curl not found in the static-curl archive');
+        throw new Error(`${ANI.curlFile} not found in the static-curl archive`);
     }
-    for (const [source, name] of [[join(workDir, 'ani-cli'), 'ani-cli'], [join(workDir, 'busybox'), 'busybox'], [curl, 'curl']]) {
+    for (const [source, name] of [[join(workDir, 'ani-cli'), 'ani-cli'], [join(workDir, ANI.busyboxFile), ANI.busyboxFile], [curl, ANI.curlFile]]) {
         const target = join(ANI_DIR, name);
         copyFileSync(source, target);
         chmodSync(target, 0o755);

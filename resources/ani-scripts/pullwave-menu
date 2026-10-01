@@ -1,9 +1,0 @@
-#!/bin/sh
-# Stands in for fzf/rofi/dmenu. ani-cli hands the choices to this program on stdin, one per line, with the prompt as the
-# last argument. Each choice is reported on stderr (ani-cli captures stdout, not stderr) as
-# PULLWAVE_MENU<TAB>prompt<TAB>line, and the program fails so ani-cli stops right after listing.
-for prompt; do :; done
-while IFS= read -r line; do
-    printf 'PULLWAVE_MENU\t%s\t%s\n' "$prompt" "$line" >&2
-done
-exit 1

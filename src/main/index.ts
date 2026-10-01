@@ -1,6 +1,6 @@
 import { delimiter, join } from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, protocol, session, shell } from 'electron';
-import { ANIME_MEDIA_SCHEME, ANIME_STREAM_SCHEME } from '@shared/anime';
+import { ANIME_MEDIA_SCHEME, ANIME_STREAM_SCHEME, isAnimeSupported } from '@shared/anime';
 import { IPC } from '@shared/constants';
 import { createAnimeRuntime } from './animeRuntime';
 import { registerAnimeHandlers } from './ipc/registerAnimeHandlers';
@@ -40,8 +40,9 @@ const STARTUP_UPDATE_CHECK_DELAY_MS = 5000;
 const PRODUCTION_CSP =
     `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${ANIME_STREAM_SCHEME}:; media-src 'self' blob: ${ANIME_MEDIA_SCHEME}: ${ANIME_STREAM_SCHEME}:`;
 
-// The scheme the anime player reads files through has to be declared before the app is ready (Linux only, like the section).
-if (process.platform === 'linux') {
+// The schemes the anime player reads files and streams through have to be declared before the app is ready (only where the
+// anime section exists).
+if (isAnimeSupported(process.platform)) {
     protocol.registerSchemesAsPrivileged([
         { scheme: ANIME_MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
         { scheme: ANIME_STREAM_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }

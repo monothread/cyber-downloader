@@ -3,4 +3,3 @@
 *.sh text eol=lf
 resources/ani-scripts/* text eol=lf
 test/e2e/fixtures/*.sh text eol=lf
-scripts/spike/* text eol=lf

@@ -100,6 +100,7 @@ function setup(available = true) {
         baseDirectory: () => {
             return '/lib';
         },
+        platform: 'linux',
         onLibraryChanged
     } as unknown as AnimeHandlerDependencies;
     registerAnimeHandlers(ipc.ipcMain, deps);

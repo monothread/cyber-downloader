@@ -10,6 +10,7 @@ const LOCATIONS: AniLocations = {
     dataDir: '/data/anime'
 };
 const SCRIPT = '/app/resources/bin/ani/ani-cli';
+const RUNNER = '/app/resources/ani-scripts/pullwave-run.sh';
 const TOOLS: AniTools = {
     ytdlp: { path: '/app/resources/bin/yt-dlp', source: 'bundled' },
     ffmpeg: { path: '/app/resources/bin/ffmpeg', source: 'bundled' }
@@ -80,7 +81,7 @@ function setup(results: Array<AniRunResult<AniRunOutcome>>, scriptExists: Array<
             return undefined;
         }
     };
-    const locator = new AniCliLocator(LOCATIONS, fs);
+    const locator = new AniCliLocator(LOCATIONS, fs, 'linux');
     const prepareTools = vi.spyOn(locator, 'prepareTools');
     const cancel = vi.fn();
     const queue = [...results];
@@ -125,13 +126,13 @@ describe('AniCliService subtitles', () => {
     it('runs the patched copy of the script when it can be patched', async () => {
         const { service, callsOf } = setup([done(outcome({ exitCode: 0 }))], [true], { scriptText: PATCHABLE });
         await service.download({ query: 'naruto', index: 1, episode: '1', quality: 'best', audio: 'sub', downloadDir: '/d' }).result;
-        expect(callsOf()[0]?.args.slice(0, 2)).toEqual(['sh', '/data/anime/ani-cli.patched']);
+        expect(callsOf()[0]?.args.slice(0, 3)).toEqual(['sh', RUNNER, '/data/anime/ani-cli.patched']);
     });
 
     it('runs the script as it is when it cannot be patched', async () => {
         const { service, callsOf } = setup([done(outcome({ exitCode: 0 }))], [true], { scriptText: 'something else' });
         await service.download({ query: 'naruto', index: 1, episode: '1', quality: 'best', audio: 'sub', downloadDir: '/d' }).result;
-        expect(callsOf()[0]?.args.slice(0, 2)).toEqual(['sh', SCRIPT]);
+        expect(callsOf()[0]?.args.slice(0, 3)).toEqual(['sh', RUNNER, SCRIPT]);
     });
 });
 
@@ -145,7 +146,7 @@ describe('AniCliService.resolveStream', () => {
         expect(await service.resolveStream(request)).toEqual({ status: 'done', value: { url: LINK, subtitleUrl: 'https://s/pt.vtt', referer: 'https://embed.example/' } });
 
         const [call] = callsOf();
-        expect(call?.args).toEqual(['sh', SCRIPT, '-S', '2', '-e', '4', '-q', '720p', 'naruto']);
+        expect(call?.args).toEqual(['sh', RUNNER, SCRIPT, '-S', '2', '-e', '4', '-q', '720p', 'naruto']);
         expect(call?.env).toMatchObject({ ANI_CLI_PLAYER: 'debug', ANI_CLI_MODE: 'dub', ANI_CLI_DOWNLOAD_DIR: '.' });
     });
 
@@ -204,12 +205,12 @@ describe('AniCliService.search', () => {
         expect(prepareTools).toHaveBeenCalledWith(TOOLS);
         const [call] = callsOf();
         expect(call?.binary).toBe('/app/resources/bin/ani/busybox');
-        expect(call?.args).toEqual(['sh', SCRIPT, 'd naruto']);
+        expect(call?.args).toEqual(['sh', RUNNER, SCRIPT, 'd naruto']);
         expect(call?.env).toMatchObject({
             PATH: '/data/anime/tools:/app/resources/bin',
             ANI_CLI_MODE: 'dub',
             ANI_CLI_DOWNLOAD_DIR: '.',
-            ANI_CLI_MENU: 'pullwave-menu'
+            ANI_CLI_MENU: 'pullwave_menu'
         });
     });
 
@@ -278,14 +279,14 @@ describe('AniCliService.episodes', () => {
     it('lists the episodes of the chosen result', async () => {
         const { service, callsOf } = setup([done(outcome({ menuChoices: episodeChoices('1', '2', '3') }))]);
         expect(await service.episodes('cyberpunk edgerunners', 2, 'sub')).toEqual({ status: 'done', value: ['1', '2', '3'] });
-        expect(callsOf()[0]?.args).toEqual(['sh', SCRIPT, '-S', '2', 'cyberpunk edgerunners']);
+        expect(callsOf()[0]?.args).toEqual(['sh', RUNNER, SCRIPT, '-S', '2', 'cyberpunk edgerunners']);
         expect(callsOf()[0]?.env).toMatchObject({ ANI_CLI_MODE: 'sub' });
     });
 
     it('confirms episode 1 for an anime that ani-cli does not list (a film)', async () => {
         const { service, callsOf } = setup([done(outcome({ exitCode: 0, output: 'links fetched\n' })), done(outcome({ exitCode: 0 }))]);
         expect(await service.episodes('kimi no na wa', 1, 'sub')).toEqual({ status: 'done', value: ['1'] });
-        expect(callsOf()[1]?.args).toEqual(['sh', SCRIPT, '-S', '1', '-e', '1', 'kimi no na wa']);
+        expect(callsOf()[1]?.args).toEqual(['sh', RUNNER, SCRIPT, '-S', '1', '-e', '1', 'kimi no na wa']);
     });
 
     it('fails when ani-cli refuses episode 1 of an unlisted anime', async () => {
@@ -343,7 +344,7 @@ describe('AniCliService.download', () => {
 
         expect(await handle.result).toEqual({ status: 'done', value: { filePath: '/home/me/Anime/Cyberpunk_ Edgerunners Episode 3.mp4' } });
         expect(prepareTools).toHaveBeenCalledWith(TOOLS);
-        expect(callsOf()[0]?.args).toEqual(['sh', SCRIPT, '-d', '-S', '1', '-e', '3', '-q', '720p', 'cyberpunk edgerunners']);
+        expect(callsOf()[0]?.args).toEqual(['sh', RUNNER, SCRIPT, '-d', '-S', '1', '-e', '3', '-q', '720p', 'cyberpunk edgerunners']);
         expect(callsOf()[0]?.env).toMatchObject({ ANI_CLI_MODE: 'dub', ANI_CLI_DOWNLOAD_DIR: '/home/me/Anime' });
     });
 

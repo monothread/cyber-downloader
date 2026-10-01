@@ -5,7 +5,7 @@ version_number="0.0.0-fake"
 #   search:    <words>                       lists "1 Fake Anime" and "2 Fake Anime 2" (words with "zzz": nothing found)
 #   episodes:  -S <n> <words>                lists episodes 1 to 3 (words with "single": the one episode is picked silently)
 #   stream:    -S <n> -e <ep> -q <q> ...     (with the debug player) prints the address of the episode
-#   download:  -d -S <n> -e <ep> -q <q> ...  writes "<title> Episode <ep>.mp4" and ".vtt" (words with "fail": no sources)
+#   download:  -d -S <n> -e <ep> -q <q> ...  writes "<title> Episode <ep>.mp4" and ".vtt" (words with "fail": no sources, "slow": five seconds before the file exists)
 # Every call is appended to $ANI_CLI_HIST_DIR/calls.log as "<mode> | <arguments>", and the subtitle languages it was
 # asked to try to subtitle-labels.log.
 mkdir -p "$ANI_CLI_HIST_DIR"
@@ -47,6 +47,10 @@ if [ "$download" = 1 ]; then
     file="$ANI_CLI_DOWNLOAD_DIR/$title Episode $episode.mp4"
     printf '[download] Destination: %s\n' "$file"
     printf '[download]  25.0%% of ~  19.00B at  1.00MiB/s ETA 00:01 (frag 1/4)\n'
+    # A "slow" download takes long enough to be cancelled; its file only exists if nobody ended it.
+    case "$query" in
+        *slow*) sleep 5 ;;
+    esac
     printf '[download] 100%% of   19.00B in 00:00:01 at 1.00MiB/s\n'
     printf 'FAKEVIDEO0123456789' > "$file"
     printf 'WEBVTT\n' > "$ANI_CLI_DOWNLOAD_DIR/$title Episode $episode.vtt"

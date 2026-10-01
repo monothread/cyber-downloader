@@ -346,7 +346,7 @@ export const ja: Messages = {
     'anime.error.BINARY_MISSING': 'アニメ機能に必要なプログラムが見つかりません。アプリを再インストールしてください。',
     'anime.error.UNKNOWN': '問題が発生しました。詳細を確認してください。',
     'anime.error.details': '詳細',
-    'settings.anime': 'アニメ (LINUX)',
+    'settings.anime': 'アニメ',
     'settings.animeDownloadDir': 'アニメのダウンロード先フォルダ',
     'settings.animeDownloadDir.placeholder': '既定: Downloads/Pullwave Anime',
     'settings.animeQuality': 'アニメの画質',

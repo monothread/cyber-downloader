@@ -1,0 +1,57 @@
+name: Test Windows
+
+# Runs what is specific to the anime section on a real Windows runner: the unit tests that do not assume POSIX paths, the
+# end-to-end tests with a fake ani-cli (BusyBox for Windows runs the shell script, the tools are found through Path, cancelling
+# ends the process tree, the protocols serve files) and, on request, a run against the real source ani-cli reads.
+# Run it manually from the Actions tab (live=true also runs the real-source tests), or push to the feature branch.
+on:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: 'Also run the tests that use the real source (needs the network; the source can change or block)'
+        type: boolean
+        default: false
+  push:
+    branches: [feature/anime-windows]
+    paths: ['.github/workflows/test-windows.yml', 'src/**', 'test/**', 'resources/ani-scripts/**', 'scripts/fetch-binaries.mjs', 'package.json']
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      PULLWAVE_LIVE: ${{ (github.event_name == 'push' || inputs.live) && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch the bundled binaries (yt-dlp, ffmpeg, deno, ani-cli, busybox, curl)
+        run: node scripts/fetch-binaries.mjs
+
+      - name: Type check and lint
+        run: |
+          npm run typecheck
+          npm run lint
+
+      - name: Unit tests of the anime section and of the interface
+        run: npx vitest run test/main/services/ani test/main/services/anime mediaProtocol streamProxy registerAnimeHandlers animeRuntime test/shared test/renderer
+
+      - name: Build
+        run: npm run build
+
+      - name: End-to-end tests of the anime section
+        run: npx playwright test test/e2e/anime.e2e-spec.ts test/e2e/buttons.e2e-spec.ts test/e2e/anime-live.e2e-spec.ts
+
+      - name: Keep the results when something failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results

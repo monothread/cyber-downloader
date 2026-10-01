@@ -1,8 +1,8 @@
-import { join } from 'node:path';
+import { posix, win32 } from 'node:path';
 import type { AniDownloadProgress, AniError, AnimeDownloadRequest, AnimeEpisodeRecord, AnimeJob, AnimeRecord, LibraryAnime } from '@shared/anime';
 import type { Settings } from '@shared/types';
 import type { AnimeDb } from './animeDb';
-import { animeBaseDirectory, animeFileName, animeFolderName } from './animeFiles';
+import { animeBaseDirectory, animeDownloadDirectory, animeFileName } from './animeFiles';
 import type { AniDownloadHandle, AniDownloadOptions } from './aniCliService';
 
 // Progress lines come many times a second; the screen only needs to hear about a visible change.
@@ -18,6 +18,8 @@ export interface AnimeQueueDependencies {
     fileSize: (path: string) => number | null;
     onJobUpdate: (job: AnimeJob) => void;
     onLibraryChanged: () => void;
+    // The system the files are on (decides the rules of file names); this one by default.
+    platform?: NodeJS.Platform;
 }
 
 function isActive(job: AnimeJob): boolean {
@@ -154,7 +156,8 @@ export class AnimeDownloadQueue {
             return false;
         }
         const settings = this.deps.getSettings();
-        const downloadDir = join(animeBaseDirectory(settings, this.deps.defaultDownloadDir), animeFolderName(anime.title));
+        const platform = this.deps.platform ?? process.platform;
+        const downloadDir = animeDownloadDirectory(animeBaseDirectory(settings, this.deps.defaultDownloadDir, platform), anime.title, platform);
         try {
             this.deps.ensureDirectory(downloadDir);
         } catch (error) {
@@ -189,7 +192,7 @@ export class AnimeDownloadQueue {
             } else if (result.status === 'error') {
                 this.finishWithError(job, result.error);
             } else {
-                this.finishDownloaded(job, result.value.filePath, downloadDir, anime.title);
+                this.finishDownloaded(job, result.value.filePath, downloadDir, anime.title, platform);
             }
             this.deps.onLibraryChanged();
             this.pump();
@@ -206,8 +209,8 @@ export class AnimeDownloadQueue {
         this.update(job, { percent: progress.percent, speed: progress.speed ?? '', eta: progress.eta ?? '' });
     }
 
-    private finishDownloaded(job: AnimeJob, filePath: string | null, downloadDir: string, title: string): void {
-        const path = filePath ?? join(downloadDir, animeFileName(title, job.episode));
+    private finishDownloaded(job: AnimeJob, filePath: string | null, downloadDir: string, title: string, platform: NodeJS.Platform): void {
+        const path = filePath ?? (platform === 'win32' ? win32 : posix).join(downloadDir, animeFileName(title, job.episode));
         const size = this.deps.fileSize(path);
         if (size === null) {
             this.finishWithError(job, { code: 'UNKNOWN', raw: `The downloaded file was not found: ${path}` });

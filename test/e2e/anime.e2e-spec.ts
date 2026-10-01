@@ -10,7 +10,8 @@ import { join, resolve } from 'node:path';
 const ROOT = resolve(__dirname, '../..');
 const ELECTRON_PATH = createRequire(__filename)('electron') as unknown as string;
 const FAKE_ANI_CLI = resolve(__dirname, 'fixtures/fake-ani-cli.sh');
-const HAS_ANI_TOOLS = ['busybox', 'curl', 'ani-cli'].every((name) => {
+const EXE = process.platform === 'win32' ? '.exe' : '';
+const HAS_ANI_TOOLS = [`busybox${EXE}`, `curl${EXE}`, 'ani-cli'].every((name) => {
     return existsSync(join(ROOT, 'resources', 'bin', 'ani', name));
 });
 
@@ -78,7 +79,7 @@ async function openFirstResult(page: Page): Promise<void> {
     await expect(page.getByRole('button', { name: 'EP 3', exact: true })).toBeVisible();
 }
 
-test.skip(process.platform !== 'linux' || !HAS_ANI_TOOLS, 'the anime section is Linux only and needs `npm run fetch-binaries`');
+test.skip(!['linux', 'win32'].includes(process.platform) || !HAS_ANI_TOOLS, 'the anime section exists on Linux and Windows and needs `npm run fetch-binaries`');
 
 test.beforeEach(async () => {
     workDir = mkdtempSync(join(tmpdir(), 'pullwave-anime-e2e-'));
@@ -249,6 +250,31 @@ test('shows the downloads on a screen of their own, with their number on a butto
     await showDownloads(page);
     await backFromDownloads(page);
     await expect(page.getByTestId('anime-card')).toBeVisible();
+});
+
+test('cancelling a download ends the process: the file is never finished', async () => {
+    const { page, animeDir } = session;
+    await openAnimeTab(page);
+    await search(page, 'slow');
+    await page.getByRole('button', { name: 'OPEN: Fake Anime', exact: true }).click();
+    await page.getByRole('button', { name: 'EP 1', exact: true }).click();
+    await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+
+    await showDownloads(page);
+    const job = page.getByTestId('anime-job');
+    await expect(job.locator('.badge--running')).toHaveText('DOWNLOADING');
+    await expect(job.getByText('25.0%')).toBeVisible();
+    await job.getByRole('button', { name: 'CANCEL' }).click();
+    await expect(job.locator('.badge--cancelled')).toHaveText('CANCELLED');
+
+    // The fake would have written the file five seconds after it started: it must not, because nothing is left running.
+    await page.waitForTimeout(7000);
+    expect(existsSync(join(animeDir, 'Fake Anime', 'Fake Anime Episode 1.mp4'))).toBe(false);
+    await expect(job.locator('.badge--cancelled')).toBeVisible();
+    await backFromDownloads(page);
+    await page.getByRole('button', { name: 'LIBRARY' }).click();
+    await page.getByRole('button', { name: 'SHOW EPISODES' }).click();
+    await expect(page.getByTestId('anime-episode').locator('.history__meta').first()).toHaveText('CANCELLED');
 });
 
 test('shows why a download failed and retries it', async () => {
@@ -441,7 +467,7 @@ test('shows the version of ani-cli at the top and in the settings, and does not 
 test('shows the anime settings and saves them', async () => {
     const { page, userData } = session;
     await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
-    await expect(page.getByText('ANIME (LINUX)')).toBeVisible();
+    await expect(page.getByText('ANIME')).toBeVisible();
     await expect(page.getByLabel('Anime quality')).toHaveValue('720p');
     await page.getByLabel('Anime quality').selectOption('worst');
     await page.getByLabel('Anime audio').selectOption('dub');
@@ -453,7 +479,7 @@ test('shows the anime settings and saves them', async () => {
 
 test.describe('watching without downloading', () => {
     const REFERER = 'https://embed.example/';
-    const FFMPEG = join(ROOT, 'resources', 'bin', 'ffmpeg');
+    const FFMPEG = join(ROOT, 'resources', 'bin', `ffmpeg${EXE}`);
     test.skip(!existsSync(FFMPEG), 'needs the bundled ffmpeg to make a video: run `npm run fetch-binaries`');
 
     interface Seen {

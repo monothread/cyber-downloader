@@ -3,7 +3,8 @@ import {
     ANI_CLI_COMMAND,
     ANI_MENU_COMMAND,
     ANI_PLAYER_COMMAND,
-    ANI_SCRIPT_COMMANDS,
+    ANI_RUNNER_SCRIPT,
+    WINDOWS_SYSTEM_VARIABLES,
     BUSYBOX_APPLETS,
     type AniLocations,
     type AniTools,
@@ -12,6 +13,10 @@ import {
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+function newLinuxLocator(locations: AniLocations, fs?: AniToolsFs): AniCliLocator {
+    return new AniCliLocator(locations, fs, 'linux');
+}
 
 const LOCATIONS: AniLocations = {
     bundledDir: '/app/resources/bin',
@@ -73,7 +78,7 @@ afterEach(() => {
 });
 
 describe('AniCliLocator paths', () => {
-    const locator = new AniCliLocator(LOCATIONS, makeFs().fs);
+    const locator = newLinuxLocator(LOCATIONS, makeFs().fs);
 
     it('derives every path from the locations', () => {
         expect(locator.toolsDir).toBe('/data/anime/tools');
@@ -87,12 +92,12 @@ describe('AniCliLocator paths', () => {
 
 describe('AniCliLocator.script', () => {
     it('prefers the custom path from the settings', () => {
-        const locator = new AniCliLocator(LOCATIONS, makeFs(['/data/bin/ani-cli', '/app/resources/bin/ani/ani-cli']).fs);
+        const locator = newLinuxLocator(LOCATIONS, makeFs(['/data/bin/ani-cli', '/app/resources/bin/ani/ani-cli']).fs);
         expect(locator.script('/opt/ani-cli')).toEqual({ path: '/opt/ani-cli', source: 'custom' });
     });
 
     it('uses the updated copy over the bundled one', () => {
-        const locator = new AniCliLocator(LOCATIONS, makeFs(['/data/bin/ani-cli', '/app/resources/bin/ani/ani-cli']).fs);
+        const locator = newLinuxLocator(LOCATIONS, makeFs(['/data/bin/ani-cli', '/app/resources/bin/ani/ani-cli']).fs);
         expect(locator.script('')).toEqual({ path: '/data/bin/ani-cli', source: 'updated' });
     });
 
@@ -106,7 +111,7 @@ describe('AniCliLocator.script', () => {
             if (bundled !== undefined) {
                 texts['/app/resources/bin/ani/ani-cli'] = `version_number="${bundled}"`;
             }
-            return new AniCliLocator(LOCATIONS, makeFs(paths, {}, texts).fs).script('');
+            return newLinuxLocator(LOCATIONS, makeFs(paths, {}, texts).fs).script('');
         };
         expect(withVersions('5.2.0', '5.1.4')?.source).toBe('updated');
         expect(withVersions('5.1.4', '5.1.4')?.source).toBe('updated');
@@ -116,64 +121,61 @@ describe('AniCliLocator.script', () => {
 
     it('uses the bundled copy when it is newer than the updated one (the app was updated since)', () => {
         const texts = { '/data/bin/ani-cli': 'version_number="5.1.4"', '/app/resources/bin/ani/ani-cli': 'version_number="5.2.0"' };
-        const locator = new AniCliLocator(LOCATIONS, makeFs(['/data/bin/ani-cli', '/app/resources/bin/ani/ani-cli'], {}, texts).fs);
+        const locator = newLinuxLocator(LOCATIONS, makeFs(['/data/bin/ani-cli', '/app/resources/bin/ani/ani-cli'], {}, texts).fs);
         expect(locator.script('')).toEqual({ path: '/app/resources/bin/ani/ani-cli', source: 'bundled' });
     });
 
     it('uses the bundled copy when there is no updated one', () => {
-        const locator = new AniCliLocator(LOCATIONS, makeFs(['/app/resources/bin/ani/ani-cli']).fs);
+        const locator = newLinuxLocator(LOCATIONS, makeFs(['/app/resources/bin/ani/ani-cli']).fs);
         expect(locator.script('')).toEqual({ path: '/app/resources/bin/ani/ani-cli', source: 'bundled' });
     });
 
     it('uses the updated copy when it is the only one', () => {
-        expect(new AniCliLocator(LOCATIONS, makeFs(['/data/bin/ani-cli']).fs).script('')).toEqual({ path: '/data/bin/ani-cli', source: 'updated' });
+        expect(newLinuxLocator(LOCATIONS, makeFs(['/data/bin/ani-cli']).fs).script('')).toEqual({ path: '/data/bin/ani-cli', source: 'updated' });
     });
 
     it('never falls back to a copy installed on the system', () => {
-        expect(new AniCliLocator(LOCATIONS, makeFs().fs).script('')).toBeNull();
+        expect(newLinuxLocator(LOCATIONS, makeFs().fs).script('')).toBeNull();
     });
 });
 
 describe('AniCliLocator.info', () => {
     it('tells which copy is used and its version', () => {
         const texts = { '/app/resources/bin/ani/ani-cli': '#!/bin/sh\nversion_number="5.1.4"\n' };
-        const locator = new AniCliLocator(LOCATIONS, makeFs(['/app/resources/bin/ani/ani-cli'], {}, texts).fs);
+        const locator = newLinuxLocator(LOCATIONS, makeFs(['/app/resources/bin/ani/ani-cli'], {}, texts).fs);
         expect(locator.info('')).toEqual({ found: true, path: '/app/resources/bin/ani/ani-cli', version: '5.1.4', source: 'bundled' });
     });
 
     it('tells the updated copy', () => {
         const texts = { '/data/bin/ani-cli': 'version_number="5.2.0"' };
-        expect(new AniCliLocator(LOCATIONS, makeFs(['/data/bin/ani-cli'], {}, texts).fs).info('')).toEqual({ found: true, path: '/data/bin/ani-cli', version: '5.2.0', source: 'updated' });
+        expect(newLinuxLocator(LOCATIONS, makeFs(['/data/bin/ani-cli'], {}, texts).fs).info('')).toEqual({ found: true, path: '/data/bin/ani-cli', version: '5.2.0', source: 'updated' });
     });
 
     it('has no version when the script says none or cannot be read', () => {
-        expect(new AniCliLocator(LOCATIONS, makeFs(['/app/resources/bin/ani/ani-cli'], {}, { '/app/resources/bin/ani/ani-cli': 'no version here' }).fs).info('').version).toBeNull();
-        expect(new AniCliLocator(LOCATIONS, makeFs(['/app/resources/bin/ani/ani-cli']).fs).info('')).toMatchObject({ found: true, version: null });
+        expect(newLinuxLocator(LOCATIONS, makeFs(['/app/resources/bin/ani/ani-cli'], {}, { '/app/resources/bin/ani/ani-cli': 'no version here' }).fs).info('').version).toBeNull();
+        expect(newLinuxLocator(LOCATIONS, makeFs(['/app/resources/bin/ani/ani-cli']).fs).info('')).toMatchObject({ found: true, version: null });
     });
 
     it('describes the script the user chose', () => {
-        const locator = new AniCliLocator(LOCATIONS, makeFs(['/opt/ani-cli'], {}, { '/opt/ani-cli': 'version_number="1.2.3"' }).fs);
+        const locator = newLinuxLocator(LOCATIONS, makeFs(['/opt/ani-cli'], {}, { '/opt/ani-cli': 'version_number="1.2.3"' }).fs);
         expect(locator.info('/opt/ani-cli')).toEqual({ found: true, path: '/opt/ani-cli', version: '1.2.3', source: 'custom' });
         expect(locator.info('/opt/missing')).toEqual({ found: false, path: '/opt/missing', version: null, source: 'custom' });
     });
 
     it('says it was not found, pointing at where the bundled one should be', () => {
-        expect(new AniCliLocator(LOCATIONS, makeFs().fs).info('')).toEqual({ found: false, path: '/app/resources/bin/ani/ani-cli', version: null, source: 'bundled' });
+        expect(newLinuxLocator(LOCATIONS, makeFs().fs).info('')).toEqual({ found: false, path: '/app/resources/bin/ani/ani-cli', version: null, source: 'bundled' });
     });
 });
 
 describe('AniCliLocator.prepareTools', () => {
     it('creates the folders and one link per tool', () => {
         const { fs, links, directories } = makeFs();
-        new AniCliLocator(LOCATIONS, fs).prepareTools(TOOLS);
+        newLinuxLocator(LOCATIONS, fs).prepareTools(TOOLS);
 
         expect(directories).toEqual(['/data/anime/tools', '/data/anime/history']);
         const expected: Record<string, string> = {};
         BUSYBOX_APPLETS.forEach((name) => {
             expected[`/data/anime/tools/${name}`] = '/app/resources/bin/ani/busybox';
-        });
-        ANI_SCRIPT_COMMANDS.forEach((name) => {
-            expected[`/data/anime/tools/${name}`] = `/app/resources/ani-scripts/${name}`;
         });
         expected['/data/anime/tools/curl'] = '/app/resources/bin/ani/curl';
         expected['/data/anime/tools/yt-dlp'] = '/app/resources/bin/yt-dlp';
@@ -183,7 +185,7 @@ describe('AniCliLocator.prepareTools', () => {
 
     it('links the yt-dlp and ffmpeg that were chosen, whatever their source', () => {
         const { fs, links } = makeFs();
-        new AniCliLocator(LOCATIONS, fs).prepareTools({
+        newLinuxLocator(LOCATIONS, fs).prepareTools({
             ytdlp: { path: '/data/bin/yt-dlp', source: 'updated' },
             ffmpeg: { path: '/opt/ffmpeg', source: 'custom' }
         });
@@ -193,7 +195,7 @@ describe('AniCliLocator.prepareTools', () => {
 
     it('does not link a tool that only exists on the system', () => {
         const { fs, links } = makeFs();
-        new AniCliLocator(LOCATIONS, fs).prepareTools({
+        newLinuxLocator(LOCATIONS, fs).prepareTools({
             ytdlp: { path: 'yt-dlp', source: 'system' },
             ffmpeg: { path: 'ffmpeg', source: 'system' }
         });
@@ -204,13 +206,13 @@ describe('AniCliLocator.prepareTools', () => {
 
     it('keeps links that already point at the right place', () => {
         const { fs, removed } = makeFs([], { '/data/anime/tools/curl': '/app/resources/bin/ani/curl' });
-        new AniCliLocator(LOCATIONS, fs).prepareTools(TOOLS);
+        newLinuxLocator(LOCATIONS, fs).prepareTools(TOOLS);
         expect(removed).not.toContain('/data/anime/tools/curl');
     });
 
     it('replaces links that point somewhere else', () => {
         const { fs, links, removed } = makeFs([], { '/data/anime/tools/yt-dlp': '/old/yt-dlp' });
-        new AniCliLocator(LOCATIONS, fs).prepareTools(TOOLS);
+        newLinuxLocator(LOCATIONS, fs).prepareTools(TOOLS);
         expect(removed).toContain('/data/anime/tools/yt-dlp');
         expect(links.get('/data/anime/tools/yt-dlp')).toBe('/app/resources/bin/yt-dlp');
     });
@@ -236,10 +238,10 @@ describe('AniCliLocator.prepareTools', () => {
 });
 
 describe('AniCliLocator.env player', () => {
-    const locator = new AniCliLocator(LOCATIONS, makeFs().fs);
+    const locator = newLinuxLocator(LOCATIONS, makeFs().fs);
 
     it('plays nothing by default', () => {
-        expect(locator.env({ audio: 'sub', downloadDir: '.', subtitleLabels: [] }, {}).ANI_CLI_PLAYER).toBe('pullwave-noplayer');
+        expect(locator.env({ audio: 'sub', downloadDir: '.', subtitleLabels: [] }, {}).ANI_CLI_PLAYER).toBe('pullwave_noplayer');
     });
 
     it('can ask ani-cli to print the address instead', () => {
@@ -248,7 +250,7 @@ describe('AniCliLocator.env player', () => {
 });
 
 describe('AniCliLocator.env subtitles', () => {
-    const locator = new AniCliLocator(LOCATIONS, makeFs().fs);
+    const locator = newLinuxLocator(LOCATIONS, makeFs().fs);
 
     it('joins the languages with a bar, in order', () => {
         expect(locator.env({ audio: 'sub', downloadDir: '.', subtitleLabels: ['Spanish'] }, {}).PULLWAVE_SUB_LABELS).toBe('Spanish');
@@ -271,7 +273,7 @@ describe('AniCliLocator.withPatches', () => {
 
     it('saves a patched copy next to the tools and uses it', () => {
         const { fs, writes, directories } = makeFs([], {}, { [bundled.path]: ORIGINAL });
-        const result = new AniCliLocator(LOCATIONS, fs).withPatches(bundled);
+        const result = newLinuxLocator(LOCATIONS, fs).withPatches(bundled);
 
         expect(result).toEqual({ path: '/data/anime/ani-cli.patched', source: 'bundled' });
         expect(writes).toHaveLength(1);
@@ -283,19 +285,19 @@ describe('AniCliLocator.withPatches', () => {
     it('also patches the debug output of the script', () => {
         const debug = 'x\n        debug) printf "All links:\\n%s\\nSelected link:\\n%s\\nSubtitles:\\n%s\\n" "$links" "$video_link" "$sub_link" ;;';
         const { fs, writes } = makeFs([], {}, { [bundled.path]: debug });
-        new AniCliLocator(LOCATIONS, fs).withPatches(bundled);
+        newLinuxLocator(LOCATIONS, fs).withPatches(bundled);
         expect(writes[0]?.[1]).toContain('Referer:');
     });
 
     it('keeps the source of the script it patched', () => {
         const updated = { path: '/data/bin/ani-cli', source: 'updated' as const };
         const { fs } = makeFs([], {}, { [updated.path]: ORIGINAL });
-        expect(new AniCliLocator(LOCATIONS, fs).withPatches(updated).source).toBe('updated');
+        expect(newLinuxLocator(LOCATIONS, fs).withPatches(updated).source).toBe('updated');
     });
 
     it('does not write the copy again when it is already up to date', () => {
         const first = makeFs([], {}, { [bundled.path]: ORIGINAL });
-        const locator = new AniCliLocator(LOCATIONS, first.fs);
+        const locator = newLinuxLocator(LOCATIONS, first.fs);
         locator.withPatches(bundled);
         locator.withPatches(bundled);
         expect(first.writes).toHaveLength(1);
@@ -303,26 +305,26 @@ describe('AniCliLocator.withPatches', () => {
 
     it('writes the copy again when it is out of date', () => {
         const { fs, writes } = makeFs([], {}, { [bundled.path]: ORIGINAL, '/data/anime/ani-cli.patched': 'old copy' });
-        new AniCliLocator(LOCATIONS, fs).withPatches(bundled);
+        newLinuxLocator(LOCATIONS, fs).withPatches(bundled);
         expect(writes).toHaveLength(1);
     });
 
     it('never changes a script the user chose', () => {
         const custom = { path: '/opt/ani-cli', source: 'custom' as const };
         const { fs, writes } = makeFs([], {}, { [custom.path]: ORIGINAL });
-        expect(new AniCliLocator(LOCATIONS, fs).withPatches(custom)).toBe(custom);
+        expect(newLinuxLocator(LOCATIONS, fs).withPatches(custom)).toBe(custom);
         expect(writes).toEqual([]);
     });
 
     it('uses the script as it is when it cannot be read', () => {
         const { fs, writes } = makeFs();
-        expect(new AniCliLocator(LOCATIONS, fs).withPatches(bundled)).toBe(bundled);
+        expect(newLinuxLocator(LOCATIONS, fs).withPatches(bundled)).toBe(bundled);
         expect(writes).toEqual([]);
     });
 
     it('uses the script as it is when it is a version it cannot patch', () => {
         const { fs, writes } = makeFs([], {}, { [bundled.path]: 'a different script' });
-        expect(new AniCliLocator(LOCATIONS, fs).withPatches(bundled)).toBe(bundled);
+        expect(newLinuxLocator(LOCATIONS, fs).withPatches(bundled)).toBe(bundled);
         expect(writes).toEqual([]);
     });
 
@@ -342,16 +344,16 @@ describe('AniCliLocator.withPatches', () => {
 
 describe('AniCliLocator.command', () => {
     it('runs the script with the busybox that ships with the app', () => {
-        const locator = new AniCliLocator(LOCATIONS, makeFs().fs);
+        const locator = newLinuxLocator(LOCATIONS, makeFs().fs);
         expect(locator.command({ path: '/app/resources/bin/ani/ani-cli', source: 'bundled' })).toEqual({
             binary: '/app/resources/bin/ani/busybox',
-            args: ['sh', '/app/resources/bin/ani/ani-cli']
+            args: ['sh', '/app/resources/ani-scripts/pullwave-run.sh', '/app/resources/bin/ani/ani-cli']
         });
     });
 });
 
 describe('AniCliLocator.env', () => {
-    const locator = new AniCliLocator(LOCATIONS, makeFs().fs);
+    const locator = newLinuxLocator(LOCATIONS, makeFs().fs);
 
     it('builds an isolated environment', () => {
         expect(locator.env({ audio: 'dub', downloadDir: '/home/me/Anime', subtitleLabels: ['Portuguese', 'English'] }, { PATH: '/usr/bin', HOME: '/home/me', LANG: 'pt_BR.UTF-8', SECRET: 'x' })).toEqual({
@@ -386,8 +388,12 @@ describe('AniCliLocator.env', () => {
 describe('constants', () => {
     it('names the tools ani-cli looks for', () => {
         expect(ANI_CLI_COMMAND).toBe('ani-cli');
-        expect(ANI_MENU_COMMAND).toBe('pullwave-menu');
-        expect(ANI_PLAYER_COMMAND).toBe('pullwave-noplayer');
-        expect(ANI_SCRIPT_COMMANDS).toEqual(['pullwave-menu', 'pullwave-noplayer', 'tput']);
+        expect(ANI_MENU_COMMAND).toBe('pullwave_menu');
+        expect(ANI_PLAYER_COMMAND).toBe('pullwave_noplayer');
+        expect(ANI_RUNNER_SCRIPT).toBe('pullwave-run.sh');
+    });
+
+    it('lists what a Windows program needs from the system', () => {
+        expect(WINDOWS_SYSTEM_VARIABLES).toEqual(['SystemRoot', 'windir', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'PATHEXT', 'COMSPEC', 'HOMEDRIVE', 'HOMEPATH']);
     });
 });
