@@ -13,7 +13,7 @@ The app updates itself (via `electron-updater`) from the **public Releases** of
 5. **Windows installer:** Actions tab → **Release Windows** → *Run workflow*.
 6. Each run uploads its files to the **draft** Release `v<version>` (creating it if needed): Linux uploads `pullwave-<version>.{AppImage,deb,rpm,pacman}` and `latest-linux.yml`; Windows uploads `pullwave-<version>-setup.exe` and `latest.yml`. Wait until every run you started has finished.
 7. On GitHub, open the draft Release, check the assets and click **Publish release**. Drafts are **not** seen by installed apps.
-8. In the Release notes, mention where the FFmpeg source code can be found (Linux: https://github.com/BtbN/FFmpeg-Builds, Windows: https://www.gyan.dev/ffmpeg/builds/; GPLv3).
+8. In the Release notes, mention where the FFmpeg source code can be found (Linux: https://github.com/BtbN/FFmpeg-Builds, Windows: https://www.gyan.dev/ffmpeg/builds/; GPLv3). The Linux packages also carry ani-cli (GPLv3, https://github.com/pystardust/ani-cli), BusyBox (GPLv2, https://busybox.net) and a static curl (https://github.com/stunnel/static-curl); see `resources/THIRD_PARTY_NOTICES.md`.
 
 Run the two workflows **one after the other**, not at the same time: both create the draft Release if it does not exist yet, and running them in parallel can create two drafts for the same tag.
 
@@ -37,6 +37,8 @@ Rules that keep the updater working:
 - The repository must be **public** (the app does not carry a token).
 - The bundled yt-dlp has its own update mechanism (the "UPDATE YT-DLP" button), independent of the app version.
 - ffmpeg and deno only change when you rebuild the package (`npm run fetch-binaries -- --force`) and release a new version.
+- On Linux `npm run fetch-binaries` (run by `npm run dist` / `npm run release`) also downloads **ani-cli, busybox and curl** into `resources/bin/ani`, each pinned to one version and one sha256 in `scripts/fetch-binaries.mjs`. To move to a newer ani-cli, change the commit and hash there (the in-app "UPDATE ANI-CLI" button is independent, like the yt-dlp one). The Windows build does not include them. busybox.net publishes no checksums, so its hash is pinned in the script.
+- The anime section (Linux only) is not covered by the CI workflows' tests of a real ani-cli; run `npm run test:e2e` locally (it uses a fake one) before releasing.
 - Code signing is not required on Linux. On Windows it is optional, but unsigned installers trigger a SmartScreen warning.
 
 ## Troubleshooting

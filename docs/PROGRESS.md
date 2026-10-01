@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github.com/monothread/pullwave` (Windows installer, AppImage, deb, rpm, pacman).
+Last updated: 2026-10-01 · Anime section (v0.9.0) implemented; release in progress. Previous: **v0.8.0 published** at `github.com/monothread/pullwave`.
 
 | ID | Phase | Task | Depends on | Files | Status | Owner | Notes |
 |---|---|---|---|---|---|---|---|
@@ -34,6 +34,8 @@ Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github
 | 14.4 | 14 | Same IP family for IP-bound addresses and a fresh link after a 403 (D-023) | 14.3 | mediaKinds.ts, ytdlpArgsBuilder.ts, streamFinder.ts, JobCard | DONE | session-2026-09-30-a | Generic code; verified with local servers. Not verified against any real site |
 | 14.3 | 14 | Friendly HTTP 403 error and grouping of near-identical stream addresses (D-022) | 14.2 | errorMapper.ts, streamGrouping.ts, StreamFinder UI | DONE | session-2026-09-30-a | Anonymised fixtures; e2e 38/38 |
 | 14.2 | 14 | Hidden browser improvements for embedded players (D-021) + user-responsibility disclaimer (D-020) | 14.1 | src/main/services/browserSniffer.ts, DISCLAIMER.md | DONE | session-2026-09-30-a | Verified with local pages only (e2e 36/36) |
+| 15.2 | 15 | Release 0.9.0 | 15.1 | package.json, GitHub Release | DOING | session-2026-10-01-a | Linux and Windows workflows dispatched from `main`; the draft is published after both finish |
+| 15.1 | 15 | Anime section (Linux): search, download episodes/seasons, SQLite library, player, watch without downloading, subtitles, ani-cli update (D-036 to D-038) | 14.1 | src/main/services/ani*.ts, anime*.ts, mediaProtocol.ts, streamProxy.ts, animeRuntime.ts, ipc/registerAnimeHandlers.ts, src/shared/anime.ts, renderer Anime* + animeStore, resources/ani-scripts, scripts/fetch-binaries.mjs | DONE | session-2026-10-01-a | Verified end to end against the real ani-cli and source (search, a 104 MB episode, player, stream); e2e with a fake ani-cli and a local HLS server. Not verified: dub, a real season, other sources failing, the packaged build on a clean machine |
 | 14.1 | 14 | Stream finder: find and download the video stream of a page yt-dlp does not understand (D-019) | 13.1 | src/main/services/{mediaKinds,pageScanner,sniffRules,browserSniffer,playlistFilter,streamFinder}.ts, JobCard/StreamFinder UI | DONE | session-2026-09-30-a | On branch `feature/stream-sniffer` (not merged, not released). Verified with local pages (e2e) and a public hls.js/Mux test stream |
 
 ## Handoff notes
@@ -41,14 +43,15 @@ Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github
 - The remote also still has a leftover `master` branch (from the first push); it is unused and can be deleted.
 - Original full plan: `~/.claude/plans/quero-que-crie-um-concurrent-pebble.md` (summarized in `ARCHITECTURE.md`).
 
-## Verification status (2026-09-30)
+## Verification status (2026-10-01)
 - `npx tsc --noEmit --project tsconfig.json`: OK
 - `npx eslint src/ test/ --max-warnings=0`: OK
-- `npx vitest run`: 740 unit tests OK (44 files)
-- `npx playwright test` (after `npm run build`): 43 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`)
+- `npx vitest run`: 2245 unit tests OK (94 files)
+- `npx playwright test` (after `npm run build`): 140 e2e tests OK with the real Electron app + fake yt-dlp (`test/e2e/fixtures/fake-yt-dlp.js`) and, for the anime section, a fake ani-cli (`test/e2e/fixtures/fake-ani-cli.sh`) and a local HLS server
 - yt-dlp args validated manually against the real yt-dlp (short download of the test video `jNQXAC9IVRw`).
 
 ## Pending / follow-ups
+- Anime: dubbed audio and a whole real season were not run against the real source; the packaged build (AppImage/deb) was not opened on a clean machine; there is no quality menu while watching a stream and no "go back to the bundled ani-cli" button (deleting `userData/bin/ani-cli` does it); the source ani-cli reads can change or block at any time.
 - Stream finder: review and merge `feature/stream-sniffer`, then release (new version). Not tried on Windows; the hidden browser window and the network rules are the same code, but its behaviour there was not observed.
 - Stream finder ideas not done: choosing the quality of a master playlist in the list, showing a preview/duration, remembering which sites needed the browser, cookies from the user's real browser for sites that need a login.
 - Test the published packages on real machines: the Windows installer on Windows 10/11 and the rpm/pacman on Fedora/Arch. The CI runs succeeded and the Linux AppImage was smoke-tested, but the other packages were not executed anywhere yet.

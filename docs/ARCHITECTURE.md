@@ -30,19 +30,34 @@ src/
       playlistFilter.ts         # drops HLS quality variants covered by a master playlist
       streamGrouping.ts         # folds near-identical addresses of one video (mirrors/redirects) into one candidate
       streamFinder.ts           # static scan -> hidden browser; keeps candidates' request details in the main process
+      # Anime section (Linux only, D-036 to D-038)
+      aniCliLocator.ts          # which ani-cli/busybox/curl, tool links, isolated env, patched copy of the script
+      aniCliRunner.ts           # spawn `busybox sh ani-cli ...`, menu choices, progress, cancel
+      aniCliService.ts          # search, episodes, download, resolveStream on top of the runner
+      aniArgsBuilder.ts / aniOutputParser.ts   # validated arguments; parse the menu, progress and errors
+      aniSubtitles.ts / aniStream.ts / aniPatches.ts   # run-time patches of ani-cli (subtitle language, referer in debug output)
+      aniCliUpdater.ts / aniVersion.ts         # update ani-cli from its repository, versions
+      animeDb.ts                # node:sqlite library (anime, episode, progress), migrations by user_version
+      animeDownloadQueue.ts     # one job per episode, concurrency, progress, retry
+      animeFiles.ts             # file/folder names, what is removed with an anime
+      mediaProtocol.ts          # pullwave-media:// (downloaded files, byte ranges)
+      streamProxy.ts            # pullwave-stream:// (HLS streams fetched with the referer, playlists rewritten)
+    animeRuntime.ts             # wires the anime services (null where the section does not exist)
+    ipc/registerAnimeHandlers.ts  # anime:* channels (answers "unsupported" off Linux)
   preload/index.ts              # contextBridge with a typed API
   renderer/
     App.tsx, theme/cyberpunk.css
     i18n/ language (system locale), useTranslator (React hook)
     components/ UrlInput, QueueList, JobCard, SettingsPanel, HistoryList, ErrorBanner, BinaryStatus,
-                Toast, UpdateBanner, UpdateActions, StreamFinder, fields
+                Toast, UpdateBanner, UpdateActions, StreamFinder, fields,
+                AnimePanel, AnimeSearch, AnimeDetail, AnimeJobs, AnimeLibrary, AnimePlayer, AnimeStreamPlayer, AnimeRemove
     hooks/ useAutoSaveSettings (debounced settings auto-save)
-    store/ (zustand)
+    store/ (zustand): appStore.ts, animeStore.ts
 test/            # unit tests mirroring src
 test/e2e/        # Playwright-Electron (fake yt-dlp via stub)
 scripts/         # fetch-binaries.mjs (per platform), check-linux-tools.mjs (rpm/pacman prerequisites)
 .github/workflows/  # release-linux.yml, release-windows.yml (manual, build and attach packages to the draft Release)
-resources/       # icon.png, THIRD_PARTY_NOTICES.md, bin/ (git-ignored)
+resources/       # icon.png, THIRD_PARTY_NOTICES.md, ani-scripts/ (menu, player and tput stand-ins for ani-cli), bin/ (git-ignored)
 docs/
 ```
 
@@ -55,6 +70,16 @@ On `before-quit` the main process calls `queue.shutdown()`: every running yt-dlp
 
 ## Stream finder
 Failed job (`UNKNOWN`/`OUTDATED`) → **FIND STREAM** → `stream:find` (main: `StreamFinder.find`) → stage events (`event:stream-progress`: scanning → watching) → candidate list in the job card → **DOWNLOAD** → `stream:download` → `QueueManager.add(url, { referer, userAgent, cookie, title })` → the usual `ytdlpRunner` flow. Request details (referer, cookies) never reach the renderer. See D-019.
+
+## Anime section (Linux only)
+Same shape as the rest: renderer (`animeStore`, `Anime*` components) → `window.api` → `anime:*` IPC (`registerAnimeHandlers`) → `AniCliService` → `aniCliRunner` → `busybox sh ani-cli` with an isolated `PATH` (links to busybox applets, curl, yt-dlp and ffmpeg made in `userData/anime/tools`). ani-cli has no structured output, so searching and listing work by handing it `pullwave-menu` as its menu program, which reports every choice on stderr; a choice is later picked with `-S <position>` and `-e <episode>`. See D-036.
+
+- **Data:** `userData/anime/anime.db` (`node:sqlite`, migrations by `PRAGMA user_version`); the queue itself is in memory, so at start unfinished episodes become errors that can be retried.
+- **Downloads:** `AnimeDownloadQueue` runs one job per episode (a season is all its episodes) up to `maxConcurrent`; events `event:anime-job` and `event:anime-library` push changes to the store.
+- **Player:** `<video>` reads `pullwave-media://episode/<id>` and `.../subtitle/<id>`, served by `mediaProtocol.ts` with byte ranges. **Watch without downloading:** `anime:stream-open` runs ani-cli with the `debug` player (it prints the address), `StreamSessions` opens a session and hls.js in the renderer plays `pullwave-stream://p/<session>/<address>`, which the main process fetches with the right referer, rewriting playlists. Both schemes are registered as privileged before the app is ready; the CSP allows them (and `blob:` for hls.js). See D-036/D-037.
+- **Patches:** ani-cli is pinned and checked by hash; `AniCliLocator.withPatches` runs a patched copy (subtitle language, referer in the debug output) and falls back to the original when its lines do not match (D-037). The script can be updated from the settings (D-038).
+- **Linux only:** `createAnimeRuntime` returns null elsewhere; the tab, the settings panel and the version chip are not shown, the protocols are not registered and the IPC channels answer "unsupported".
+- **Tests:** `test/e2e/anime.e2e-spec.ts` drives the real app with `test/e2e/fixtures/fake-ani-cli.sh` (set through `PULLWAVE_ANI_CLI`) and a local HLS server that refuses requests without the right referer.
 
 ## Live streams
 yt-dlp prints `CYBERINFO|<is_live>|<file>` before downloading → `QueueManager.applyInfo` marks the job `live` and starts a ticker that derives `elapsedSeconds` (own clock) and `downloadedBytes` (size of `<file>.part`). `queue:stop` (**STOP & SAVE**) → `QueueManager.stop` → SIGINT (file kept); cancel stays SIGTERM. `before-quit` awaits `QueueManager.shutdown()` when live jobs exist. See D-025.
@@ -86,7 +111,7 @@ Neon cyan/magenta/yellow on a dark background, mono font, scanlines, glitch on t
 - e2e: `test/e2e/app.e2e-spec.ts` launches the real Electron app (run `npm run build` first) with a temporary `--user-data-dir` and `FAKE_YTDLP_LOG` to record the fake yt-dlp's argv and `PATH`.
 
 ## Bundled binaries
-`scripts/fetch-binaries.mjs [--platform=linux|win32] [--out=<dir>] [--force]` → `resources/bin/` (git-ignored): `yt-dlp`, `ffmpeg`, `ffprobe`, `deno`, `ffmpeg-GPLv3.txt` on Linux (plus `resources/lib/` with ffmpeg's shared libraries, see D-024), and the same with `.exe` on Windows (no `lib/`). Every download is checked against the checksum its source publishes. In dev the app uses `<appPath>/resources/bin`; packaged, `process.resourcesPath/bin`. See D-013.
+`scripts/fetch-binaries.mjs [--platform=linux|win32] [--out=<dir>] [--force]` → `resources/bin/` (git-ignored): `yt-dlp`, `ffmpeg`, `ffprobe`, `deno`, `ffmpeg-GPLv3.txt` on Linux (plus `resources/lib/` with ffmpeg's shared libraries, see D-024, and `resources/bin/ani/` with `ani-cli`, a static `busybox` and a static `curl`, each pinned to one version and one sha256, D-036), and the same with `.exe` on Windows (no `lib/`, no `ani/`: `electron-builder.yml` leaves it out of the Windows build). Every download is checked against the checksum its source publishes. In dev the app uses `<appPath>/resources/bin`; packaged, `process.resourcesPath/bin`. See D-013.
 
 ## Platforms
 | OS | Package | Built by | Auto-update |
