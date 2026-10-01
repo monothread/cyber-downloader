@@ -1,5 +1,9 @@
+import { useEffect } from 'react';
 import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
+
+// An information notice goes away by itself; an error stays until it is dismissed.
+export const INFO_NOTICE_MS = 3000;
 
 export function Toast() {
     const t = useTranslator();
@@ -9,6 +13,18 @@ export function Toast() {
     const setNotice = useAppStore((state) => {
         return state.setNotice;
     });
+    useEffect(() => {
+        if (notice?.kind !== 'info') {
+            return undefined;
+        }
+        const timer = setTimeout(() => {
+            setNotice(null);
+        }, INFO_NOTICE_MS);
+        return () => {
+            clearTimeout(timer);
+        };
+    }, [notice, setNotice]);
+
     if (!notice) {
         return null;
     }

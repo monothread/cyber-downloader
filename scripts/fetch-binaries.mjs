@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Downloads the third-party binaries bundled with the app (yt-dlp, ffmpeg/ffprobe, deno) into resources/bin.
+// Downloads the third-party binaries bundled with the app (yt-dlp, ffmpeg/ffprobe, deno and, on Linux, the ani-cli
+// toolset in resources/bin/ani) into resources/bin.
 // Every download is verified against the checksum published by its source.
 //
 //   node scripts/fetch-binaries.mjs [--platform=linux|win32] [--out=<dir>] [--force]
@@ -74,6 +75,28 @@ if (!TARGET) {
     console.error(`Unsupported platform "${PLATFORM}". Use linux or win32.`);
     process.exit(1);
 }
+
+// The anime section (ani-cli) exists on Linux only. Everything it needs ships inside the app, pinned to one version and
+// one checksum each: busybox provides sh and the core utilities the script calls, curl does its HTTPS requests.
+const ANI_DIR = join(BIN_DIR, 'ani');
+const ANI_MARKER = join(ANI_DIR, '.sources');
+const ANI_SOURCES = {
+    aniCli: {
+        // A commit of the master branch (version 5.1.4): the latest tagged release is much older.
+        url: 'https://raw.githubusercontent.com/pystardust/ani-cli/3ad53631ef2433b0c26e25ab011a5b149706c120/ani-cli',
+        sha256: '32ae0965b7abb102ab85f381411b980d1a9196f06bf2756d48fef16695b41d47'
+    },
+    // busybox.net publishes no checksums, so the hash of the downloaded file is pinned here.
+    busybox: {
+        url: 'https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox',
+        sha256: '6e123e7f3202a8c1e9b1f94d8941580a25135382b99e8d3e34fb858bba311348'
+    },
+    curl: {
+        url: 'https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-x86_64-musl-8.22.0.tar.xz',
+        sha256: 'dfb02460ba2abe513087538f12a3cf79b74b64a5ea3787ce8ac0cdb11251f884'
+    }
+};
+const ANI_FILES = ['ani-cli', 'busybox', 'curl'];
 
 async function download(url) {
     const response = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'pullwave-build' } });
@@ -259,6 +282,50 @@ async function fetchFfmpeg(workDir) {
     writeFileSync(FFMPEG_SOURCE_MARKER, `${TARGET.ffmpegUrl}\n`);
 }
 
+function expectedAniMarker() {
+    return `${Object.values(ANI_SOURCES).map((source) => {
+        return source.sha256;
+    }).join('\n')}\n`;
+}
+
+function isAniCurrent() {
+    const sameSources = existsSync(ANI_MARKER) && readFileSync(ANI_MARKER, 'utf-8') === expectedAniMarker();
+    return !FORCE && sameSources && ANI_FILES.every((name) => {
+        return existsSync(join(ANI_DIR, name));
+    });
+}
+
+async function fetchVerified(source, label) {
+    const data = await download(source.url);
+    verify('sha256', data, source.sha256, label);
+    return data;
+}
+
+async function fetchAniTools(workDir) {
+    if (PLATFORM !== 'linux' || isAniCurrent()) {
+        return;
+    }
+    console.log('> ani-cli + busybox + curl');
+    mkdirSync(ANI_DIR, { recursive: true });
+    writeFileSync(join(workDir, 'ani-cli'), await fetchVerified(ANI_SOURCES.aniCli, 'ani-cli'));
+    writeFileSync(join(workDir, 'busybox'), await fetchVerified(ANI_SOURCES.busybox, 'busybox'));
+    const curlArchive = join(workDir, 'curl.tar.xz');
+    writeFileSync(curlArchive, await fetchVerified(ANI_SOURCES.curl, 'curl'));
+    const extracted = join(workDir, 'curl');
+    mkdirSync(extracted, { recursive: true });
+    execFileSync('tar', ['-xJf', curlArchive, '-C', extracted]);
+    const curl = findFile(extracted, 'curl');
+    if (!curl) {
+        throw new Error('curl not found in the static-curl archive');
+    }
+    for (const [source, name] of [[join(workDir, 'ani-cli'), 'ani-cli'], [join(workDir, 'busybox'), 'busybox'], [curl, 'curl']]) {
+        const target = join(ANI_DIR, name);
+        copyFileSync(source, target);
+        chmodSync(target, 0o755);
+    }
+    writeFileSync(ANI_MARKER, expectedAniMarker());
+}
+
 async function main() {
     mkdirSync(BIN_DIR, { recursive: true });
     const workDir = mkdtempSync(join(tmpdir(), 'pullwave-bin-'));
@@ -266,6 +333,7 @@ async function main() {
         await fetchYtdlp();
         await fetchDeno(workDir);
         await fetchFfmpeg(workDir);
+        await fetchAniTools(workDir);
         console.log(`Binaries for ${PLATFORM} ready in ${BIN_DIR}`);
     } finally {
         rmSync(workDir, { recursive: true, force: true });

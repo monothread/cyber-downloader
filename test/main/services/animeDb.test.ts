@@ -1,0 +1,316 @@
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { AnimeDb, INTERRUPTED_MESSAGE, type NewAnime } from '@main/services/animeDb';
+import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
+
+const NARUTO: NewAnime = { title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' };
+const NOW = 1_700_000_000_000;
+
+function makeDb(): AnimeDb {
+    return new AnimeDb(':memory:', () => {
+        return NOW;
+    });
+}
+
+afterEach(() => {
+    cleanTempDirs();
+});
+
+describe('AnimeDb schema', () => {
+    it('applies the migrations and remembers the version', () => {
+        expect(makeDb().schemaVersion).toBe(1);
+    });
+
+    it('keeps the data and does not migrate again when the file is opened twice', () => {
+        const path = join(makeTempDir(), 'nested', 'anime.db');
+        const first = new AnimeDb(path, () => {
+            return NOW;
+        });
+        const anime = first.upsertAnime(NARUTO);
+        first.ensureEpisode(anime.id, '1');
+        first.close();
+
+        const second = new AnimeDb(path);
+        expect(second.schemaVersion).toBe(1);
+        expect(second.list()).toEqual([
+            {
+                id: anime.id,
+                title: 'Naruto',
+                query: 'naruto',
+                searchIndex: 1,
+                audio: 'sub',
+                createdAt: NOW,
+                episodes: [
+                    {
+                        id: 1,
+                        animeId: anime.id,
+                        number: '1',
+                        status: 'queued',
+                        filePath: null,
+                        sizeBytes: null,
+                        error: null,
+                        positionSeconds: 0,
+                        durationSeconds: 0,
+                        watched: false,
+                        downloadedAt: null
+                    }
+                ]
+            }
+        ]);
+        second.close();
+    });
+
+    it('rolls a failed migration back and reports the error', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        const raw = new DatabaseSync(path);
+        raw.exec('CREATE TABLE anime (leftover TEXT)');
+        raw.close();
+
+        expect(() => {
+            return new AnimeDb(path);
+        }).toThrow(/already exists/);
+
+        const check = new DatabaseSync(path);
+        expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 0 });
+        expect(check.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()).toEqual([{ name: 'anime' }]);
+        check.close();
+    });
+
+    it('uses the default clock when none is given', () => {
+        const db = new AnimeDb(':memory:');
+        const before = Date.now();
+        const anime = db.upsertAnime(NARUTO);
+        expect(anime.createdAt).toBeGreaterThanOrEqual(before);
+        expect(anime.createdAt).toBeLessThanOrEqual(Date.now());
+    });
+});
+
+describe('AnimeDb.upsertAnime', () => {
+    it('creates an anime', () => {
+        expect(makeDb().upsertAnime(NARUTO)).toEqual({ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub', createdAt: NOW });
+    });
+
+    it('treats the same title and audio as the same anime and refreshes its search data', () => {
+        const db = makeDb();
+        const first = db.upsertAnime(NARUTO);
+        const second = db.upsertAnime({ ...NARUTO, query: 'naruto shippuden', searchIndex: 3 });
+        expect(second).toEqual({ id: first.id, title: 'Naruto', query: 'naruto shippuden', searchIndex: 3, audio: 'sub', createdAt: NOW });
+        expect(db.list()).toHaveLength(1);
+    });
+
+    it('keeps the dubbed version apart', () => {
+        const db = makeDb();
+        const sub = db.upsertAnime(NARUTO);
+        const dub = db.upsertAnime({ ...NARUTO, audio: 'dub' });
+        expect(dub.id).not.toBe(sub.id);
+        expect(dub.audio).toBe('dub');
+    });
+});
+
+describe('AnimeDb.ensureEpisode', () => {
+    it('queues a new episode', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        expect(db.ensureEpisode(anime.id, '1')).toMatchObject({ animeId: anime.id, number: '1', status: 'queued', error: null });
+    });
+
+    it('queues a failed or cancelled episode again and clears its error', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const failed = db.ensureEpisode(anime.id, '1');
+        db.markFailed(failed.id, 'error', { code: 'NETWORK', raw: 'boom' });
+        expect(db.ensureEpisode(anime.id, '1')).toMatchObject({ id: failed.id, status: 'queued', error: null });
+
+        db.markFailed(failed.id, 'cancelled', null);
+        expect(db.ensureEpisode(anime.id, '1').status).toBe('queued');
+    });
+
+    it('leaves a downloaded episode alone', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const episode = db.ensureEpisode(anime.id, '1');
+        db.markDone(episode.id, '/a/1.mp4', 100);
+        expect(db.ensureEpisode(anime.id, '1')).toMatchObject({ id: episode.id, status: 'done', filePath: '/a/1.mp4', sizeBytes: 100 });
+    });
+});
+
+describe('AnimeDb lookups', () => {
+    it('finds an anime, an episode and the anime with its episodes by id', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const episode = db.ensureEpisode(anime.id, '2');
+        expect(db.getAnime(anime.id)).toEqual(anime);
+        expect(db.getEpisode(episode.id)).toEqual(episode);
+        expect(db.getLibraryAnime(anime.id)).toEqual({ ...anime, episodes: [episode] });
+    });
+
+    it('answers null for what does not exist', () => {
+        const db = makeDb();
+        expect(db.getAnime(99)).toBeNull();
+        expect(db.getEpisode(99)).toBeNull();
+        expect(db.getLibraryAnime(99)).toBeNull();
+    });
+});
+
+describe('AnimeDb.list', () => {
+    it('is empty at first', () => {
+        expect(makeDb().list()).toEqual([]);
+    });
+
+    it('orders the animes by title, ignoring case, and the episodes by number', () => {
+        const db = makeDb();
+        const one = db.upsertAnime({ ...NARUTO, title: 'one piece' });
+        const bleach = db.upsertAnime({ ...NARUTO, title: 'Bleach' });
+        ['10', '2', '1', '1.5'].forEach((number) => {
+            db.ensureEpisode(bleach.id, number);
+        });
+        const list = db.list();
+        expect(
+            list.map((anime) => {
+                return anime.title;
+            })
+        ).toEqual(['Bleach', 'one piece']);
+        expect(
+            list[0]?.episodes.map((episode) => {
+                return episode.number;
+            })
+        ).toEqual(['1', '1.5', '2', '10']);
+        expect(list[1]?.id).toBe(one.id);
+    });
+});
+
+describe('AnimeDb status changes', () => {
+    it('marks an episode as downloading and clears the previous error', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const episode = db.ensureEpisode(anime.id, '1');
+        db.markFailed(episode.id, 'error', { code: 'BLOCKED', raw: 'Blocked by cloudflare.' });
+        db.markDownloading(episode.id);
+        expect(db.getEpisode(episode.id)).toMatchObject({ status: 'downloading', error: null });
+    });
+
+    it('marks an episode as done with its file and size', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const episode = db.ensureEpisode(anime.id, '1');
+        db.markDone(episode.id, '/a/Naruto Episode 1.mp4', 1234);
+        expect(db.getEpisode(episode.id)).toMatchObject({
+            status: 'done',
+            filePath: '/a/Naruto Episode 1.mp4',
+            sizeBytes: 1234,
+            error: null,
+            downloadedAt: NOW
+        });
+    });
+
+    it('accepts an unknown size', () => {
+        const db = makeDb();
+        const episode = db.ensureEpisode(db.upsertAnime(NARUTO).id, '1');
+        db.markDone(episode.id, '/a/1.mp4', null);
+        expect(db.getEpisode(episode.id)?.sizeBytes).toBeNull();
+    });
+
+    it('records an error with its code and text', () => {
+        const db = makeDb();
+        const episode = db.ensureEpisode(db.upsertAnime(NARUTO).id, '1');
+        db.markFailed(episode.id, 'error', { code: 'NO_SOURCES', raw: 'No sources found for sub!' });
+        expect(db.getEpisode(episode.id)).toMatchObject({ status: 'error', error: { code: 'NO_SOURCES', raw: 'No sources found for sub!' } });
+    });
+
+    it('records a cancellation without an error', () => {
+        const db = makeDb();
+        const episode = db.ensureEpisode(db.upsertAnime(NARUTO).id, '1');
+        db.markFailed(episode.id, 'cancelled', null);
+        expect(db.getEpisode(episode.id)).toMatchObject({ status: 'cancelled', error: null });
+    });
+
+    it('reads an unrecognised stored error code and status as UNKNOWN and error', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        const db = new AnimeDb(path);
+        const episode = db.ensureEpisode(db.upsertAnime(NARUTO).id, '1');
+        db.close();
+        const raw = new DatabaseSync(path);
+        raw.prepare('UPDATE episode SET status = ?, error_code = ?, error_raw = ? WHERE id = ?').run('mystery', 'FROM_THE_FUTURE', 'x', episode.id);
+        raw.close();
+
+        const reopened = new AnimeDb(path);
+        expect(reopened.getEpisode(episode.id)).toMatchObject({ status: 'error', error: { code: 'UNKNOWN', raw: 'x' } });
+        reopened.close();
+    });
+});
+
+describe('AnimeDb.failInterrupted', () => {
+    it('fails what was queued or downloading and leaves the rest', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const queued = db.ensureEpisode(anime.id, '1');
+        const downloading = db.ensureEpisode(anime.id, '2');
+        const done = db.ensureEpisode(anime.id, '3');
+        const cancelled = db.ensureEpisode(anime.id, '4');
+        db.markDownloading(downloading.id);
+        db.markDone(done.id, '/a/3.mp4', 1);
+        db.markFailed(cancelled.id, 'cancelled', null);
+
+        db.failInterrupted();
+
+        expect(db.getEpisode(queued.id)).toMatchObject({ status: 'error', error: { code: 'UNKNOWN', raw: INTERRUPTED_MESSAGE } });
+        expect(db.getEpisode(downloading.id)).toMatchObject({ status: 'error', error: { code: 'UNKNOWN', raw: INTERRUPTED_MESSAGE } });
+        expect(db.getEpisode(done.id)?.status).toBe('done');
+        expect(db.getEpisode(cancelled.id)?.status).toBe('cancelled');
+    });
+});
+
+describe('AnimeDb.saveProgress', () => {
+    it('stores the position, the duration and whether it was watched', () => {
+        const db = makeDb();
+        const episode = db.ensureEpisode(db.upsertAnime(NARUTO).id, '1');
+        db.saveProgress({ episodeId: episode.id, positionSeconds: 61.5, durationSeconds: 1440, watched: false });
+        expect(db.getEpisode(episode.id)).toMatchObject({ positionSeconds: 61.5, durationSeconds: 1440, watched: false });
+
+        db.saveProgress({ episodeId: episode.id, positionSeconds: 1430, durationSeconds: 1440, watched: true });
+        expect(db.getEpisode(episode.id)).toMatchObject({ positionSeconds: 1430, durationSeconds: 1440, watched: true });
+    });
+});
+
+describe('AnimeDb removal', () => {
+    it('removes an episode and gives back its file', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const episode = db.ensureEpisode(anime.id, '1');
+        db.markDone(episode.id, '/a/1.mp4', 1);
+        expect(db.removeEpisode(episode.id)).toBe('/a/1.mp4');
+        expect(db.getEpisode(episode.id)).toBeNull();
+        expect(db.getAnime(anime.id)).not.toBeNull();
+    });
+
+    it('gives back null for an episode without a file or that does not exist', () => {
+        const db = makeDb();
+        const episode = db.ensureEpisode(db.upsertAnime(NARUTO).id, '1');
+        expect(db.removeEpisode(episode.id)).toBeNull();
+        expect(db.removeEpisode(99)).toBeNull();
+    });
+
+    it('removes an anime with its episodes and gives back the files of the downloaded ones', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const first = db.ensureEpisode(anime.id, '1');
+        const second = db.ensureEpisode(anime.id, '2');
+        db.ensureEpisode(anime.id, '3');
+        db.markDone(first.id, '/a/1.mp4', 1);
+        db.markDone(second.id, '/a/2.mp4', 1);
+
+        expect(db.removeAnime(anime.id)).toEqual(['/a/1.mp4', '/a/2.mp4']);
+        expect(db.getAnime(anime.id)).toBeNull();
+        expect(db.getEpisode(first.id)).toBeNull();
+        expect(db.list()).toEqual([]);
+    });
+
+    it('does not touch other animes', () => {
+        const db = makeDb();
+        const other = db.upsertAnime({ ...NARUTO, title: 'Bleach' });
+        db.ensureEpisode(other.id, '1');
+        const anime = db.upsertAnime(NARUTO);
+        db.removeAnime(anime.id);
+        expect(db.getLibraryAnime(other.id)?.episodes).toHaveLength(1);
+    });
+});

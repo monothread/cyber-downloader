@@ -13,6 +13,7 @@ import {
     THEMES,
     VIDEO_CONTAINERS
 } from '@shared/constants';
+import { ANIME_AUDIOS, ANIME_QUALITIES, ANIME_SUBTITLE_SETTINGS } from '@shared/anime';
 import type { DownloadOptions, Settings } from '@shared/types';
 
 const RATE_LIMIT_PATTERN = /^\d+(\.\d+)?[KkMmGg]?$/;
@@ -77,7 +78,11 @@ export function sanitizeSettings(input: unknown): Settings {
         verifyLiveEndSeconds: pickClampedInteger(raw.verifyLiveEndSeconds, MIN_LIVE_END_CHECK_SECONDS, MAX_LIVE_END_CHECK_SECONDS, defaults.verifyLiveEndSeconds),
         theme: pickEnum(raw.theme, THEMES, defaults.theme),
         language: pickEnum(raw.language, LANGUAGE_SETTINGS, defaults.language),
-        extraArgs: pickString(raw.extraArgs, defaults.extraArgs)
+        extraArgs: pickString(raw.extraArgs, defaults.extraArgs),
+        animeDownloadDir: pickString(raw.animeDownloadDir, defaults.animeDownloadDir),
+        animeQuality: pickEnum(raw.animeQuality, ANIME_QUALITIES, defaults.animeQuality),
+        animeAudio: pickEnum(raw.animeAudio, ANIME_AUDIOS, defaults.animeAudio),
+        animeSubtitles: pickEnum(raw.animeSubtitles, ANIME_SUBTITLE_SETTINGS, defaults.animeSubtitles)
     };
 }
 

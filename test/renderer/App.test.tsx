@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import { App } from '@renderer/App';
+import { UNSUPPORTED_STATUS, useAnimeStore } from '@renderer/store/animeStore';
 import { useAppStore } from '@renderer/store/appStore';
+import { makeStatus } from '../helpers/animeFixtures';
 import { APP_UPDATE_IDLE, installMockApi, makeJob, type MockApiHandle } from '../helpers/mockApi';
 
 let mock: MockApiHandle;
@@ -11,6 +13,7 @@ const initial = useAppStore.getState();
 
 beforeEach(() => {
     mock = installMockApi();
+    useAnimeStore.setState({ status: UNSUPPORTED_STATUS, jobs: [], library: [], selection: null, playing: null });
     useAppStore.setState({ ...initial, tab: 'downloads', jobs: [], history: [], settings: DEFAULT_SETTINGS, binaries: null, notice: null, updating: false, appUpdate: { ...APP_UPDATE_IDLE, currentVersion: '' } });
 });
 
@@ -234,5 +237,60 @@ describe('App theme', () => {
         });
         expect(document.documentElement.style.getPropertyValue('--mx')).toBe('');
         expect(document.documentElement.getAttribute('data-glow')).toBeNull();
+    });
+});
+
+describe('App anime section', () => {
+    const supported = makeStatus();
+
+    it('has no anime tab where the section does not exist', async () => {
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        expect(screen.queryByRole('button', { name: 'ANIME' })).not.toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: /^(DOWNLOADS|HISTORY|SETTINGS)$/ })).toHaveLength(3);
+    });
+
+    it('adds the anime tab, between downloads and history, where it exists', async () => {
+        mock.api.getAnimeStatus.mockResolvedValue(supported);
+        render(<App />);
+        await screen.findByRole('button', { name: 'ANIME' });
+        expect(
+            within(screen.getByRole('navigation', { name: 'Sections' }))
+                .getAllByRole('button')
+                .map((button) => {
+                    return button.textContent;
+                })
+        ).toEqual(['DOWNLOADS', 'ANIME', 'HISTORY', 'SETTINGS']);
+    });
+
+    it('shows the anime section when its tab is chosen', async () => {
+        const user = userEvent.setup();
+        mock.api.getAnimeStatus.mockResolvedValue(supported);
+        render(<App />);
+        await user.click(await screen.findByRole('button', { name: 'ANIME' }));
+
+        expect(screen.getByRole('button', { name: 'ANIME' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByRole('region', { name: 'Anime' })).toBeInTheDocument();
+        expect(screen.getByLabelText('Anime name')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Link 1')).not.toBeInTheDocument();
+    });
+
+    it('loads the library and the jobs of the section', async () => {
+        mock.api.getAnimeStatus.mockResolvedValue(supported);
+        render(<App />);
+        await screen.findByRole('button', { name: 'ANIME' });
+        expect(mock.api.listAnimeLibrary).toHaveBeenCalledTimes(1);
+        expect(mock.api.listAnimeJobs).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes from the events of the section too on unmount', async () => {
+        mock.api.getAnimeStatus.mockResolvedValue(supported);
+        const { unmount } = render(<App />);
+        await screen.findByRole('button', { name: 'ANIME' });
+        unmount();
+        expect(mock.unsubscribers).toHaveLength(7);
+        mock.unsubscribers.forEach((unsubscribe) => {
+            expect(unsubscribe).toHaveBeenCalledTimes(1);
+        });
     });
 });

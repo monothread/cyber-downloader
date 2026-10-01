@@ -31,6 +31,8 @@
     --body-bg: radial-gradient(1200px 600px at 80% -10%, #2a0a3d 0%, transparent 60%), radial-gradient(900px 500px at -10% 110%, #04283a 0%, transparent 55%), var(--bg);
     --scanlines: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 0, rgba(255, 255, 255, 0.035) 1px, transparent 1px, transparent 3px);
     --cut: 8px;
+    /* The height of a text field and of every button that sits beside one. */
+    --control-height: 39px;
     color-scheme: dark;
 }
 
@@ -210,6 +212,7 @@ body::after {
     padding: 8px 10px;
     font: inherit;
     outline: none;
+    min-height: var(--control-height);
 }
 
 .input:focus {
@@ -375,7 +378,7 @@ body::after {
 .empty { color: var(--muted); text-align: center; padding: 32px 0; letter-spacing: 2px; }
 
 .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 18px; align-items: stretch; }
-.panel.panel--wide { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); column-gap: 18px; align-content: start; }
+.panel.panel--wide { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); column-gap: 18px; align-content: start; align-items: start; }
 .panel.panel--wide > legend { grid-column: 1 / -1; }
 
 .panel {
@@ -412,7 +415,9 @@ body::after {
 }
 
 .history__item--error { border-left-color: var(--red); }
-.history__main { display: flex; flex-direction: column; min-width: 0; }
+.history__main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+/* What is beside the title keeps its size, however long the title is. */
+.history__item > .btn, .history__item > .anime__actions { flex: none; white-space: nowrap; }
 .history__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history__meta { color: var(--muted); font-size: 12px; }
 
@@ -635,3 +640,63 @@ body::after {
 .modal__title { margin: 0; font-size: 15px; letter-spacing: 1px; color: var(--cyan); text-shadow: var(--text-glow); }
 .modal__hint { margin: 0; color: var(--muted); font-size: 12px; }
 .modal__actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+
+/* Anime section */
+.anime { display: flex; flex-direction: column; gap: 14px; }
+.anime__bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+.anime__bar .tabs { flex: 1; margin-top: 0; border-bottom: 0; }
+.anime__search, .anime__detail { display: flex; flex-direction: column; gap: 12px; }
+.anime__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.anime-remove { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.episode-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 6px;
+}
+
+.episode-chip {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    padding: 4px;
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+}
+
+.episode-chip:hover { border-color: var(--cyan); color: var(--cyan); }
+.episode-chip:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+.episode-chip--done { border-color: var(--green); }
+.episode-chip[aria-pressed='true'] { background: var(--cyan); border-color: var(--cyan); color: var(--bg); box-shadow: var(--glow); }
+
+.player {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.82);
+}
+
+.player__box {
+    width: min(1100px, 100%);
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--panel);
+    border: 1px solid var(--cyan);
+    box-shadow: var(--glow);
+    padding: 12px 14px;
+}
+
+.player__title { margin: 0; font-size: 14px; letter-spacing: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player__video { width: 100%; max-height: 70vh; background: #000; }
+
+/* Buttons that sit beside a text field are as tall as the field, so the row lines up. */
+.field-row .btn, .link-row__line > .btn, .anime__bar > .btn { min-height: var(--control-height); }
+.anime__bar > .btn { margin-bottom: 0; }

@@ -1,5 +1,6 @@
 import type { BinaryInfo } from '@shared/types';
 import { useTranslator } from '../i18n/useTranslator';
+import { useAnimeStore } from '../store/animeStore';
 import { useAppStore } from '../store/appStore';
 
 function BinaryChip({ label, info }: { label: string; info: BinaryInfo | undefined }) {
@@ -23,10 +24,15 @@ export function BinaryStatus() {
     const binaries = useAppStore((state) => {
         return state.binaries;
     });
+    // ani-cli only exists where the anime section does.
+    const aniCli = useAnimeStore((state) => {
+        return state.status.aniCli;
+    });
     return (
         <div className="binary-status">
             <BinaryChip label="yt-dlp" info={binaries?.ytdlp} />
             <BinaryChip label="ffmpeg" info={binaries?.ffmpeg} />
+            {aniCli && <BinaryChip label="ani-cli" info={aniCli} />}
         </div>
     );
 }

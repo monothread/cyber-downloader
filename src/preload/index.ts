@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IPC } from '@shared/constants';
+import type { AnimeJob } from '@shared/anime';
 import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -87,6 +88,59 @@ const api: CyberApi = {
     },
     showItemInFolder: (path) => {
         return ipcRenderer.invoke(IPC.shellShowItem, path);
+    },
+    getAnimeStatus: () => {
+        return ipcRenderer.invoke(IPC.animeStatus);
+    },
+    searchAnime: (query, audio) => {
+        return ipcRenderer.invoke(IPC.animeSearch, query, audio);
+    },
+    listAnimeEpisodes: (query, index, audio) => {
+        return ipcRenderer.invoke(IPC.animeEpisodes, query, index, audio);
+    },
+    downloadAnime: (request) => {
+        return ipcRenderer.invoke(IPC.animeDownload, request);
+    },
+    listAnimeLibrary: () => {
+        return ipcRenderer.invoke(IPC.animeLibrary);
+    },
+    listAnimeJobs: () => {
+        return ipcRenderer.invoke(IPC.animeJobs);
+    },
+    cancelAnimeJob: (episodeId) => {
+        return ipcRenderer.invoke(IPC.animeCancel, episodeId);
+    },
+    retryAnimeJob: (episodeId) => {
+        return ipcRenderer.invoke(IPC.animeRetry, episodeId);
+    },
+    clearFinishedAnimeJobs: () => {
+        return ipcRenderer.invoke(IPC.animeClearFinished);
+    },
+    removeAnimeEpisode: (episodeId) => {
+        return ipcRenderer.invoke(IPC.animeRemoveEpisode, episodeId);
+    },
+    removeAnime: (animeId) => {
+        return ipcRenderer.invoke(IPC.animeRemoveAnime, animeId);
+    },
+    saveAnimeProgress: (update) => {
+        return ipcRenderer.invoke(IPC.animeProgress, update);
+    },
+    updateAniCli: () => {
+        return ipcRenderer.invoke(IPC.animeUpdateCli);
+    },
+    openAnimeStream: (request) => {
+        return ipcRenderer.invoke(IPC.animeStreamOpen, request);
+    },
+    closeAnimeStream: (sessionId) => {
+        return ipcRenderer.invoke(IPC.animeStreamClose, sessionId);
+    },
+    onAnimeJobUpdate: (listener) => {
+        return subscribe<AnimeJob>(IPC.eventAnimeJob, listener);
+    },
+    onAnimeLibraryChanged: (listener) => {
+        return subscribe<undefined>(IPC.eventAnimeLibrary, () => {
+            listener();
+        });
     },
     onJobUpdate: (listener) => {
         return subscribe<DownloadJob>(IPC.eventJobUpdate, listener);

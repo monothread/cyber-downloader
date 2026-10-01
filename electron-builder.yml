@@ -19,6 +19,10 @@ linux:
       to: bin
     - from: resources/lib
       to: lib
+    # The anime section (ani-cli) is Linux only: its stand-ins for the menu, the player and tput. The tools it runs on
+    # (busybox, curl, ani-cli) are in resources/bin/ani, copied with the rest of bin.
+    - from: resources/ani-scripts
+      to: ani-scripts
     - from: resources/THIRD_PARTY_NOTICES.md
       to: THIRD_PARTY_NOTICES.md
   # One build must produce every Linux package: latest-linux.yml has to list all of them so that the
@@ -36,6 +40,9 @@ win:
   extraResources:
     - from: resources/bin
       to: bin
+      filter:
+        - "**/*"
+        - "!ani/**"
     - from: resources/THIRD_PARTY_NOTICES.md
       to: THIRD_PARTY_NOTICES.md
   target:

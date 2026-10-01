@@ -1,0 +1,3 @@
+#!/bin/sh
+# ani-cli refuses to start on Linux without a player (mpv or vlc), even to download. Pullwave never plays through it.
+exit 0

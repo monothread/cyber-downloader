@@ -1,6 +1,9 @@
 import { delimiter, join } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, session, shell } from 'electron';
+import { ANIME_MEDIA_SCHEME, ANIME_STREAM_SCHEME } from '@shared/anime';
 import { IPC } from '@shared/constants';
+import { createAnimeRuntime } from './animeRuntime';
+import { registerAnimeHandlers } from './ipc/registerAnimeHandlers';
 import { registerHandlers } from './ipc/registerHandlers';
 import { createDiagnosticLog, type DiagnosticLog } from './services/diagnosticLog';
 import { attachWindowDiagnostics } from './services/windowDiagnostics';
@@ -28,13 +31,22 @@ import { StreamFinder } from './services/streamFinder';
 import { ignoreStdioErrors } from './services/stdioGuard';
 import { checkTraySupport } from './services/trayAvailability';
 import { TrayManager } from './services/trayManager';
+import { createMediaHandler, defaultMediaFileSystem } from './services/mediaProtocol';
 import { createQuitRequester, decideCloseAction, describePending } from './services/windowClose';
 import { runYtdlp } from './services/ytdlpRunner';
 
 const APP_ID = 'dev.lucas.pullwave';
 const STARTUP_UPDATE_CHECK_DELAY_MS = 5000;
 const PRODUCTION_CSP =
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'";
+    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${ANIME_STREAM_SCHEME}:; media-src 'self' blob: ${ANIME_MEDIA_SCHEME}: ${ANIME_STREAM_SCHEME}:`;
+
+// The scheme the anime player reads files through has to be declared before the app is ready (Linux only, like the section).
+if (process.platform === 'linux') {
+    protocol.registerSchemesAsPrivileged([
+        { scheme: ANIME_MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+        { scheme: ANIME_STREAM_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
+    ]);
+}
 
 ignoreStdioErrors();
 // Must run before the single-instance lock below, which is what creates the data folder.
@@ -212,6 +224,35 @@ function bootstrap(): void {
             sendToRenderer(IPC.eventHistoryChanged);
         }
     });
+    const anime = createAnimeRuntime({
+        platform: process.platform,
+        dataDir,
+        bundledDir: join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources'), 'bin'),
+        scriptsDir: join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources'), 'ani-scripts'),
+        defaultDownloadDir: app.getPath('downloads'),
+        systemLocale: app.getLocale(),
+        resolver,
+        getSettings: () => {
+            return settingsStore.get();
+        },
+        // PULLWAVE_ANI_CLI replaces the ani-cli script that ships with the app (used by the end-to-end tests).
+        customScriptPath: () => {
+            return process.env.PULLWAVE_ANI_CLI ?? '';
+        },
+        send: sendToRenderer
+    });
+    if (anime) {
+        const handleMedia = createMediaHandler(anime.media, defaultMediaFileSystem);
+        protocol.handle(ANIME_MEDIA_SCHEME, (request) => {
+            return handleMedia(request);
+        });
+        protocol.handle(ANIME_STREAM_SCHEME, (request) => {
+            return anime.streamHandler(request);
+        });
+    }
+    const pendingDownloads = (): number => {
+        return queue.pendingCount() + (anime?.queue.pendingCount() ?? 0);
+    };
     const appUpdates = new AppUpdateService(
         getElectronUpdater(),
         { supported: app.isPackaged, currentVersion: app.getVersion() },
@@ -222,9 +263,7 @@ function bootstrap(): void {
     scheduleStartupUpdateCheck(appUpdates, settingsStore.get().checkUpdatesOnStart);
 
     requestQuit = createQuitRequester({
-        pendingCount: () => {
-            return queue.pendingCount();
-        },
+        pendingCount: pendingDownloads,
         confirm: (pending) => {
             return confirmPending('quit', pending);
         },
@@ -233,9 +272,7 @@ function bootstrap(): void {
         }
     });
     requestRestart = createQuitRequester({
-        pendingCount: () => {
-            return queue.pendingCount();
-        },
+        pendingCount: pendingDownloads,
         confirm: (pending) => {
             return confirmPending('restart', pending);
         },
@@ -260,13 +297,13 @@ function bootstrap(): void {
                 show: showWindow,
                 toggle: toggleWindow,
                 restart: () => {
-                    if (queue.pendingCount() > 0) {
+                    if (pendingDownloads() > 0) {
                         showWindow();
                     }
                     void requestRestart?.();
                 },
                 quit: () => {
-                    if (queue.pendingCount() > 0) {
+                    if (pendingDownloads() > 0) {
                         showWindow();
                     }
                     void requestQuit?.();
@@ -300,6 +337,7 @@ function bootstrap(): void {
     let shutdownDone = false;
     app.on('before-quit', (event) => {
         quitting = true;
+        anime?.queue.shutdown();
         if (shutdownDone) {
             return;
         }
@@ -315,6 +353,7 @@ function bootstrap(): void {
         void queue.shutdown();
     });
 
+    registerAnimeHandlers(ipcMain, anime ? anime.handlers : null);
     registerHandlers({
         ipcMain,
         settingsStore,

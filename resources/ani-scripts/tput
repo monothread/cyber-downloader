@@ -1,0 +1,3 @@
+#!/bin/sh
+# ani-cli moves the cursor with tput for cosmetic reasons; busybox has no tput and there is no terminal here.
+exit 0

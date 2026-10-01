@@ -12,12 +12,14 @@ import {
     VIDEO_CONTAINERS
 } from '@shared/constants';
 import { useEffect } from 'react';
+import { ANIME_AUDIOS, ANIME_QUALITIES, ANIME_SUBTITLE_SETTINGS, type AnimeAudio, type AnimeQuality, type AnimeSubtitleSetting } from '@shared/anime';
 import { chosenBrowserWarning, findChosenBrowser, NO_BROWSER_CHOSEN } from '@shared/browserChoice';
 import { LANGUAGE_NAMES, type Translator } from '@shared/i18n';
 import { hasUnboundedAutoSubtitles } from '@shared/subtitles';
 import type { DetectedBrowser, LanguageSetting, ThemeName } from '@shared/types';
 import { useAutoSaveSettings, type SaveStatus } from '../hooks/useAutoSaveSettings';
 import { useTranslator } from '../i18n/useTranslator';
+import { useAnimeStore } from '../store/animeStore';
 import { useAppStore } from '../store/appStore';
 import { NumberField, SelectField, TextField, ToggleField } from './fields';
 import { formatResolution } from './settingsFormat';
@@ -34,6 +36,24 @@ function formatTheme(theme: ThemeName, t: Translator): string {
 
 function formatLanguage(language: LanguageSetting, t: Translator): string {
     return language === 'device' ? t('language.device') : LANGUAGE_NAMES[language];
+}
+
+function formatAnimeQuality(quality: AnimeQuality, t: Translator): string {
+    if (quality === 'best') {
+        return t('anime.quality.best');
+    }
+    return quality === 'worst' ? t('anime.quality.worst') : quality;
+}
+
+function formatAnimeSubtitles(setting: AnimeSubtitleSetting, t: Translator): string {
+    if (setting === 'auto') {
+        return t('anime.subtitles.auto');
+    }
+    return setting === 'default' ? t('anime.subtitles.default') : setting;
+}
+
+function formatAnimeAudio(audio: AnimeAudio, t: Translator): string {
+    return audio === 'dub' ? t('anime.audio.dub') : t('anime.audio.sub');
 }
 
 function findBrowserByDir(browsers: readonly DetectedBrowser[], dataDir: string): DetectedBrowser | undefined {
@@ -107,6 +127,18 @@ export function SettingsPanel() {
     const loadBrowsers = useAppStore((state) => {
         return state.loadBrowsers;
     });
+    const animeSupported = useAnimeStore((state) => {
+        return state.status.supported;
+    });
+    const aniCli = useAnimeStore((state) => {
+        return state.status.aniCli;
+    });
+    const updatingAniCli = useAnimeStore((state) => {
+        return state.updatingCli;
+    });
+    const updateAniCli = useAnimeStore((state) => {
+        return state.updateCli;
+    });
     const { draft, status, change, edit, changeMany } = useAutoSaveSettings(stored, saveSettings);
     const detectedBrowsers = browsers ?? [];
     const chosenBrowser = findChosenBrowser(detectedBrowsers, draft);
@@ -131,6 +163,13 @@ export function SettingsPanel() {
         const directory = await chooseDirectory();
         if (directory) {
             change('downloadDir', directory);
+        }
+    }
+
+    async function handleChooseAnimeDirectory(): Promise<void> {
+        const directory = await chooseDirectory();
+        if (directory) {
+            change('animeDownloadDir', directory);
         }
     }
 
@@ -228,6 +267,86 @@ export function SettingsPanel() {
                     }}
                 />
             </fieldset>
+
+            {animeSupported && (
+                <fieldset className="panel panel--wide">
+                    <legend>{t('settings.anime')}</legend>
+                    <div className="field-row">
+                        <TextField
+                            label={t('settings.animeDownloadDir')}
+                            value={draft.animeDownloadDir}
+                            placeholder={t('settings.animeDownloadDir.placeholder')}
+                            onChange={(value) => {
+                                edit('animeDownloadDir', value);
+                            }}
+                        />
+                        <button
+                            type="button"
+                            className="btn btn--small"
+                            onClick={() => {
+                                void handleChooseAnimeDirectory();
+                            }}
+                        >
+                            {t('settings.browse')}
+                        </button>
+                    </div>
+                    <SelectField
+                        label={t('settings.animeQuality')}
+                        value={draft.animeQuality}
+                        options={ANIME_QUALITIES}
+                        formatOption={(quality) => {
+                            return formatAnimeQuality(quality, t);
+                        }}
+                        hint={t('settings.animeQuality.hint')}
+                        onChange={(value) => {
+                            change('animeQuality', value);
+                        }}
+                    />
+                    <SelectField
+                        label={t('settings.animeAudio')}
+                        value={draft.animeAudio}
+                        options={ANIME_AUDIOS}
+                        formatOption={(audio) => {
+                            return formatAnimeAudio(audio, t);
+                        }}
+                        hint={t('settings.animeAudio.hint')}
+                        onChange={(value) => {
+                            change('animeAudio', value);
+                        }}
+                    />
+                    <SelectField
+                        label={t('settings.animeSubtitles')}
+                        value={draft.animeSubtitles}
+                        options={ANIME_SUBTITLE_SETTINGS}
+                        formatOption={(setting) => {
+                            return formatAnimeSubtitles(setting, t);
+                        }}
+                        hint={t('settings.animeSubtitles.hint')}
+                        onChange={(value) => {
+                            change('animeSubtitles', value);
+                        }}
+                    />
+                    <div className="field">
+                        <span className="field__label">ani-cli</span>
+                        <p className="update-status" aria-live="polite">
+                            {aniCli?.found ? t('settings.anicli.installed', { version: aniCli.version ?? t('settings.ytdlp.versionUnknown') }) : t('settings.anicli.notFound')}
+                        </p>
+                        <div className="field-row">
+                            <button
+                                type="button"
+                                className="btn btn--small"
+                                disabled={updatingAniCli}
+                                onClick={() => {
+                                    void updateAniCli();
+                                }}
+                            >
+                                {updatingAniCli ? t('settings.anicli.updating') : t('settings.anicli.update')}
+                            </button>
+                        </div>
+                        <span className="field__hint">{t('settings.anicli.hint')}</span>
+                    </div>
+                </fieldset>
+            )}
 
             <fieldset className="panel">
                 <legend>{t('settings.quality')}</legend>

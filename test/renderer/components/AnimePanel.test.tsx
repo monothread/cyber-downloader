@@ -1,0 +1,169 @@
+// @vitest-environment jsdom
+import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { DEFAULT_SETTINGS } from '@shared/constants';
+import { AnimePanel } from '@renderer/components/AnimePanel';
+import { INITIAL_SEARCH, useAnimeStore } from '@renderer/store/animeStore';
+import { useAppStore } from '@renderer/store/appStore';
+import { makeAnime, makeAnimeJob, makeEpisode, makeStatus } from '../../helpers/animeFixtures';
+import { installMockApi } from '../../helpers/mockApi';
+
+const initialApp = useAppStore.getState();
+const initialAnime = useAnimeStore.getState();
+
+beforeEach(() => {
+    installMockApi();
+    useAppStore.setState({ ...initialApp, settings: DEFAULT_SETTINGS });
+    useAnimeStore.setState({
+        ...initialAnime,
+        status: makeStatus(),
+        view: 'search',
+        jobs: [],
+        library: [],
+        search: INITIAL_SEARCH,
+        selection: null,
+        playing: null
+    });
+});
+
+function subNav(): HTMLElement {
+    return screen.getByRole('navigation', { name: 'Anime' });
+}
+
+describe('AnimePanel', () => {
+    it('warns when the tools of the section are missing and shows nothing else', () => {
+        useAnimeStore.setState({ status: makeStatus({ available: false }) });
+        render(<AnimePanel />);
+        expect(screen.getByRole('alert')).toHaveTextContent('ANIME TOOLS NOT FOUND');
+        expect(screen.getByText('The files the anime section runs on are missing from this installation. Reinstall the app.')).toBeInTheDocument();
+        expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Anime name')).not.toBeInTheDocument();
+    });
+
+    it('shows the search first and marks it as the current view', () => {
+        render(<AnimePanel />);
+        expect(screen.getByRole('region', { name: 'Anime' })).toBeInTheDocument();
+        expect(within(subNav()).getByRole('button', { name: 'SEARCH' })).toHaveAttribute('aria-current', 'page');
+        expect(within(subNav()).getByRole('button', { name: 'LIBRARY' })).not.toHaveAttribute('aria-current');
+        expect(screen.getByLabelText('Anime name')).toBeInTheDocument();
+    });
+
+    it('switches between the search and the library', async () => {
+        const user = userEvent.setup();
+        render(<AnimePanel />);
+
+        await user.click(screen.getByRole('button', { name: 'LIBRARY' }));
+        expect(screen.getByText('// THE LIBRARY IS EMPTY. SEARCH AN ANIME AND DOWNLOAD AN EPISODE.')).toBeInTheDocument();
+        expect(within(subNav()).getByRole('button', { name: 'LIBRARY' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.queryByLabelText('Anime name')).not.toBeInTheDocument();
+
+        await user.click(within(subNav()).getByRole('button', { name: 'SEARCH' }));
+        expect(screen.getByLabelText('Anime name')).toBeInTheDocument();
+    });
+
+    describe('downloads', () => {
+        it('has a button with the number of downloads that are happening or waiting', () => {
+            useAnimeStore.setState({
+                jobs: [
+                    makeAnimeJob({ episodeId: 1, status: 'running' }),
+                    makeAnimeJob({ episodeId: 2, status: 'queued' }),
+                    makeAnimeJob({ episodeId: 3, status: 'done' }),
+                    makeAnimeJob({ episodeId: 4, status: 'error' }),
+                    makeAnimeJob({ episodeId: 5, status: 'cancelled' })
+                ]
+            });
+            render(<AnimePanel />);
+            expect(screen.getByRole('button', { name: 'DOWNLOADS (2)' })).toBeInTheDocument();
+        });
+
+        it('counts zero when nothing is happening, and highlights the button only when something is', () => {
+            const { unmount } = render(<AnimePanel />);
+            expect(screen.getByRole('button', { name: 'DOWNLOADS (0)' })).not.toHaveClass('btn--primary');
+            unmount();
+
+            useAnimeStore.setState({ jobs: [makeAnimeJob({ status: 'running' })] });
+            render(<AnimePanel />);
+            expect(screen.getByRole('button', { name: 'DOWNLOADS (1)' })).toHaveClass('btn--primary');
+        });
+
+        it('does not list the downloads on the search or on the library', async () => {
+            const user = userEvent.setup();
+            useAnimeStore.setState({ jobs: [makeAnimeJob()] });
+            render(<AnimePanel />);
+            expect(screen.queryByTestId('anime-job')).not.toBeInTheDocument();
+            await user.click(within(subNav()).getByRole('button', { name: 'LIBRARY' }));
+            expect(screen.queryByTestId('anime-job')).not.toBeInTheDocument();
+        });
+
+        it('opens a screen with the downloads in place of the search, and BACK returns to it', async () => {
+            const user = userEvent.setup();
+            useAnimeStore.setState({ jobs: [makeAnimeJob()] });
+            render(<AnimePanel />);
+
+            await user.click(screen.getByRole('button', { name: 'DOWNLOADS (1)' }));
+            expect(useAnimeStore.getState().view).toBe('downloads');
+            expect(screen.getByTestId('anime-job')).toBeInTheDocument();
+            expect(screen.queryByLabelText('Anime name')).not.toBeInTheDocument();
+            expect(screen.queryByRole('navigation', { name: 'Anime' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'DOWNLOADS (1)' })).not.toBeInTheDocument();
+
+            await user.click(screen.getByRole('button', { name: 'BACK' }));
+            expect(useAnimeStore.getState().view).toBe('search');
+            expect(screen.getByLabelText('Anime name')).toBeInTheDocument();
+            expect(screen.queryByTestId('anime-job')).not.toBeInTheDocument();
+        });
+
+        it('goes back to the library when it was opened from there', async () => {
+            const user = userEvent.setup();
+            render(<AnimePanel />);
+            await user.click(within(subNav()).getByRole('button', { name: 'LIBRARY' }));
+            await user.click(screen.getByRole('button', { name: 'DOWNLOADS (0)' }));
+            expect(screen.getByText('// NO DOWNLOADS YET.')).toBeInTheDocument();
+
+            await user.click(screen.getByRole('button', { name: 'BACK' }));
+            expect(useAnimeStore.getState().view).toBe('library');
+            expect(within(subNav()).getByRole('button', { name: 'LIBRARY' })).toHaveAttribute('aria-current', 'page');
+        });
+
+        it('keeps the opened anime and the search while the downloads are shown', async () => {
+            const user = userEvent.setup();
+            useAnimeStore.setState({ search: { ...INITIAL_SEARCH, query: 'naruto' } });
+            render(<AnimePanel />);
+            await user.click(screen.getByRole('button', { name: 'DOWNLOADS (0)' }));
+            await user.click(screen.getByRole('button', { name: 'BACK' }));
+            expect(screen.getByLabelText('Anime name')).toHaveValue('naruto');
+        });
+
+        it('updates the screen as the downloads progress', async () => {
+            const user = userEvent.setup();
+            render(<AnimePanel />);
+            await user.click(screen.getByRole('button', { name: 'DOWNLOADS (0)' }));
+            expect(screen.queryByTestId('anime-job')).not.toBeInTheDocument();
+            act(() => {
+                useAnimeStore.setState({ jobs: [makeAnimeJob({ percent: 10 })] });
+            });
+            expect(screen.getByTestId('anime-job')).toBeInTheDocument();
+        });
+    });
+
+    it('opens the player of a stream over the section, on the search and on the downloads screen', async () => {
+        const user = userEvent.setup();
+        useAnimeStore.setState({ streaming: { title: 'Naruto', episode: '2', status: 'loading', stream: null, error: null } });
+        render(<AnimePanel />);
+        expect(screen.getByRole('dialog', { name: 'Naruto · EP 2' })).toBeInTheDocument();
+        act(() => {
+            useAnimeStore.getState().closeStream();
+            useAnimeStore.getState().openDownloads();
+            useAnimeStore.setState({ streaming: { title: 'Naruto', episode: '3', status: 'loading', stream: null, error: null } });
+        });
+        expect(screen.getByRole('dialog', { name: 'Naruto · EP 3' })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'CLOSE' }));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('opens the player over the section when an episode is played', () => {
+        useAnimeStore.setState({ library: [makeAnime([makeEpisode()], { id: 1 })], playing: { animeId: 1, episodeId: 1 } });
+        render(<AnimePanel />);
+        expect(screen.getByRole('dialog', { name: 'Naruto · EP 1' })).toBeInTheDocument();
+    });
+});

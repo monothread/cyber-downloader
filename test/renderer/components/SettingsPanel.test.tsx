@@ -3,7 +3,9 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { AUTOSAVE_DELAY_MS } from '@renderer/hooks/useAutoSaveSettings';
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import { SettingsPanel } from '@renderer/components/SettingsPanel';
+import { UNSUPPORTED_STATUS, useAnimeStore } from '@renderer/store/animeStore';
 import { INITIAL_APP_UPDATE, useAppStore } from '@renderer/store/appStore';
+import { ANI_CLI_INFO, makeStatus } from '../../helpers/animeFixtures';
 import { APP_UPDATE_IDLE, installMockApi, type MockApiHandle } from '../../helpers/mockApi';
 
 let mock: MockApiHandle;
@@ -12,6 +14,7 @@ const initial = useAppStore.getState();
 beforeEach(() => {
     vi.useFakeTimers();
     mock = installMockApi();
+    useAnimeStore.setState({ status: UNSUPPORTED_STATUS });
     useAppStore.setState({ ...initial, settings: DEFAULT_SETTINGS, notice: null, appUpdate: INITIAL_APP_UPDATE, traySupport: null, browsers: null });
 });
 
@@ -725,3 +728,126 @@ describe('SettingsPanel yt-dlp update', () => {
     });
 });
 
+
+describe('SettingsPanel anime section', () => {
+    it('is left out where the section does not exist', () => {
+        render(<SettingsPanel />);
+        expect(screen.queryByText('ANIME (LINUX)')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Anime download folder')).not.toBeInTheDocument();
+    });
+
+    describe('where it exists', () => {
+        beforeEach(() => {
+            useAnimeStore.setState({ status: makeStatus() });
+        });
+
+        it('shows the stored values', () => {
+            useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, animeDownloadDir: '/media/anime', animeQuality: '720p', animeAudio: 'dub' } });
+            render(<SettingsPanel />);
+            expect(screen.getByText('ANIME (LINUX)')).toBeInTheDocument();
+            expect(screen.getByLabelText('Anime download folder')).toHaveValue('/media/anime');
+            expect(screen.getByLabelText('Anime download folder')).toHaveAttribute('placeholder', 'Default: Downloads/Pullwave Anime');
+            expect(screen.getByLabelText('Anime quality')).toHaveValue('720p');
+            expect(screen.getByLabelText('Anime audio')).toHaveValue('dub');
+            expect(screen.getByLabelText('Anime subtitles')).toHaveValue('auto');
+        });
+
+        it('lists the qualities and the audios with readable labels', () => {
+            render(<SettingsPanel />);
+            const options = (label: string): Array<string | null> => {
+                return Array.from(screen.getByLabelText(label).querySelectorAll('option')).map((option) => {
+                    return option.textContent;
+                });
+            };
+            expect(options('Anime quality')).toEqual(['BEST', '1080p', '720p', '480p', '360p', 'WORST (SMALLEST)']);
+            expect(options('Anime audio')).toEqual(['SUBTITLED', 'DUBBED']);
+            expect(options('Anime subtitles')).toEqual(['FOLLOW THE APP LANGUAGE', 'WHAT ANI-CLI PICKS', 'English', 'Portuguese', 'Spanish', 'French', 'German', 'Italian', 'Russian']);
+        });
+
+        it('saves the quality and the audio at once', async () => {
+            render(<SettingsPanel />);
+            fireEvent.change(screen.getByLabelText('Anime quality'), { target: { value: '480p' } });
+            fireEvent.change(screen.getByLabelText('Anime audio'), { target: { value: 'dub' } });
+            await flushPromises();
+            expect(mock.api.saveSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, animeQuality: '480p', animeAudio: 'dub' });
+        });
+
+        it('shows the version of ani-cli', () => {
+            render(<SettingsPanel />);
+            expect(screen.getByText('ani-cli version: 5.1.4')).toBeInTheDocument();
+            expect(screen.getByText(/finds the episodes/)).toBeInTheDocument();
+        });
+
+        it('says when the version is not known or ani-cli is missing', () => {
+            useAnimeStore.setState({ status: makeStatus({ aniCli: { ...ANI_CLI_INFO, version: null } }) });
+            const { unmount } = render(<SettingsPanel />);
+            expect(screen.getByText('ani-cli version: unknown')).toBeInTheDocument();
+            unmount();
+
+            useAnimeStore.setState({ status: makeStatus({ aniCli: { ...ANI_CLI_INFO, found: false } }) });
+            render(<SettingsPanel />);
+            expect(screen.getByText('ani-cli was not found.')).toBeInTheDocument();
+        });
+
+        it('updates ani-cli and shows the new version', async () => {
+            let finish: () => void = () => {
+                return undefined;
+            };
+            mock.api.updateAniCli.mockReturnValue(
+                new Promise((resolve) => {
+                    finish = () => {
+                        resolve({ ok: true, output: 'Updated ani-cli 5.1.4 → 5.2.0.' });
+                    };
+                })
+            );
+            mock.api.getAnimeStatus.mockResolvedValue(makeStatus({ aniCli: { ...ANI_CLI_INFO, version: '5.2.0', source: 'updated' } }));
+            render(<SettingsPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'UPDATE ANI-CLI' }));
+            await flushPromises();
+            expect(screen.getByRole('button', { name: 'UPDATING…' })).toBeDisabled();
+
+            finish();
+            await flushPromises();
+            expect(screen.getByRole('button', { name: 'UPDATE ANI-CLI' })).toBeEnabled();
+            expect(screen.getByText('ani-cli version: 5.2.0')).toBeInTheDocument();
+            expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'Updated ani-cli 5.1.4 → 5.2.0.' });
+        });
+
+        it('saves the language of the subtitles at once', async () => {
+            render(<SettingsPanel />);
+            fireEvent.change(screen.getByLabelText('Anime subtitles'), { target: { value: 'Portuguese' } });
+            await flushPromises();
+            expect(mock.api.saveSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, animeSubtitles: 'Portuguese' });
+        });
+
+        it('saves the folder after the user stops typing', async () => {
+            render(<SettingsPanel />);
+            type('Anime download folder', '/media/anime');
+            expect(mock.api.saveSettings).not.toHaveBeenCalled();
+            await advance(AUTOSAVE_DELAY_MS);
+            expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, animeDownloadDir: '/media/anime' });
+        });
+
+        it('lets the user pick the folder and saves it', async () => {
+            mock.api.chooseDirectory.mockResolvedValue('/picked/anime');
+            render(<SettingsPanel />);
+            const browse = screen.getAllByRole('button', { name: 'BROWSE' })[1] as HTMLElement;
+            fireEvent.click(browse);
+            await flushPromises();
+            expect(mock.api.chooseDirectory).toHaveBeenCalledTimes(1);
+            expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, animeDownloadDir: '/picked/anime' });
+        });
+
+        it('keeps the folder when the dialog is cancelled', async () => {
+            mock.api.chooseDirectory.mockResolvedValue(null);
+            useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, animeDownloadDir: '/keep' } });
+            render(<SettingsPanel />);
+            fireEvent.click(screen.getAllByRole('button', { name: 'BROWSE' })[1] as HTMLElement);
+            await flushPromises();
+            await advance(AUTOSAVE_DELAY_MS);
+            expect(screen.getByLabelText('Anime download folder')).toHaveValue('/keep');
+            expect(mock.api.saveSettings).not.toHaveBeenCalled();
+        });
+    });
+});

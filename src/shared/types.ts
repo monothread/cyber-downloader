@@ -1,3 +1,19 @@
+import type {
+    AnimeDownloadRequest,
+    AnimeDownloadResponse,
+    AnimeEpisodesResponse,
+    AnimeJob,
+    AnimeProgressUpdate,
+    AnimeSearchResponse,
+    AnimeStatus,
+    AnimeStreamRequest,
+    AnimeStreamResponse,
+    AnimeAudio,
+    AnimeQuality,
+    AnimeSubtitleSetting,
+    LibraryAnime
+} from './anime';
+
 export type VideoContainer = 'mp4' | 'mkv' | 'webm';
 export type AudioFormat = 'mp3' | 'm4a' | 'opus';
 // Settings that can be chosen for one download only. A missing field follows the setting.
@@ -70,6 +86,11 @@ export interface Settings {
     theme: ThemeName;
     language: LanguageSetting;
     extraArgs: string;
+    // Anime section (Linux only).
+    animeDownloadDir: string;
+    animeQuality: AnimeQuality;
+    animeAudio: AnimeAudio;
+    animeSubtitles: AnimeSubtitleSetting;
 }
 
 export type ErrorCode =
@@ -260,6 +281,23 @@ export interface CyberApi {
     downloadStream: (candidateId: string) => Promise<AddJobResult>;
     chooseDirectory: () => Promise<string | null>;
     showItemInFolder: (path: string) => Promise<void>;
+    getAnimeStatus: () => Promise<AnimeStatus>;
+    searchAnime: (query: string, audio: AnimeAudio) => Promise<AnimeSearchResponse>;
+    listAnimeEpisodes: (query: string, index: number, audio: AnimeAudio) => Promise<AnimeEpisodesResponse>;
+    downloadAnime: (request: AnimeDownloadRequest) => Promise<AnimeDownloadResponse>;
+    listAnimeLibrary: () => Promise<LibraryAnime[]>;
+    listAnimeJobs: () => Promise<AnimeJob[]>;
+    cancelAnimeJob: (episodeId: number) => Promise<void>;
+    retryAnimeJob: (episodeId: number) => Promise<void>;
+    clearFinishedAnimeJobs: () => Promise<void>;
+    removeAnimeEpisode: (episodeId: number) => Promise<void>;
+    removeAnime: (animeId: number) => Promise<void>;
+    saveAnimeProgress: (update: AnimeProgressUpdate) => Promise<void>;
+    updateAniCli: () => Promise<UpdateResult>;
+    openAnimeStream: (request: AnimeStreamRequest) => Promise<AnimeStreamResponse>;
+    closeAnimeStream: (sessionId: string) => Promise<void>;
+    onAnimeJobUpdate: (listener: (job: AnimeJob) => void) => () => void;
+    onAnimeLibraryChanged: (listener: () => void) => () => void;
     onJobUpdate: (listener: (job: DownloadJob) => void) => () => void;
     onJobRemoved: (listener: (id: string) => void) => () => void;
     onHistoryChanged: (listener: () => void) => () => void;

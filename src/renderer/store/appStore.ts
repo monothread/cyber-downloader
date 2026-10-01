@@ -16,7 +16,7 @@ import type {
     TraySupport
 } from '@shared/types';
 
-export type Tab = 'downloads' | 'history' | 'settings';
+export type Tab = 'downloads' | 'anime' | 'history' | 'settings';
 export type NoticeKind = 'error' | 'info';
 
 export interface Notice {

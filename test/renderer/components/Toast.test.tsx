@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Toast } from '@renderer/components/Toast';
+import { act } from '@testing-library/react';
+import { INFO_NOTICE_MS, Toast } from '@renderer/components/Toast';
 import { useAppStore } from '@renderer/store/appStore';
 
 const initial = useAppStore.getState();
@@ -28,6 +29,87 @@ describe('Toast', () => {
         render(<Toast />);
         expect(screen.getByRole('status')).toHaveTextContent('Saved');
         expect(screen.getByRole('status')).toHaveClass('toast--info');
+    });
+
+    describe('going away by itself', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('removes an info notice after three seconds', () => {
+            expect(INFO_NOTICE_MS).toBe(3000);
+            useAppStore.setState({ notice: { kind: 'info', message: 'Queued' } });
+            render(<Toast />);
+
+            act(() => {
+                vi.advanceTimersByTime(INFO_NOTICE_MS - 1);
+            });
+            expect(screen.getByText('Queued')).toBeInTheDocument();
+
+            act(() => {
+                vi.advanceTimersByTime(1);
+            });
+            expect(useAppStore.getState().notice).toBeNull();
+            expect(screen.queryByText('Queued')).not.toBeInTheDocument();
+        });
+
+        it('keeps an error notice until it is dismissed', () => {
+            useAppStore.setState({ notice: { kind: 'error', message: 'Boom' } });
+            render(<Toast />);
+            act(() => {
+                vi.advanceTimersByTime(INFO_NOTICE_MS * 10);
+            });
+            expect(screen.getByText('Boom')).toBeInTheDocument();
+            expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'Boom' });
+        });
+
+        it('counts the three seconds again when a new notice replaces the old one', () => {
+            useAppStore.setState({ notice: { kind: 'info', message: 'First' } });
+            render(<Toast />);
+            act(() => {
+                vi.advanceTimersByTime(2000);
+            });
+            act(() => {
+                useAppStore.setState({ notice: { kind: 'info', message: 'Second' } });
+            });
+            act(() => {
+                vi.advanceTimersByTime(2000);
+            });
+            expect(screen.getByText('Second')).toBeInTheDocument();
+            act(() => {
+                vi.advanceTimersByTime(1000);
+            });
+            expect(screen.queryByText('Second')).not.toBeInTheDocument();
+        });
+
+        it('does not clear a newer error when the timer of an older info notice fires', () => {
+            useAppStore.setState({ notice: { kind: 'info', message: 'Info' } });
+            render(<Toast />);
+            act(() => {
+                useAppStore.setState({ notice: { kind: 'error', message: 'Boom' } });
+            });
+            act(() => {
+                vi.advanceTimersByTime(INFO_NOTICE_MS * 2);
+            });
+            expect(screen.getByText('Boom')).toBeInTheDocument();
+        });
+
+        it('stops the timer when the notice is dismissed by hand', () => {
+            useAppStore.setState({ notice: { kind: 'info', message: 'Saved' } });
+            render(<Toast />);
+            act(() => {
+                useAppStore.getState().setNotice(null);
+            });
+            act(() => {
+                useAppStore.getState().setNotice({ kind: 'error', message: 'Later error' });
+                vi.advanceTimersByTime(INFO_NOTICE_MS * 2);
+            });
+            expect(screen.getByText('Later error')).toBeInTheDocument();
+        });
     });
 
     it('dismisses the notice', async () => {

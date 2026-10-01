@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
+import type { AnimeJob, LibraryAnime } from '@shared/anime';
 import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 export interface MockApiHandle {
@@ -8,6 +9,8 @@ export interface MockApiHandle {
     emitHistoryChanged: () => void;
     emitAppUpdateState: (state: AppUpdateState) => void;
     emitStreamProgress: (progress: StreamFindProgress) => void;
+    emitAnimeJob: (job: AnimeJob) => void;
+    emitAnimeLibraryChanged: () => void;
     unsubscribers: Array<ReturnType<typeof vi.fn>>;
 }
 
@@ -19,6 +22,8 @@ export function createMockApi(): MockApiHandle {
     const historyListeners: Array<() => void> = [];
     const appUpdateListeners: Array<(state: AppUpdateState) => void> = [];
     const streamProgressListeners: Array<(progress: StreamFindProgress) => void> = [];
+    const animeJobListeners: Array<(job: AnimeJob) => void> = [];
+    const animeLibraryListeners: Array<() => void> = [];
     const unsubscribers: Array<ReturnType<typeof vi.fn>> = [];
 
     function subscribe<T>(listeners: T[], listener: T): () => void {
@@ -107,6 +112,57 @@ export function createMockApi(): MockApiHandle {
         showItemInFolder: vi.fn(async () => {
             return undefined;
         }),
+        getAnimeStatus: vi.fn(async () => {
+            return { supported: false, available: false, aniCli: null };
+        }),
+        searchAnime: vi.fn(async () => {
+            return { ok: true, results: [] };
+        }),
+        listAnimeEpisodes: vi.fn(async () => {
+            return { ok: true, episodes: [] };
+        }),
+        downloadAnime: vi.fn(async (): Promise<{ ok: false; message: string }> => {
+            return { ok: false, message: 'not mocked' };
+        }),
+        listAnimeLibrary: vi.fn(async (): Promise<LibraryAnime[]> => {
+            return [];
+        }),
+        listAnimeJobs: vi.fn(async (): Promise<AnimeJob[]> => {
+            return [];
+        }),
+        cancelAnimeJob: vi.fn(async () => {
+            return undefined;
+        }),
+        retryAnimeJob: vi.fn(async () => {
+            return undefined;
+        }),
+        clearFinishedAnimeJobs: vi.fn(async () => {
+            return undefined;
+        }),
+        removeAnimeEpisode: vi.fn(async () => {
+            return undefined;
+        }),
+        removeAnime: vi.fn(async () => {
+            return undefined;
+        }),
+        saveAnimeProgress: vi.fn(async () => {
+            return undefined;
+        }),
+        updateAniCli: vi.fn(async () => {
+            return { ok: true, output: 'Updated ani-cli' };
+        }),
+        openAnimeStream: vi.fn(async (): Promise<{ ok: true; stream: { sessionId: string; url: string; subtitleUrl: string | null } }> => {
+            return { ok: true, stream: { sessionId: 's1', url: 'pullwave-stream://p/s1/abc', subtitleUrl: null } };
+        }),
+        closeAnimeStream: vi.fn(async () => {
+            return undefined;
+        }),
+        onAnimeJobUpdate: vi.fn((listener: (job: AnimeJob) => void) => {
+            return subscribe(animeJobListeners, listener);
+        }),
+        onAnimeLibraryChanged: vi.fn((listener: () => void) => {
+            return subscribe(animeLibraryListeners, listener);
+        }),
         onJobUpdate: vi.fn((listener: (job: DownloadJob) => void) => {
             return subscribe(jobListeners, listener);
         }),
@@ -140,6 +196,16 @@ export function createMockApi(): MockApiHandle {
         emitStreamProgress: (progress) => {
             streamProgressListeners.forEach((listener) => {
                 listener(progress);
+            });
+        },
+        emitAnimeJob: (job) => {
+            animeJobListeners.forEach((listener) => {
+                listener(job);
+            });
+        },
+        emitAnimeLibraryChanged: () => {
+            animeLibraryListeners.forEach((listener) => {
+                listener();
             });
         },
         emitAppUpdateState: (state) => {

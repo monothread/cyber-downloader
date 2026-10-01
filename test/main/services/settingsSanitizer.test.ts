@@ -44,9 +44,52 @@ describe('sanitizeSettings', () => {
             language: 'ja',
             verifyLiveEnd: false,
             verifyLiveEndSeconds: 45,
-            extraArgs: '--no-mtime'
+            extraArgs: '--no-mtime',
+            animeDownloadDir: '/media/anime',
+            animeQuality: '720p',
+            animeAudio: 'dub',
+            animeSubtitles: 'Portuguese'
         };
         expect(sanitizeSettings(valid)).toEqual(valid);
+    });
+
+    it('has the anime settings default to the best quality, subtitled, in the default folder', () => {
+        expect(DEFAULT_SETTINGS).toMatchObject({ animeDownloadDir: '', animeQuality: 'best', animeAudio: 'sub' });
+        expect(sanitizeSettings({})).toMatchObject({ animeDownloadDir: '', animeQuality: 'best', animeAudio: 'sub' });
+    });
+
+    it.each(['best', '1080p', '720p', '480p', '360p', 'worst'])('keeps the anime quality "%s"', (animeQuality) => {
+        expect(sanitizeSettings({ animeQuality }).animeQuality).toBe(animeQuality);
+    });
+
+    it.each(['4k', '720', 'BEST', '', 720, null])('falls back to "best" for the invalid anime quality %j', (animeQuality) => {
+        expect(sanitizeSettings({ animeQuality }).animeQuality).toBe('best');
+    });
+
+    it.each(['sub', 'dub'])('keeps the anime audio "%s"', (animeAudio) => {
+        expect(sanitizeSettings({ animeAudio }).animeAudio).toBe(animeAudio);
+    });
+
+    it.each(['both', 'SUB', '', 1, null])('falls back to "sub" for the invalid anime audio %j', (animeAudio) => {
+        expect(sanitizeSettings({ animeAudio }).animeAudio).toBe('sub');
+    });
+
+    it('follows the language of the app for the anime subtitles by default', () => {
+        expect(DEFAULT_SETTINGS.animeSubtitles).toBe('auto');
+        expect(sanitizeSettings({}).animeSubtitles).toBe('auto');
+    });
+
+    it.each(['auto', 'default', 'English', 'Portuguese', 'Spanish', 'French', 'German', 'Italian', 'Russian'])('keeps the anime subtitles "%s"', (animeSubtitles) => {
+        expect(sanitizeSettings({ animeSubtitles }).animeSubtitles).toBe(animeSubtitles);
+    });
+
+    it.each(['english', 'Klingon', '', 3, null])('falls back to "auto" for the invalid anime subtitles %j', (animeSubtitles) => {
+        expect(sanitizeSettings({ animeSubtitles }).animeSubtitles).toBe('auto');
+    });
+
+    it('trims the anime folder and ignores one that is not text', () => {
+        expect(sanitizeSettings({ animeDownloadDir: '  /media/anime  ' }).animeDownloadDir).toBe('/media/anime');
+        expect(sanitizeSettings({ animeDownloadDir: 5 }).animeDownloadDir).toBe('');
     });
 
     it.each(['device', 'en', 'pt', 'es', 'zh', 'ja'])('keeps the language "%s"', (language) => {
