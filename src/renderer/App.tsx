@@ -79,8 +79,8 @@ export function App() {
     return (
         <div className="app">
             <header className="app__header">
-                <h1 className="logo" data-text="CYBER//DL">
-                    CYBER//DL
+                <h1 className="logo" data-text="PULLWAVE">
+                    PULLWAVE
                 </h1>
                 <BinaryStatus />
             </header>

@@ -13,7 +13,7 @@ const TRAY_ICON_SIZE = 22;
 
 export function createElectronTray(iconPath: string, actions: TrayActions): TrayHandle {
     const tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE }));
-    tray.setToolTip('Cyber Downloader');
+    tray.setToolTip('Pullwave');
     tray.setContextMenu(
         Menu.buildFromTemplate([
             { label: translateMain('tray.show'), click: actions.show },

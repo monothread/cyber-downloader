@@ -27,15 +27,15 @@ describe('createElectronTray', () => {
         createElectronTray('/app/icon.png', actions());
         expect(nativeImage.createFromPath).toHaveBeenCalledWith('/app/icon.png');
         expect(Tray).toHaveBeenCalledWith(resizedImage);
-        expect(trayInstance.setToolTip).toHaveBeenCalledWith('Cyber Downloader');
+        expect(trayInstance.setToolTip).toHaveBeenCalledWith('Pullwave');
     });
 
     it('creates the context menu with show, restart and quit entries wired to the actions', () => {
         const handlers = actions();
         createElectronTray('/app/icon.png', handlers);
         expect(Menu.buildFromTemplate).toHaveBeenCalledWith([
-            { label: 'Show Cyber Downloader', click: handlers.show },
-            { label: 'Restart Cyber Downloader', click: handlers.restart },
+            { label: 'Show Pullwave', click: handlers.show },
+            { label: 'Restart Pullwave', click: handlers.restart },
             { type: 'separator' },
             { label: 'Quit', click: handlers.quit }
         ]);

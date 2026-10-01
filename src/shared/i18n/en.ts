@@ -7,7 +7,7 @@ export const en = {
     'app.booting': '// BOOTING SYSTEMS…',
     'bridge.title': 'THE INTERFACE COULD NOT CONNECT TO THE APP',
     'bridge.hint':
-        'The buttons cannot work until this is fixed. Close the app and open it again; if it keeps happening, reinstall it and send the file diagnostic.log from the app data folder (on Windows: %APPDATA%\\cyber-downloader).',
+        'The buttons cannot work until this is fixed. Close the app and open it again; if it keeps happening, reinstall it and send the file diagnostic.log from the app data folder (on Windows: %APPDATA%\\pullwave).',
     'binary.missing': 'MISSING',
 
     // Download errors
@@ -185,8 +185,8 @@ export const en = {
     'tray.noTray':
         'No system tray was detected. On GNOME, install the “AppIndicator and KStatusNotifierItem Support” extension. Until then, closing the window quits the app.',
     'tray.createFailed': 'The tray icon could not be created. Closing the window quits the app.',
-    'tray.show': 'Show Cyber Downloader',
-    'tray.restart': 'Restart Cyber Downloader',
+    'tray.show': 'Show Pullwave',
+    'tray.restart': 'Restart Pullwave',
     'tray.quit': 'Quit',
 
     // Settings: output
@@ -296,10 +296,10 @@ export const en = {
     'dialog.pendingOne': '1 download is still in progress.',
     'dialog.pendingMany': '{count} downloads are still in progress.',
     'dialog.quit.action': 'Quit',
-    'dialog.quit.title': 'Quit Cyber Downloader?',
+    'dialog.quit.title': 'Quit Pullwave?',
     'dialog.quit.detail': 'Quitting now will cancel them.',
     'dialog.restart.action': 'Restart',
-    'dialog.restart.title': 'Restart Cyber Downloader?',
+    'dialog.restart.title': 'Restart Pullwave?',
     'dialog.restart.detail': 'Restarting now will cancel them.',
     'dialog.cancel': 'Cancel'
 } as const;

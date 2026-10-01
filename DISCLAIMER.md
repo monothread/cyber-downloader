@@ -1,6 +1,6 @@
 # Disclaimer
 
-Cyber Downloader is a general-purpose tool that downloads videos by handing the addresses you give it to
+Pullwave is a general-purpose tool that downloads videos by handing the addresses you give it to
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://ffmpeg.org). Its "Find stream" feature looks for the
 video address that a web page uses.
 

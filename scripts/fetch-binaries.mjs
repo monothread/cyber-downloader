@@ -76,7 +76,7 @@ if (!TARGET) {
 }
 
 async function download(url) {
-    const response = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'cyber-downloader-build' } });
+    const response = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'pullwave-build' } });
     if (!response.ok) {
         throw new Error(`Download failed (${response.status}): ${url}`);
     }
@@ -261,7 +261,7 @@ async function fetchFfmpeg(workDir) {
 
 async function main() {
     mkdirSync(BIN_DIR, { recursive: true });
-    const workDir = mkdtempSync(join(tmpdir(), 'cyber-dl-bin-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'pullwave-bin-'));
     try {
         await fetchYtdlp();
         await fetchDeno(workDir);

@@ -8,7 +8,7 @@ export const es: Messages = {
     'app.booting': '// INICIANDO SISTEMAS…',
     'bridge.title': 'LA INTERFAZ NO PUDO CONECTARSE CON LA APLICACIÓN',
     'bridge.hint':
-        'Los botones no funcionarán hasta que esto se solucione. Cierra la aplicación y ábrela de nuevo; si sigue ocurriendo, reinstálala y envía el archivo diagnostic.log de la carpeta de datos de la aplicación (en Windows: %APPDATA%\\cyber-downloader).',
+        'Los botones no funcionarán hasta que esto se solucione. Cierra la aplicación y ábrela de nuevo; si sigue ocurriendo, reinstálala y envía el archivo diagnostic.log de la carpeta de datos de la aplicación (en Windows: %APPDATA%\\pullwave).',
     'binary.missing': 'NO ENCONTRADO',
 
     'error.FILENAME_TOO_LONG.title': 'Título demasiado largo',
@@ -177,8 +177,8 @@ export const es: Messages = {
     'tray.noTray':
         'No se detectó ninguna bandeja del sistema. En GNOME, instala la extensión “AppIndicator and KStatusNotifierItem Support”. Hasta entonces, cerrar la ventana cierra la aplicación.',
     'tray.createFailed': 'No se pudo crear el icono de la bandeja. Cerrar la ventana cierra la aplicación.',
-    'tray.show': 'Mostrar Cyber Downloader',
-    'tray.restart': 'Reiniciar Cyber Downloader',
+    'tray.show': 'Mostrar Pullwave',
+    'tray.restart': 'Reiniciar Pullwave',
     'tray.quit': 'Salir',
 
     'settings.output': 'SALIDA',
@@ -280,10 +280,10 @@ export const es: Messages = {
     'dialog.pendingOne': '1 descarga sigue en curso.',
     'dialog.pendingMany': '{count} descargas siguen en curso.',
     'dialog.quit.action': 'Salir',
-    'dialog.quit.title': '¿Salir de Cyber Downloader?',
+    'dialog.quit.title': '¿Salir de Pullwave?',
     'dialog.quit.detail': 'Si sales ahora, se cancelarán.',
     'dialog.restart.action': 'Reiniciar',
-    'dialog.restart.title': '¿Reiniciar Cyber Downloader?',
+    'dialog.restart.title': '¿Reiniciar Pullwave?',
     'dialog.restart.detail': 'Si reinicias ahora, se cancelarán.',
     'dialog.cancel': 'Cancelar'
 };

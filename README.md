@@ -1,41 +1,41 @@
-# CYBER//DL
+# PULLWAVE — yt-dlp GUI for Linux and Windows
 
-Cyberpunk-themed desktop app (Electron + React + TypeScript) for Linux and Windows that wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+Pullwave is a cyberpunk-themed desktop video downloader (Electron + React + TypeScript) for Linux and Windows: a graphical frontend that wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 > **Disclaimer:** every download made with this program is **at the user's own risk and responsibility**. The authors and contributors are not responsible for what is downloaded or for how it is used. You must only download content you have the right to download. See [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Install
-Download the file for your system from the [Releases page](https://github.com/monothread/cyber-downloader/releases/latest). Nothing else has to be installed: yt-dlp, ffmpeg/ffprobe and deno are bundled.
+Download the file for your system from the [Releases page](https://github.com/monothread/pullwave/releases/latest). Nothing else has to be installed: yt-dlp, ffmpeg/ffprobe and deno are bundled.
 
 | System | File |
 |---|---|
-| Windows 10/11 (64-bit) | `cyber-downloader-x.y.z-setup.exe` |
-| Ubuntu, Debian and derivatives | `cyber-downloader-x.y.z.deb` |
-| Fedora (and other RPM-based distributions) | `cyber-downloader-x.y.z.rpm` |
-| Arch Linux (and derivatives) | `cyber-downloader-x.y.z.pacman` |
-| Any other Linux | `cyber-downloader-x.y.z.AppImage` (portable, installs nothing) |
+| Windows 10/11 (64-bit) | `pullwave-x.y.z-setup.exe` |
+| Ubuntu, Debian and derivatives | `pullwave-x.y.z.deb` |
+| Fedora (and other RPM-based distributions) | `pullwave-x.y.z.rpm` |
+| Arch Linux (and derivatives) | `pullwave-x.y.z.pacman` |
+| Any other Linux | `pullwave-x.y.z.AppImage` (portable, installs nothing) |
 
 **Windows** — run the setup file. It installs for your user only and creates the shortcuts. The installer is not code-signed, so Windows SmartScreen may show "Windows protected your PC": choose *More info* → *Run anyway*.
 
 **Ubuntu / Debian** — double-click the `.deb` or run:
 ```bash
-sudo apt install ./cyber-downloader-x.y.z.deb
+sudo apt install ./pullwave-x.y.z.deb
 ```
 
 **Fedora**
 ```bash
-sudo dnf install ./cyber-downloader-x.y.z.rpm
+sudo dnf install ./pullwave-x.y.z.rpm
 ```
 
 **Arch Linux**
 ```bash
-sudo pacman -U ./cyber-downloader-x.y.z.pacman
+sudo pacman -U ./pullwave-x.y.z.pacman
 ```
 
 **AppImage** — browsers drop the executable permission, so enable it first:
 ```bash
-chmod +x cyber-downloader-x.y.z.AppImage
-./cyber-downloader-x.y.z.AppImage
+chmod +x pullwave-x.y.z.AppImage
+./pullwave-x.y.z.AppImage
 ```
 Or right-click the file > Properties > Permissions > "Allow executing file as program", then double-click it.
 - Ubuntu 22.04 and newer need FUSE 2 to run AppImages: `sudo apt install libfuse2` (`libfuse2t64` on Ubuntu 24.04). On Fedora: `sudo dnf install fuse-libs`; on Arch: `sudo pacman -S fuse2`.

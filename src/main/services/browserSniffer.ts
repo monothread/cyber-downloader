@@ -55,7 +55,7 @@ const PLAY_SCRIPT = `(() => {
 })();`;
 
 function timeoutFromEnvironment(): number {
-    const value = Number(process.env.CYBER_DL_SNIFF_TIMEOUT_MS);
+    const value = Number(process.env.PULLWAVE_SNIFF_TIMEOUT_MS);
     return Number.isFinite(value) && value > 0 ? value : DEFAULT_SNIFF_TIMEOUT_MS;
 }
 

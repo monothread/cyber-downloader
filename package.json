@@ -1,7 +1,7 @@
 {
-  "name": "cyber-downloader",
+  "name": "pullwave",
   "version": "0.7.0",
-  "description": "Cyberpunk desktop frontend for yt-dlp",
+  "description": "Cyberpunk yt-dlp GUI and video downloader for Linux and Windows",
   "main": "out/main/index.js",
   "author": {
     "name": "monothread",
@@ -10,7 +10,7 @@
   "license": "MIT",
   "private": true,
   "type": "commonjs",
-  "desktopName": "cyber-downloader.desktop",
+  "desktopName": "pullwave.desktop",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -53,9 +53,9 @@
     "vite": "^7.3.6",
     "vitest": "^5.0.3"
   },
-  "homepage": "https://github.com/monothread/cyber-downloader",
+  "homepage": "https://github.com/monothread/pullwave",
   "repository": {
     "type": "git",
-    "url": "https://github.com/monothread/cyber-downloader.git"
+    "url": "https://github.com/monothread/pullwave.git"
   }
 }

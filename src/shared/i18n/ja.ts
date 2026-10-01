@@ -8,7 +8,7 @@ export const ja: Messages = {
     'app.booting': '// システム起動中…',
     'bridge.title': 'インターフェースがアプリに接続できませんでした',
     'bridge.hint':
-        'この問題が解決するまでボタンは動作しません。アプリを閉じてもう一度開いてください。それでも改善しない場合は、再インストールして、アプリのデータフォルダにある diagnostic.log を送ってください（Windows では %APPDATA%\\cyber-downloader）。',
+        'この問題が解決するまでボタンは動作しません。アプリを閉じてもう一度開いてください。それでも改善しない場合は、再インストールして、アプリのデータフォルダにある diagnostic.log を送ってください（Windows では %APPDATA%\\pullwave）。',
     'binary.missing': '見つかりません',
 
     'error.FILENAME_TOO_LONG.title': 'タイトルが長すぎます',
@@ -176,8 +176,8 @@ export const ja: Messages = {
     'tray.noTray':
         'システムトレイが検出されませんでした。GNOME では「AppIndicator and KStatusNotifierItem Support」拡張機能をインストールしてください。それまでは、ウィンドウを閉じるとアプリが終了します。',
     'tray.createFailed': 'トレイアイコンを作成できませんでした。ウィンドウを閉じるとアプリが終了します。',
-    'tray.show': 'Cyber Downloader を表示',
-    'tray.restart': 'Cyber Downloader を再起動',
+    'tray.show': 'Pullwave を表示',
+    'tray.restart': 'Pullwave を再起動',
     'tray.quit': '終了',
 
     'settings.output': '出力',
@@ -273,10 +273,10 @@ export const ja: Messages = {
     'dialog.pendingOne': '1 件のダウンロードが進行中です。',
     'dialog.pendingMany': '{count} 件のダウンロードが進行中です。',
     'dialog.quit.action': '終了',
-    'dialog.quit.title': 'Cyber Downloader を終了しますか？',
+    'dialog.quit.title': 'Pullwave を終了しますか？',
     'dialog.quit.detail': '今終了すると、ダウンロードはキャンセルされます。',
     'dialog.restart.action': '再起動',
-    'dialog.restart.title': 'Cyber Downloader を再起動しますか？',
+    'dialog.restart.title': 'Pullwave を再起動しますか？',
     'dialog.restart.detail': '今再起動すると、ダウンロードはキャンセルされます。',
     'dialog.cancel': 'キャンセル'
 };

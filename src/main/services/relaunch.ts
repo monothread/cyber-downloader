@@ -75,7 +75,7 @@ export function cleanAppImageEnvironment(env: Environment): Environment {
 export function buildAppImageRestart(appImage: string, env: Environment, argv: readonly string[], pid: number): AppImageRestart {
     return {
         command: 'sh',
-        args: ['-c', WAIT_THEN_START_SCRIPT, 'cyber-downloader-restart', String(pid), appImage, ...argv.slice(1)],
+        args: ['-c', WAIT_THEN_START_SCRIPT, 'pullwave-restart', String(pid), appImage, ...argv.slice(1)],
         env: cleanAppImageEnvironment(env)
     };
 }

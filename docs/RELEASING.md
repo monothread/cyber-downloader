@@ -1,7 +1,7 @@
 # Publishing a new version
 
 The app updates itself (via `electron-updater`) from the **public Releases** of
-`github.com/monothread/cyber-downloader`. Configuration lives in `electron-builder.yml` (`publish`).
+`github.com/monothread/pullwave`. Configuration lives in `electron-builder.yml` (`publish`).
 
 ## Step by step (all platforms)
 1. Bump the version in `package.json` (semver; the app only offers versions **greater** than the installed one).
@@ -11,7 +11,7 @@ The app updates itself (via `electron-updater`) from the **public Releases** of
    - Locally: `sudo apt install rpm libarchive-tools zstd` once, then `export GH_TOKEN=<token>` and `npm run release`.
    - On GitHub: Actions tab → **Release Linux** → *Run workflow* (no token needed, it uses the repository's own).
 5. **Windows installer:** Actions tab → **Release Windows** → *Run workflow*.
-6. Each run uploads its files to the **draft** Release `v<version>` (creating it if needed): Linux uploads `cyber-downloader-<version>.{AppImage,deb,rpm,pacman}` and `latest-linux.yml`; Windows uploads `cyber-downloader-<version>-setup.exe` and `latest.yml`. Wait until every run you started has finished.
+6. Each run uploads its files to the **draft** Release `v<version>` (creating it if needed): Linux uploads `pullwave-<version>.{AppImage,deb,rpm,pacman}` and `latest-linux.yml`; Windows uploads `pullwave-<version>-setup.exe` and `latest.yml`. Wait until every run you started has finished.
 7. On GitHub, open the draft Release, check the assets and click **Publish release**. Drafts are **not** seen by installed apps.
 8. In the Release notes, mention where the FFmpeg source code can be found (Linux: https://github.com/BtbN/FFmpeg-Builds, Windows: https://www.gyan.dev/ffmpeg/builds/; GPLv3).
 
@@ -43,7 +43,7 @@ Rules that keep the updater working:
 - **`npm run release` stops with "Missing tools needed to build the rpm and pacman packages":** install what it lists (`sudo apt install rpm libarchive-tools zstd` on Ubuntu) or use the **Release Linux** workflow.
 - **A Windows or Linux workflow run created a second draft:** the draft is matched by tag; if it was already published, unpublish it or delete the extra draft and run again before publishing.
 - **The app says "No published versions on GitHub" or never shows the banner:** the Release is still a draft. Publish it, then confirm with
-  `curl -s https://api.github.com/repos/monothread/cyber-downloader/releases/latest | grep -E '"tag_name"|"name"'`.
+  `curl -s https://api.github.com/repos/monothread/pullwave/releases/latest | grep -E '"tag_name"|"name"'`.
 - **403 "Resource not accessible by personal access token" on `npm run release`:** the token cannot write Releases. Use a fine-grained token with *Contents: Read and write* on this repository (repository access must be "Only select repositories"), or a classic token with the `repo` scope.
 - **The upload looks stuck:** electron-builder prints nothing while uploading ~470 MB; check the Assets of the draft Release on GitHub.
 - **Installed version < new version but no banner:** an app older than 0.1.1 crashes with `write EPIPE` when opened from a file manager; open it from a terminal or download the new file manually.

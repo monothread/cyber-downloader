@@ -22,7 +22,7 @@ describe('App', () => {
             expect(screen.getByLabelText('Link 1')).toBeInTheDocument();
         });
         expect(screen.queryByText('// BOOTING SYSTEMS…')).not.toBeInTheDocument();
-        expect(screen.getByRole('heading', { name: 'CYBER//DL' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'PULLWAVE' })).toBeInTheDocument();
         expect(screen.getByText('yt-dlp 2026.08.19')).toBeInTheDocument();
     });
 

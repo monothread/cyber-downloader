@@ -16,6 +16,7 @@ import { getElectronUpdater } from './services/electronUpdater';
 import { findPartialFiles, removeFiles } from './services/partialFiles';
 import { applyLanguage, translateMain } from './services/language';
 import { HistoryStore } from './services/historyStore';
+import { migrateLegacyUserData } from './services/legacyDataMigration';
 import { restartApplication } from './services/relaunch';
 import { mergeParts } from './services/partsMerger';
 import { salvageRecording } from './services/recordingSalvage';
@@ -30,12 +31,14 @@ import { TrayManager } from './services/trayManager';
 import { createQuitRequester, decideCloseAction, describePending } from './services/windowClose';
 import { runYtdlp } from './services/ytdlpRunner';
 
-const APP_ID = 'dev.lucas.cyberdownloader';
+const APP_ID = 'dev.lucas.pullwave';
 const STARTUP_UPDATE_CHECK_DELAY_MS = 5000;
 const PRODUCTION_CSP =
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'";
 
 ignoreStdioErrors();
+// Must run before the single-instance lock below, which is what creates the data folder.
+migrateLegacyUserData(app.getPath('appData'), app.getPath('userData'));
 
 let mainWindow: BrowserWindow | null = null;
 let trayManager: TrayManager | null = null;
@@ -50,7 +53,7 @@ function warnAboutMissingBridge(reason: string): void {
         return;
     }
     bridgeWarningShown = true;
-    dialog.showErrorBox('CYBER//DL could not start its interface', `${reason}\n\nDetails were saved to:\n${diagnosticLog?.path ?? 'the diagnostic log'}`);
+    dialog.showErrorBox('PULLWAVE could not start its interface', `${reason}\n\nDetails were saved to:\n${diagnosticLog?.path ?? 'the diagnostic log'}`);
 }
 
 function iconPath(): string {
@@ -105,7 +108,7 @@ function createWindow(): BrowserWindow {
         minWidth: 820,
         minHeight: 600,
         backgroundColor: '#07060f',
-        title: 'CYBER//DL',
+        title: 'PULLWAVE',
         autoHideMenuBar: true,
         icon: iconPath(),
         webPreferences: {
@@ -282,8 +285,8 @@ function bootstrap(): void {
     });
     const browserCatalog = new BrowserCatalog(async () => {
         const environment: DetectionEnvironment = { platform: process.platform, homeDir: app.getPath('home'), env: process.env };
-        // CYBER_DL_APPLICATION_DIRS replaces the folders holding the .desktop entries (used by the end-to-end tests).
-        const applicationDirs = process.env.CYBER_DL_APPLICATION_DIRS?.split(delimiter);
+        // PULLWAVE_APPLICATION_DIRS replaces the folders holding the .desktop entries (used by the end-to-end tests).
+        const applicationDirs = process.env.PULLWAVE_APPLICATION_DIRS?.split(delimiter);
         const registered = await listRegisteredBrowsers(
             { ...environment, applicationDirs },
             { listFiles: defaultFileProbe.listFiles, readText: defaultFileProbe.readText, exec: defaultExecFile }

@@ -1,4 +1,4 @@
-# Third-party software bundled with Cyber Downloader
+# Third-party software bundled with Pullwave
 
 This application redistributes unmodified binaries of the following projects.
 

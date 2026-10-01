@@ -1,12 +1,12 @@
-appId: dev.lucas.cyberdownloader
-productName: Cyber Downloader
-artifactName: cyber-downloader-${version}.${ext}
+appId: dev.lucas.pullwave
+productName: Pullwave
+artifactName: pullwave-${version}.${ext}
 directories:
   output: dist
 publish:
   provider: github
   owner: monothread
-  repo: cyber-downloader
+  repo: pullwave
 files:
   - out/**/*
   - package.json
@@ -31,7 +31,7 @@ linux:
   category: Network
   syncDesktopName: true
   maintainer: monothread <realrukasu@proton.me>
-  synopsis: Cyberpunk desktop frontend for yt-dlp
+  synopsis: Cyberpunk yt-dlp GUI and video downloader
 win:
   extraResources:
     - from: resources/bin
@@ -45,5 +45,5 @@ win:
 nsis:
   oneClick: true
   perMachine: false
-  artifactName: cyber-downloader-${version}-setup.${ext}
+  artifactName: pullwave-${version}-setup.${ext}
   deleteAppDataOnUninstall: false

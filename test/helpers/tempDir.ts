@@ -5,7 +5,7 @@ import { join } from 'node:path';
 const created: string[] = [];
 
 export function makeTempDir(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'cyber-dl-test-'));
+    const dir = mkdtempSync(join(tmpdir(), 'pullwave-test-'));
     created.push(dir);
     return dir;
 }

@@ -8,7 +8,7 @@ export const zh: Messages = {
     'app.booting': '// 系统启动中…',
     'bridge.title': '界面无法连接到应用程序',
     'bridge.hint':
-        '在问题解决之前，按钮无法使用。请关闭应用后重新打开；如果问题仍然存在，请重新安装，并发送应用数据文件夹中的 diagnostic.log 文件（Windows 上位于 %APPDATA%\\cyber-downloader）。',
+        '在问题解决之前，按钮无法使用。请关闭应用后重新打开；如果问题仍然存在，请重新安装，并发送应用数据文件夹中的 diagnostic.log 文件（Windows 上位于 %APPDATA%\\pullwave）。',
     'binary.missing': '缺失',
 
     'error.FILENAME_TOO_LONG.title': '标题过长',
@@ -174,8 +174,8 @@ export const zh: Messages = {
     'settings.closeToTray.hint': '下载会在后台继续。右键单击托盘图标可完全退出。',
     'tray.noTray': '未检测到系统托盘。在 GNOME 上，请安装“AppIndicator and KStatusNotifierItem Support”扩展。在此之前，关闭窗口会退出应用。',
     'tray.createFailed': '无法创建托盘图标。关闭窗口会退出应用。',
-    'tray.show': '显示 Cyber Downloader',
-    'tray.restart': '重启 Cyber Downloader',
+    'tray.show': '显示 Pullwave',
+    'tray.restart': '重启 Pullwave',
     'tray.quit': '退出',
 
     'settings.output': '输出',
@@ -271,10 +271,10 @@ export const zh: Messages = {
     'dialog.pendingOne': '还有 1 个下载正在进行。',
     'dialog.pendingMany': '还有 {count} 个下载正在进行。',
     'dialog.quit.action': '退出',
-    'dialog.quit.title': '退出 Cyber Downloader？',
+    'dialog.quit.title': '退出 Pullwave？',
     'dialog.quit.detail': '现在退出将取消这些下载。',
     'dialog.restart.action': '重启',
-    'dialog.restart.title': '重启 Cyber Downloader？',
+    'dialog.restart.title': '重启 Pullwave？',
     'dialog.restart.detail': '现在重启将取消这些下载。',
     'dialog.cancel': '取消'
 };

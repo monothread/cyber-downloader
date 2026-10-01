@@ -10,7 +10,7 @@ const RELEASE_API_URL = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/lat
 const RELEASE_DOWNLOAD_URL = 'https://github.com/yt-dlp/yt-dlp/releases/download';
 const ASSET_NAMES: Partial<Record<NodeJS.Platform, string>> = { linux: 'yt-dlp_linux', win32: 'yt-dlp.exe' };
 const CHECKSUMS_NAME = 'SHA2-256SUMS';
-const USER_AGENT = 'cyber-downloader';
+const USER_AGENT = 'pullwave';
 
 export type UpdateExecFn = (file: string, args: string[]) => Promise<{ ok: boolean; output: string }>;
 

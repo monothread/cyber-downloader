@@ -11,9 +11,9 @@ import {
 } from '@main/services/relaunch';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
 
-const APP_IMAGE = '/home/lucas/.apps/cyber_downloader.appimage';
-const ARGV = ['/tmp/.mount_cyber_abc/cyber-downloader', '--no-sandbox', '--user-data-dir=/tmp/x'];
-const MOUNT = '/tmp/.mount_cyber_abc';
+const APP_IMAGE = '/home/lucas/.apps/pullwave.appimage';
+const ARGV = ['/tmp/.mount_pullwave_abc/pullwave', '--no-sandbox', '--user-data-dir=/tmp/x'];
+const MOUNT = '/tmp/.mount_pullwave_abc';
 
 afterEach(() => {
     cleanTempDirs();
@@ -65,7 +65,7 @@ describe('buildAppImageRestart', () => {
         const restart = buildAppImageRestart(APP_IMAGE, { APPDIR: MOUNT }, ARGV, 4321);
         expect(restart.command).toBe('sh');
         expect(restart.args[0]).toBe('-c');
-        expect(restart.args.slice(2)).toEqual(['cyber-downloader-restart', '4321', APP_IMAGE, '--no-sandbox', '--user-data-dir=/tmp/x']);
+        expect(restart.args.slice(2)).toEqual(['pullwave-restart', '4321', APP_IMAGE, '--no-sandbox', '--user-data-dir=/tmp/x']);
         expect(restart.env).toEqual({});
     });
 
@@ -93,7 +93,7 @@ describe('restartApplication', () => {
         expect(spawnProcess).toHaveBeenCalledTimes(1);
         const [command, args, options] = spawnProcess.mock.calls[0] as unknown as [string, string[], Record<string, unknown>];
         expect(command).toBe('sh');
-        expect(args.slice(2)).toEqual(['cyber-downloader-restart', '99', APP_IMAGE, '--no-sandbox', '--user-data-dir=/tmp/x']);
+        expect(args.slice(2)).toEqual(['pullwave-restart', '99', APP_IMAGE, '--no-sandbox', '--user-data-dir=/tmp/x']);
         expect(options).toEqual({ detached: true, stdio: 'ignore', env: { APPIMAGE: APP_IMAGE, HOME: '/home/lucas' } });
         expect(child.unref).toHaveBeenCalledTimes(1);
         expect(relaunch).not.toHaveBeenCalled();

@@ -244,8 +244,8 @@ describe('defaultUpdaterDependencies', () => {
         vi.stubGlobal('fetch', fetchMock);
         await expect(defaultUpdaterDependencies.fetchText('https://x.test/a')).resolves.toBe('hello');
         await expect(defaultUpdaterDependencies.fetchBuffer('https://x.test/b')).resolves.toEqual(Buffer.from('hello'));
-        expect(fetchMock).toHaveBeenCalledWith('https://x.test/a', { headers: { 'User-Agent': 'cyber-downloader' }, redirect: 'follow' });
-        expect(fetchMock).toHaveBeenCalledWith('https://x.test/b', { headers: { 'User-Agent': 'cyber-downloader' }, redirect: 'follow' });
+        expect(fetchMock).toHaveBeenCalledWith('https://x.test/a', { headers: { 'User-Agent': 'pullwave' }, redirect: 'follow' });
+        expect(fetchMock).toHaveBeenCalledWith('https://x.test/b', { headers: { 'User-Agent': 'pullwave' }, redirect: 'follow' });
     });
 
     it('rejects on a non-ok response', async () => {

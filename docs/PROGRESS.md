@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github.com/monothread/cyber-downloader` (Windows installer, AppImage, deb, rpm, pacman).
+Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github.com/monothread/pullwave` (Windows installer, AppImage, deb, rpm, pacman).
 
 | ID | Phase | Task | Depends on | Files | Status | Owner | Notes |
 |---|---|---|---|---|---|---|---|
@@ -25,7 +25,7 @@ Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github
 | 6.1 | 6 | AppImage/deb packaging + README | 5.x | electron-builder.yml, resources/icon.png | DONE | session-2026-09-30-a | AppImage + deb generated; icon in resources/ (generated with Pillow, 512x512) |
 | 7.1 | 7 | Bundle yt-dlp, ffmpeg, deno in the package + own updater (D-013) | 6.1 | scripts/, src/main/services/binaryResolver.ts, updater.ts, electron-builder.yml | DONE | session-2026-09-30-a | Tested with a restricted PATH: mp4 (merge) and mp3 downloads using only the bundled binaries; package built and smoke-tested |
 | 8.1 | 8 | App self-update (D-014) | 7.1 | src/main/services/appUpdateService.ts, electronUpdater.ts, update UI, docs/RELEASING.md | DONE | session-2026-09-30-a | Tested on the real package: it queries GitHub and answers "No published versions" (no Release yet). The download/install flow can only be validated after the first Release plus a higher version |
-| 9.1 | 9 | Git repository + publish to GitHub | 8.1 | .git, LICENSE | DONE | session-2026-09-30-a | Branch `main` pushed to monothread/cyber-downloader; LICENSE is the MIT one created by GitHub (copyright monothread) |
+| 9.1 | 9 | Git repository + publish to GitHub | 8.1 | .git, LICENSE | DONE | session-2026-09-30-a | Branch `main` pushed to monothread/pullwave; LICENSE is the MIT one created by GitHub (copyright monothread) |
 | 10.1 | 10 | Settings auto-save + one input per link (D-015) | 9.1 | src/renderer/hooks, SettingsPanel.tsx, UrlInput.tsx, appStore.ts | DONE | session-2026-09-30-a | Committed locally; needs a new version/release to reach installed apps |
 | 10.2 | 10 | Docs/code review fixes (D-016) | 10.1 | queueManager.ts, appUpdateService.ts, registerHandlers.ts, docs | DONE | session-2026-09-30-a | Quit cleanup, downloaded-state guard, openPath IPC removed, stale docs fixed |
 | 11.1 | 11 | Close to system tray + quit confirmation + single instance (D-017) | 10.2 | src/main/index.ts, trayAvailability.ts, trayManager.ts, windowClose.ts, electronTray.ts, SettingsPanel.tsx | DONE | session-2026-09-30-a | Verified on Cinnamon (SNI item + Show/Quit menu). KDE/XFCE/GNOME rely on the same protocol but were not run here |
@@ -37,7 +37,7 @@ Last updated: 2026-09-30 · All phases complete; **v0.3.0 published** at `github
 | 14.1 | 14 | Stream finder: find and download the video stream of a page yt-dlp does not understand (D-019) | 13.1 | src/main/services/{mediaKinds,pageScanner,sniffRules,browserSniffer,playlistFilter,streamFinder}.ts, JobCard/StreamFinder UI | DONE | session-2026-09-30-a | On branch `feature/stream-sniffer` (not merged, not released). Verified with local pages (e2e) and a public hls.js/Mux test stream |
 
 ## Handoff notes
-- Project directory: `/home/lucas/projects/downloader`; remote `origin` = `https://github.com/monothread/cyber-downloader.git`.
+- Project directory: `/home/lucas/projects/downloader`; remote `origin` = `https://github.com/monothread/pullwave.git`.
 - The remote also still has a leftover `master` branch (from the first push); it is unused and can be deleted.
 - Original full plan: `~/.claude/plans/quero-que-crie-um-concurrent-pebble.md` (summarized in `ARCHITECTURE.md`).
 

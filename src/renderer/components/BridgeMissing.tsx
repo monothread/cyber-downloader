@@ -5,8 +5,8 @@ export function BridgeMissing() {
     const t = useTranslator();
     return (
         <div className="app">
-            <h1 className="logo" data-text="CYBER//DL">
-                CYBER//DL
+            <h1 className="logo" data-text="PULLWAVE">
+                PULLWAVE
             </h1>
             <div className="error-banner" role="alert">
                 <p className="error-banner__title">{t('bridge.title')}</p>

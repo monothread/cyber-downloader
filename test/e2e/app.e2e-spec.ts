@@ -35,7 +35,7 @@ interface LaunchOptions {
 
 async function launch(options: LaunchOptions = {}): Promise<Session> {
     const { useFakeYtdlp = true, settings = {}, env = {} } = options;
-    const workDir = mkdtempSync(join(tmpdir(), 'cyber-dl-e2e-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'pullwave-e2e-'));
     const userData = join(workDir, 'user-data');
     const downloadDir = join(workDir, 'downloads');
     const logPath = join(workDir, 'ytdlp-calls.log');
@@ -600,11 +600,11 @@ test.describe('browser detection', () => {
 
     // The .desktop entries of the real system are replaced by the ones in fakeApps, so the result does not depend on what is installed.
     function launchOnFakeHome(settings: Record<string, unknown> = {}): Promise<Session> {
-        return launch({ env: { HOME: fakeHome, CYBER_DL_APPLICATION_DIRS: fakeApps }, settings });
+        return launch({ env: { HOME: fakeHome, PULLWAVE_APPLICATION_DIRS: fakeApps }, settings });
     }
 
     test.beforeEach(() => {
-        fakeHome = mkdtempSync(join(tmpdir(), 'cyber-dl-home-'));
+        fakeHome = mkdtempSync(join(tmpdir(), 'pullwave-home-'));
         fakeApps = join(fakeHome, 'applications');
         mkdirSync(fakeApps, { recursive: true });
     });
@@ -1022,7 +1022,7 @@ test.describe('languages', () => {
     });
 
     test('"device" follows the language of the system', async () => {
-        const workDir = mkdtempSync(join(tmpdir(), 'cyber-dl-e2e-'));
+        const workDir = mkdtempSync(join(tmpdir(), 'pullwave-e2e-'));
         const userData = join(workDir, 'user-data');
         mkdirSync(userData, { recursive: true });
         writeFileSync(join(userData, 'settings.json'), JSON.stringify({ language: 'device', ytdlpPath: FAKE_YTDLP, downloadDir: join(workDir, 'downloads') }));
@@ -2231,7 +2231,7 @@ test.describe('find stream', () => {
         test.setTimeout(60000);
         await session.app.close();
         rmSync(resolve(session.userData, '..'), { recursive: true, force: true });
-        session = await launch({ env: { CYBER_DL_SNIFF_TIMEOUT_MS: '3000' } });
+        session = await launch({ env: { PULLWAVE_SNIFF_TIMEOUT_MS: '3000' } });
         await failOn('/unsupported/none.html');
         await session.page.getByRole('button', { name: 'FIND STREAM' }).click();
         await expect(panel()).toContainText('No video stream was found.', { timeout: 30000 });
@@ -2243,7 +2243,7 @@ test.describe('find stream', () => {
         test.setTimeout(60000);
         await session.app.close();
         rmSync(resolve(session.userData, '..'), { recursive: true, force: true });
-        session = await launch({ env: { CYBER_DL_SNIFF_TIMEOUT_MS: '20000' } });
+        session = await launch({ env: { PULLWAVE_SNIFF_TIMEOUT_MS: '20000' } });
         await failOn('/unsupported/none.html');
         await session.page.getByRole('button', { name: 'FIND STREAM' }).click();
         await expect(panel()).toContainText('Watching the page’s network activity', { timeout: 15000 });

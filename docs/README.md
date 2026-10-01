@@ -1,4 +1,4 @@
-# Cyber Downloader — Documentation
+# Pullwave — Documentation
 
 Linux desktop app (Electron + React + TypeScript) that wraps `yt-dlp`, with a cyberpunk theme.
 
