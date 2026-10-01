@@ -8,6 +8,7 @@ import { updateYtdlp } from '@main/services/updater';
 import { HistoryStore } from '@main/services/historyStore';
 import type { AppUpdateService } from '@main/services/appUpdateService';
 import type { QueueManager } from '@main/services/queueManager';
+import type { BrowserCatalog } from '@main/services/browserCatalog';
 import type { StreamFinder } from '@main/services/streamFinder';
 import { SettingsStore } from '@main/services/settingsStore';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
@@ -35,7 +36,7 @@ afterEach(() => {
 });
 
 const JOB: DownloadJob = {
-    id: 'j1', url: 'https://x.com/a', status: 'queued', title: null, percent: 0, speed: '', eta: '', filePath: null, error: null, createdAt: 1, pageUrl: null, live: false, elapsedSeconds: 0, downloadedBytes: 0
+    id: 'j1', url: 'https://x.com/a', status: 'queued', title: null, percent: 0, speed: '', eta: '', filePath: null, error: null, createdAt: 1, pageUrl: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false
 };
 
 function setup() {
@@ -60,6 +61,7 @@ function setup() {
         stop: vi.fn(),
         retry: vi.fn(),
         remove: vi.fn(),
+        clearPartials: vi.fn(),
         clearFinished: vi.fn()
     };
     const appUpdates = {
@@ -82,6 +84,11 @@ function setup() {
         return { available: false, reason: 'no tray here' };
     });
     const onSettingsSaved = vi.fn();
+    const browserCatalog = {
+        list: vi.fn(async () => {
+            return [{ label: 'Brave Origin', engine: 'brave', dataDir: '/home/a/.config/BraveSoftware/Brave-Origin', profiles: [{ id: 'Default', name: 'Personal' }] }];
+        })
+    };
     const sendStreamProgress = vi.fn();
     const streamFinder = {
         find: vi.fn<StreamFinder['find']>(async () => {
@@ -91,7 +98,7 @@ function setup() {
         getCandidate: vi.fn()
     };
     const resolver = new BinaryResolver({ bundledDir: '/b', userBinDir: '/u' });
-    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, refreshTraySupport, onSettingsSaved, streamFinder: streamFinder as unknown as StreamFinder, sendStreamProgress, chooseDirectory, showItemInFolder });
+    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, refreshTraySupport, browserCatalog: browserCatalog as unknown as BrowserCatalog, onSettingsSaved, streamFinder: streamFinder as unknown as StreamFinder, sendStreamProgress, chooseDirectory, showItemInFolder });
     const call = (channel: string, ...args: unknown[]): unknown => {
         const handler = handlers.get(channel);
         if (!handler) {
@@ -99,7 +106,7 @@ function setup() {
         }
         return handler({}, ...args);
     };
-    return { handlers, call, streamFinder, sendStreamProgress, refreshTraySupport, onSettingsSaved, appUpdates, resolver, settingsStore, historyStore, queue, chooseDirectory, showItemInFolder };
+    return { handlers, call, browserCatalog, streamFinder, sendStreamProgress, refreshTraySupport, onSettingsSaved, appUpdates, resolver, settingsStore, historyStore, queue, chooseDirectory, showItemInFolder };
 }
 
 describe('registerHandlers', () => {
@@ -107,8 +114,8 @@ describe('registerHandlers', () => {
         const { handlers } = setup();
         expect([...handlers.keys()].sort()).toEqual(
             [
-                IPC.settingsGet, IPC.settingsSave, IPC.queueAdd, IPC.queueList, IPC.queueCancel, IPC.queueStop, IPC.queueRetry, IPC.queueRemove,
-                IPC.queueClearFinished, IPC.historyList, IPC.historyClear, IPC.binariesCheck, IPC.ytdlpUpdate, IPC.appUpdateGet, IPC.appUpdateCheck, IPC.appUpdateDownload, IPC.appUpdateInstall, IPC.traySupport, IPC.streamFind, IPC.streamCancel, IPC.streamDownload, IPC.dialogChooseDir,
+                IPC.settingsGet, IPC.settingsSave, IPC.queueAdd, IPC.queueList, IPC.queueCancel, IPC.queueStop, IPC.queueRetry, IPC.queueClearPartials, IPC.queueRemove,
+                IPC.queueClearFinished, IPC.historyList, IPC.historyClear, IPC.binariesCheck, IPC.ytdlpUpdate, IPC.appUpdateGet, IPC.appUpdateCheck, IPC.appUpdateDownload, IPC.appUpdateInstall, IPC.traySupport, IPC.browsersList, IPC.streamFind, IPC.streamCancel, IPC.streamDownload, IPC.dialogChooseDir,
                 IPC.shellShowItem
             ].sort()
         );
@@ -132,6 +139,23 @@ describe('registerHandlers', () => {
         const { call, onSettingsSaved } = setup();
         call(IPC.settingsGet);
         expect(onSettingsSaved).not.toHaveBeenCalled();
+    });
+
+    it('lists the detected browsers without rescanning by default', async () => {
+        const { call, browserCatalog } = setup();
+        await expect(call(IPC.browsersList)).resolves.toEqual([
+            { label: 'Brave Origin', engine: 'brave', dataDir: '/home/a/.config/BraveSoftware/Brave-Origin', profiles: [{ id: 'Default', name: 'Personal' }] }
+        ]);
+        expect(browserCatalog.list).toHaveBeenCalledTimes(1);
+        expect(browserCatalog.list).toHaveBeenCalledWith(false);
+    });
+
+    it('rescans the browsers only when asked to refresh', async () => {
+        const { call, browserCatalog } = setup();
+        await call(IPC.browsersList, true);
+        expect(browserCatalog.list).toHaveBeenCalledWith(true);
+        await call(IPC.browsersList, 'yes');
+        expect(browserCatalog.list).toHaveBeenLastCalledWith(false);
     });
 
     it('returns a fresh tray support check', async () => {
@@ -247,6 +271,13 @@ describe('registerHandlers', () => {
         expect(queue.cancel).toHaveBeenCalledWith('j1');
         expect(queue.retry).toHaveBeenCalledWith('j2');
         expect(queue.remove).toHaveBeenCalledWith('j3');
+    });
+
+    it('clears the partial files of a download by id', () => {
+        const { call, queue } = setup();
+        call(IPC.queueClearPartials, 'j4');
+        call(IPC.queueClearPartials, 42);
+        expect(queue.clearPartials.mock.calls).toEqual([['j4'], ['']]);
     });
 
     it('stops a live recording by id, keeping what was recorded', () => {

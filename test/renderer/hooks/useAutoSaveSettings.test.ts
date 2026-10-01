@@ -37,6 +37,26 @@ describe('useAutoSaveSettings', () => {
         expect(AUTOSAVE_DELAY_MS).toBe(2000);
     });
 
+    describe('changeMany (immediate)', () => {
+        it('applies several fields and saves once with all of them', async () => {
+            const save = makeSave();
+            const { result } = renderHook(() => {
+                return useAutoSaveSettings(DEFAULT_SETTINGS, save);
+            });
+            await act(async () => {
+                result.current.changeMany({ cookiesBrowser: 'brave', cookiesBrowserDir: '/home/a/.config/BraveSoftware/Brave-Origin' });
+            });
+            expect(save).toHaveBeenCalledTimes(1);
+            expect(save).toHaveBeenCalledWith({
+                ...DEFAULT_SETTINGS,
+                cookiesBrowser: 'brave',
+                cookiesBrowserDir: '/home/a/.config/BraveSoftware/Brave-Origin'
+            });
+            expect(result.current.draft.cookiesBrowser).toBe('brave');
+            expect(result.current.status).toBe('saved');
+        });
+    });
+
     describe('change (immediate)', () => {
         it('updates the draft and saves right away with the full settings', async () => {
             const save = makeSave();

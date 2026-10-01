@@ -10,6 +10,7 @@ export interface AutoSaveSettings {
     status: SaveStatus;
     change: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
     edit: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+    changeMany: (patch: Partial<Settings>) => void;
 }
 
 export function useAutoSaveSettings(stored: Settings, save: (settings: Settings) => Promise<Settings>): AutoSaveSettings {
@@ -41,11 +42,18 @@ export function useAutoSaveSettings(stored: Settings, save: (settings: Settings)
         }
     }, [cancelTimer, save]);
 
-    const apply = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]): void => {
-        const next = { ...latest.current, [key]: value };
+    const applyMany = useCallback((patch: Partial<Settings>): void => {
+        const next = { ...latest.current, ...patch };
         latest.current = next;
         setDraft(next);
     }, []);
+
+    const apply = useCallback(
+        <K extends keyof Settings>(key: K, value: Settings[K]): void => {
+            applyMany({ [key]: value });
+        },
+        [applyMany]
+    );
 
     const change = useCallback(
         <K extends keyof Settings>(key: K, value: Settings[K]): void => {
@@ -53,6 +61,14 @@ export function useAutoSaveSettings(stored: Settings, save: (settings: Settings)
             void flush();
         },
         [apply, flush]
+    );
+
+    const changeMany = useCallback(
+        (patch: Partial<Settings>): void => {
+            applyMany(patch);
+            void flush();
+        },
+        [applyMany, flush]
     );
 
     const edit = useCallback(
@@ -75,5 +91,5 @@ export function useAutoSaveSettings(stored: Settings, save: (settings: Settings)
         };
     }, [flush]);
 
-    return { draft, status, change, edit };
+    return { draft, status, change, edit, changeMany };
 }

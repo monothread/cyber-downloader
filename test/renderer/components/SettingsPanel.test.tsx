@@ -12,7 +12,7 @@ const initial = useAppStore.getState();
 beforeEach(() => {
     vi.useFakeTimers();
     mock = installMockApi();
-    useAppStore.setState({ ...initial, settings: DEFAULT_SETTINGS, notice: null, appUpdate: INITIAL_APP_UPDATE, traySupport: null });
+    useAppStore.setState({ ...initial, settings: DEFAULT_SETTINGS, notice: null, appUpdate: INITIAL_APP_UPDATE, traySupport: null, browsers: null });
 });
 
 afterEach(() => {
@@ -48,7 +48,7 @@ describe('SettingsPanel layout', () => {
         expect(screen.getByLabelText('Audio only')).not.toBeChecked();
         expect(screen.getByLabelText('Audio format')).toHaveValue('mp3');
         expect(screen.getByLabelText('Use cookies from my browser')).not.toBeChecked();
-        expect(screen.getByLabelText('Browser')).toHaveValue('firefox');
+        expect(screen.getByLabelText('Browser')).toHaveValue('');
         expect(screen.getByLabelText('Simultaneous downloads')).toHaveValue(2);
     });
 
@@ -74,6 +74,7 @@ describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
         ['Use cookies from my browser', 'useBrowserCookies'],
         ['Download whole playlist', 'downloadPlaylist'],
         ['Download subtitles', 'writeSubtitles'],
+        ['Include auto-generated subtitles', 'autoSubtitles'],
         ['Embed subtitles in the video', 'embedSubtitles'],
         ['Keep running in the system tray when the window is closed', 'closeToTray'],
         ['Record live streams from the start', 'liveFromStart'],
@@ -86,6 +87,17 @@ describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
         expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, [key]: true });
     });
 
+    it('has the partial file cleanup on by default and saves right away when it is turned off', async () => {
+        render(<SettingsPanel />);
+        const toggle = screen.getByLabelText('Delete partial files when a download fails or is cancelled');
+        expect(toggle).toBeChecked();
+        expect(screen.getByText('Live recordings are always kept, because they can still be saved. A retry starts over once the partial file is gone.')).toBeInTheDocument();
+        fireEvent.click(toggle);
+        await flushPromises();
+        expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, deletePartialsOnFailure: false });
+    });
+
     it('saves right away when "Check for updates on startup" is turned off', async () => {
         render(<SettingsPanel />);
         fireEvent.click(screen.getByLabelText('Check for updates on startup'));
@@ -96,8 +108,7 @@ describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
     it.each([
         ['Video quality', '1080', 'maxResolution'],
         ['Video container', 'webm', 'videoContainer'],
-        ['Audio format', 'opus', 'audioFormat'],
-        ['Browser', 'chrome', 'cookiesBrowser']
+        ['Audio format', 'opus', 'audioFormat']
     ] as const)('saves right away when "%s" changes', async (label, value, key) => {
         render(<SettingsPanel />);
         fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -246,6 +257,226 @@ describe('SettingsPanel app updates', () => {
         fireEvent.click(screen.getByRole('button', { name: 'UPDATE TO 0.2.0' }));
         await flushPromises();
         expect(mock.api.downloadAppUpdate).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('SettingsPanel browser cookies', () => {
+    const ORIGIN = {
+        label: 'Brave Origin',
+        engine: 'brave' as const,
+        dataDir: '/home/a/.config/BraveSoftware/Brave-Origin',
+        profiles: [
+            { id: 'Default', name: 'Personal' },
+            { id: 'Profile 1', name: 'Work' }
+        ]
+    };
+    const FIREFOX = {
+        label: 'Firefox',
+        engine: 'firefox' as const,
+        dataDir: '/home/a/.mozilla/firefox',
+        profiles: [{ id: 'abc.default-release', name: 'abc.default-release' }]
+    };
+
+    function optionTexts(): Array<string | null> {
+        return Array.from(screen.getByLabelText('Browser').querySelectorAll('option')).map((option) => {
+            return option.textContent;
+        });
+    }
+
+    it('loads the detected browsers when opened', async () => {
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(mock.api.listBrowsers).toHaveBeenCalledTimes(1);
+        expect(mock.api.listBrowsers).toHaveBeenCalledWith(false);
+    });
+
+    it('lists only the detected browsers, with a placeholder while none is chosen', async () => {
+        mock.api.listBrowsers.mockResolvedValue([FIREFOX, ORIGIN]);
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(optionTexts()).toEqual(['Choose a browser…', 'Firefox', 'Brave Origin']);
+        expect(screen.getByLabelText('Browser')).toHaveValue('');
+    });
+
+    it('selects the saved browser and drops the placeholder', async () => {
+        mock.api.listBrowsers.mockResolvedValue([FIREFOX, ORIGIN]);
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir } });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(optionTexts()).toEqual(['Firefox', 'Brave Origin']);
+        expect(screen.getByLabelText('Browser')).toHaveValue(ORIGIN.dataDir);
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('saves the engine and the folder together, right away, when a browser is chosen', async () => {
+        mock.api.listBrowsers.mockResolvedValue([FIREFOX, ORIGIN]);
+        render(<SettingsPanel />);
+        await flushPromises();
+        fireEvent.change(screen.getByLabelText('Browser'), { target: { value: ORIGIN.dataDir } });
+        await flushPromises();
+        expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir, cookiesProfile: '' });
+    });
+
+    it('clears the saved profile when another browser is chosen', async () => {
+        mock.api.listBrowsers.mockResolvedValue([FIREFOX, ORIGIN]);
+        useAppStore.setState({
+            settings: { ...DEFAULT_SETTINGS, useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir, cookiesProfile: 'Profile 1' }
+        });
+        render(<SettingsPanel />);
+        await flushPromises();
+        fireEvent.change(screen.getByLabelText('Browser'), { target: { value: FIREFOX.dataDir } });
+        await flushPromises();
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({
+            ...DEFAULT_SETTINGS,
+            useBrowserCookies: true,
+            cookiesBrowser: 'firefox',
+            cookiesBrowserDir: FIREFOX.dataDir,
+            cookiesProfile: ''
+        });
+    });
+
+    function profileOptionTexts(): Array<string | null> {
+        return Array.from(screen.getByLabelText('Browser profile (optional)').querySelectorAll('option')).map((option) => {
+            return option.textContent;
+        });
+    }
+
+    it('shows the profiles of the chosen browser as a menu, with the names the user gave them', async () => {
+        mock.api.listBrowsers.mockResolvedValue([ORIGIN]);
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir } });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.getByLabelText('Browser profile (optional)').tagName).toBe('SELECT');
+        expect(profileOptionTexts()).toEqual(['Automatic (most recently used)', 'Personal (Default)', 'Work (Profile 1)']);
+        expect(screen.getByLabelText('Browser profile (optional)')).toHaveValue('');
+    });
+
+    it('shows a profile whose name is its folder only once', async () => {
+        mock.api.listBrowsers.mockResolvedValue([FIREFOX]);
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'firefox', cookiesBrowserDir: FIREFOX.dataDir } });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(profileOptionTexts()).toEqual(['Automatic (most recently used)', 'abc.default-release']);
+    });
+
+    it('saves the chosen profile right away', async () => {
+        mock.api.listBrowsers.mockResolvedValue([ORIGIN]);
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir } });
+        render(<SettingsPanel />);
+        await flushPromises();
+        fireEvent.change(screen.getByLabelText('Browser profile (optional)'), { target: { value: 'Profile 1' } });
+        await flushPromises();
+        expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({
+            ...DEFAULT_SETTINGS,
+            cookiesBrowser: 'brave',
+            cookiesBrowserDir: ORIGIN.dataDir,
+            cookiesProfile: 'Profile 1'
+        });
+    });
+
+    it('keeps a saved profile that no longer exists in the menu and marks it', async () => {
+        mock.api.listBrowsers.mockResolvedValue([ORIGIN]);
+        useAppStore.setState({
+            settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir, cookiesProfile: 'Profile 9' }
+        });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(profileOptionTexts()).toEqual(['Automatic (most recently used)', 'Personal (Default)', 'Work (Profile 1)', 'Profile 9 (not found)']);
+        expect(screen.getByLabelText('Browser profile (optional)')).toHaveValue('Profile 9');
+    });
+
+    it('keeps a text field for the profile while no detected browser is chosen', async () => {
+        mock.api.listBrowsers.mockResolvedValue([ORIGIN]);
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.getByLabelText('Browser profile (optional)').tagName).toBe('INPUT');
+    });
+
+    it('keeps a text field for the profile when the chosen browser reports no profile', async () => {
+        mock.api.listBrowsers.mockResolvedValue([{ ...FIREFOX, profiles: [] }]);
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'firefox', cookiesBrowserDir: FIREFOX.dataDir } });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.getByLabelText('Browser profile (optional)').tagName).toBe('INPUT');
+    });
+
+    it('warns that the saved browser was not found when the cookies are on', async () => {
+        mock.api.listBrowsers.mockResolvedValue([FIREFOX]);
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, useBrowserCookies: true, cookiesBrowser: 'brave' } });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.getByRole('alert')).toHaveTextContent('The saved browser (brave) was not found on this system. Choose one of the detected browsers.');
+    });
+
+    it('warns when no browser is found at all', async () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, useBrowserCookies: true } });
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.getByRole('alert')).toHaveTextContent('No browser with saved cookies was found on this system.');
+        expect(optionTexts()).toEqual(['Choose a browser…']);
+    });
+
+    it('does not warn while the cookies are off', async () => {
+        mock.api.listBrowsers.mockResolvedValue([FIREFOX]);
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('scans again and shows the new browsers when RESCAN BROWSERS is clicked', async () => {
+        mock.api.listBrowsers.mockResolvedValueOnce([FIREFOX]).mockResolvedValueOnce([FIREFOX, ORIGIN]);
+        render(<SettingsPanel />);
+        await flushPromises();
+        expect(optionTexts()).toEqual(['Choose a browser…', 'Firefox']);
+        fireEvent.click(screen.getByRole('button', { name: 'RESCAN BROWSERS' }));
+        await flushPromises();
+        expect(mock.api.listBrowsers).toHaveBeenLastCalledWith(true);
+        expect(optionTexts()).toEqual(['Choose a browser…', 'Firefox', 'Brave Origin']);
+    });
+});
+
+describe('SettingsPanel auto-generated subtitles warning', () => {
+    const WARNING =
+        'Auto-generated subtitles need a language. Fill in "Subtitle languages" in Settings (e.g. ja), or turn off "Include auto-generated subtitles".';
+
+    it('warns when auto-generated subtitles are on and no language is set', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: true, subtitleLangs: '' } });
+        render(<SettingsPanel />);
+        expect(screen.getByRole('alert')).toHaveTextContent(WARNING);
+    });
+
+    it('warns when the language is "all"', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: true, subtitleLangs: 'all' } });
+        render(<SettingsPanel />);
+        expect(screen.getByRole('alert')).toHaveTextContent(WARNING);
+    });
+
+    it('does not warn when a language is set', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: true, subtitleLangs: 'ja' } });
+        render(<SettingsPanel />);
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('does not warn when auto-generated subtitles are off', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: false, subtitleLangs: '' } });
+        render(<SettingsPanel />);
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('does not warn when subtitles are off', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: false, autoSubtitles: true, subtitleLangs: '' } });
+        render(<SettingsPanel />);
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('shows and hides the warning as the languages field is edited', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: true, subtitleLangs: '' } });
+        render(<SettingsPanel />);
+        expect(screen.getByRole('alert')).toHaveTextContent(WARNING);
+        fireEvent.change(screen.getByLabelText('Subtitle languages'), { target: { value: 'ja' } });
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 });
 

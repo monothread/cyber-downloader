@@ -68,7 +68,7 @@ yt-dlp prints `CYBERINFO|<is_live>|<file>` before downloading → `QueueManager.
 | Audio only | `-x --audio-format mp3\|m4a\|opus` |
 | Title length | `-o "%(title).{N}s [%(id)s].%(ext)s" --trim-filenames 240` |
 | Playlist | `--yes-playlist` / `--no-playlist` |
-| Subtitles | `--write-subs --sub-langs <..> [--embed-subs]` |
+| Subtitles | `--sub-langs <..>`, then `--embed-subs` or `--write-subs` (embedding removes the separate files), plus `--write-auto-subs` when enabled |
 | Progress | `--newline --progress-template "download:CYBERPROG\|%(progress._percent_str)s\|..."` plus `--print after_move:CYBERFILE\|%(filepath)s` |
 | Live streams | `--wait-for-video 30` (wait setting); `--live-from-start --downloader-args ffmpeg_i:-live_start_index 0` (from-start setting); `--print before_dl:CYBERINFO\|%(is_live)s\|%(filename)s` always |
 | Extras | rate limit, concurrency, custom paths, JS runtime, extra args |

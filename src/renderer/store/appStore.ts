@@ -4,6 +4,7 @@ import type {
     AddJobResult,
     AppUpdateState,
     BinariesStatus,
+    DetectedBrowser,
     DownloadJob,
     HistoryEntry,
     LinkRequest,
@@ -41,6 +42,7 @@ export interface AppState {
     updating: boolean;
     appUpdate: AppUpdateState;
     traySupport: TraySupport | null;
+    browsers: DetectedBrowser[] | null;
     streamSearches: Record<string, StreamSearchState>;
     setTab: (tab: Tab) => void;
     setNotice: (notice: Notice | null) => void;
@@ -50,6 +52,7 @@ export interface AppState {
     stopJob: (id: string) => Promise<void>;
     retryJob: (id: string) => Promise<void>;
     removeJob: (id: string) => Promise<void>;
+    clearPartialFiles: (id: string) => Promise<void>;
     clearFinished: () => Promise<void>;
     refreshHistory: () => Promise<void>;
     clearHistory: () => Promise<void>;
@@ -61,6 +64,7 @@ export interface AppState {
     downloadAppUpdate: () => Promise<void>;
     installAppUpdate: () => Promise<void>;
     refreshTraySupport: () => Promise<void>;
+    loadBrowsers: (refresh?: boolean) => Promise<void>;
     findStreams: (jobId: string, deep: boolean) => Promise<void>;
     cancelStreamSearch: (jobId: string) => Promise<void>;
     downloadStream: (jobId: string, candidateId: string) => Promise<void>;
@@ -98,6 +102,7 @@ export const useAppStore = create<AppState>((set, get) => {
         updating: false,
         appUpdate: INITIAL_APP_UPDATE,
         traySupport: null,
+        browsers: null,
         streamSearches: {},
 
         setTab: (tab) => {
@@ -181,6 +186,10 @@ export const useAppStore = create<AppState>((set, get) => {
             await window.api.removeJob(id);
         },
 
+        clearPartialFiles: async (id) => {
+            await window.api.clearPartialFiles(id);
+        },
+
         clearFinished: async () => {
             await window.api.clearFinished();
         },
@@ -236,6 +245,10 @@ export const useAppStore = create<AppState>((set, get) => {
 
         refreshTraySupport: async () => {
             set({ traySupport: await window.api.getTraySupport() });
+        },
+
+        loadBrowsers: async (refresh = false) => {
+            set({ browsers: await window.api.listBrowsers(refresh) });
         },
 
         findStreams: async (jobId, deep) => {

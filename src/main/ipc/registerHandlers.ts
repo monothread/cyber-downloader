@@ -4,6 +4,7 @@ import type {
     AddJobResult,
     AppUpdateState,
     BinariesStatus,
+    DetectedBrowser,
     HistoryEntry,
     Settings,
     StreamFindProgress,
@@ -14,6 +15,7 @@ import type {
 import { checkBinaries } from '../services/binaryLocator';
 import type { BinaryResolver } from '../services/binaryResolver';
 import { updateYtdlp } from '../services/updater';
+import type { BrowserCatalog } from '../services/browserCatalog';
 import type { AppUpdateService } from '../services/appUpdateService';
 import type { HistoryStore } from '../services/historyStore';
 import type { QueueManager } from '../services/queueManager';
@@ -32,6 +34,7 @@ export interface HandlerDependencies {
     resolver: BinaryResolver;
     appUpdates: AppUpdateService;
     refreshTraySupport: () => Promise<TraySupport>;
+    browserCatalog: BrowserCatalog;
     streamFinder: StreamFinder;
     sendStreamProgress: (progress: StreamFindProgress) => void;
     onSettingsSaved: (settings: Settings) => void;
@@ -73,6 +76,9 @@ export function registerHandlers(deps: HandlerDependencies): void {
     ipcMain.handle(IPC.queueRetry, (_event, id): void => {
         queue.retry(asString(id));
     });
+    ipcMain.handle(IPC.queueClearPartials, (_event, id): void => {
+        queue.clearPartials(asString(id));
+    });
     ipcMain.handle(IPC.queueRemove, (_event, id): void => {
         queue.remove(asString(id));
     });
@@ -105,6 +111,9 @@ export function registerHandlers(deps: HandlerDependencies): void {
     });
     ipcMain.handle(IPC.traySupport, (): Promise<TraySupport> => {
         return deps.refreshTraySupport();
+    });
+    ipcMain.handle(IPC.browsersList, (_event, refresh): Promise<DetectedBrowser[]> => {
+        return deps.browserCatalog.list(refresh === true);
     });
     ipcMain.handle(IPC.streamFind, (_event, jobId, deep): Promise<StreamFindResult> | StreamFindResult => {
         const job = queue.getJob(asString(jobId));

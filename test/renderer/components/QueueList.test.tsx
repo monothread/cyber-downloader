@@ -63,6 +63,14 @@ describe('QueueList', () => {
         expect(mock.api.retryJob).toHaveBeenCalledWith('cancelled');
     });
 
+    it('wires CLEAR PARTIAL FILES to the API', async () => {
+        useAppStore.setState({ jobs: [makeJob({ id: 'failed', status: 'cancelled', hasPartial: true })] });
+        render(<QueueList />);
+        await userEvent.setup().click(screen.getByRole('button', { name: 'CLEAR PARTIAL FILES' }));
+        expect(mock.api.clearPartialFiles).toHaveBeenCalledTimes(1);
+        expect(mock.api.clearPartialFiles).toHaveBeenCalledWith('failed');
+    });
+
     it('wires STOP & SAVE of a live recording to the API', async () => {
         useAppStore.setState({ jobs: [makeJob({ id: 'live-1', status: 'running', live: true, elapsedSeconds: 5, downloadedBytes: 1024 })] });
         render(<QueueList />);

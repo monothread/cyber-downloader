@@ -10,13 +10,20 @@ interface JobCardProps {
     onStop: (id: string) => void;
     onRetry: (id: string) => void;
     onRemove: (id: string) => void;
+    onClearPartials: (id: string) => void;
     onShowFile: (path: string) => void;
 }
 
-export function JobCard({ job, onCancel, onStop, onRetry, onRemove, onShowFile }: JobCardProps) {
+export const LIVE_PARTIAL_CONFIRM_MESSAGE = 'This live recording was not saved. Deleting it cannot be undone. Delete it?';
+
+export function JobCard({ job, onCancel, onStop, onRetry, onRemove, onClearPartials, onShowFile }: JobCardProps) {
     const isActive = job.status === 'queued' || job.status === 'running';
     const isRecording = job.live && job.status === 'running';
     const canRetry = job.status === 'error' || job.status === 'cancelled';
+    // A live recording left behind may still be playable, so deleting it is confirmed first.
+    const confirmDeletion = (): boolean => {
+        return !(job.live && job.hasPartial) || window.confirm(LIVE_PARTIAL_CONFIRM_MESSAGE);
+    };
     const searchOpen = useAppStore((state) => {
         return state.streamSearches[job.id] !== undefined;
     });
@@ -111,6 +118,19 @@ export function JobCard({ job, onCancel, onStop, onRetry, onRemove, onShowFile }
                         RETRY
                     </button>
                 )}
+                {canRetry && job.hasPartial && (
+                    <button
+                        type="button"
+                        className="btn btn--small"
+                        onClick={() => {
+                            if (confirmDeletion()) {
+                                onClearPartials(job.id);
+                            }
+                        }}
+                    >
+                        CLEAR PARTIAL FILES
+                    </button>
+                )}
                 {job.status === 'done' && job.filePath && (
                     <button
                         type="button"
@@ -127,7 +147,9 @@ export function JobCard({ job, onCancel, onStop, onRetry, onRemove, onShowFile }
                         type="button"
                         className="btn btn--small btn--ghost"
                         onClick={() => {
-                            onRemove(job.id);
+                            if (confirmDeletion()) {
+                                onRemove(job.id);
+                            }
                         }}
                     >
                         REMOVE

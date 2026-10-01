@@ -50,6 +50,9 @@ export function createMockApi(): MockApiHandle {
         retryJob: vi.fn(async () => {
             return undefined;
         }),
+        clearPartialFiles: vi.fn(async () => {
+            return undefined;
+        }),
         removeJob: vi.fn(async () => {
             return undefined;
         }),
@@ -94,6 +97,9 @@ export function createMockApi(): MockApiHandle {
         }),
         getTraySupport: vi.fn(async () => {
             return { available: true, reason: null };
+        }),
+        listBrowsers: vi.fn(async () => {
+            return [];
         }),
         chooseDirectory: vi.fn(async () => {
             return null;
@@ -171,6 +177,7 @@ export function makeJob(overrides: Partial<DownloadJob> = {}): DownloadJob {
         live: false,
         elapsedSeconds: 0,
         downloadedBytes: 0,
+        hasPartial: false,
         ...overrides
     };
 }

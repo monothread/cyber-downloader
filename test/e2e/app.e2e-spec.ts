@@ -327,7 +327,6 @@ test('persists edited settings to disk and passes them to yt-dlp', async () => {
     await page.getByLabel('Video quality').selectOption('720');
     await page.getByLabel('Video container').selectOption('mkv');
     await page.getByLabel('Use cookies from my browser').check();
-    await page.getByLabel('Browser', { exact: true }).selectOption('brave');
     await page.getByLabel('Download whole playlist').check();
     await page.getByLabel('JavaScript runtime').fill('node');
     await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
@@ -337,7 +336,7 @@ test('persists edited settings to disk and passes them to yt-dlp', async () => {
         maxResolution: '720',
         videoContainer: 'mkv',
         useBrowserCookies: true,
-        cookiesBrowser: 'brave',
+        cookiesBrowser: 'firefox',
         downloadPlaylist: true,
         jsRuntime: 'node',
         downloadDir,
@@ -353,8 +352,377 @@ test('persists edited settings to disk and passes them to yt-dlp', async () => {
     expect(args[args.indexOf('-o') + 1]).toBe('%(title).55s [%(id)s].%(ext)s');
     expect(args[args.indexOf('-f') + 1]).toBe('bv*[height<=720]+ba/b[height<=720]');
     expect(args[args.indexOf('--merge-output-format') + 1]).toBe('mkv');
-    expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe('brave');
+    expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe('firefox');
     expect(args[args.indexOf('--js-runtimes') + 1]).toBe('node');
+});
+
+test('auto-generated subtitles are saved and passed to yt-dlp together with the chosen languages', async () => {
+    const { page, userData, logPath } = session;
+    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await page.getByLabel('Download subtitles').check();
+    await page.getByLabel('Include auto-generated subtitles').check();
+    await page.getByLabel('Subtitle languages').fill('ja');
+    await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+    expect(readSettings(userData)).toMatchObject({ writeSubtitles: true, autoSubtitles: true, subtitleLangs: 'ja' });
+
+    await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+    await submitUrl(page, 'https://example.com/ok');
+    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+    const args = readCalls(logPath).find((call) => {
+        return call.includes('--write-auto-subs');
+    }) ?? [];
+    expect(args).toEqual(expect.arrayContaining(['--write-subs', '--write-auto-subs', '--sub-langs', 'ja']));
+    expect(args[args.indexOf('--sub-langs') + 1]).toBe('ja');
+    expect(args).not.toContain('--embed-subs');
+});
+
+test('embedding subtitles passes --embed-subs instead of --write-subs so no separate subtitle file is left', async () => {
+    const { page, userData, logPath } = session;
+    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await page.getByLabel('Download subtitles').check();
+    await page.getByLabel('Include auto-generated subtitles').check();
+    await page.getByLabel('Embed subtitles in the video').check();
+    await page.getByLabel('Subtitle languages').fill('ja');
+    await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+    expect(readSettings(userData)).toMatchObject({ writeSubtitles: true, autoSubtitles: true, embedSubtitles: true, subtitleLangs: 'ja' });
+
+    await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+    await submitUrl(page, 'https://example.com/ok');
+    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+    const args = readCalls(logPath).find((call) => {
+        return call.includes('--embed-subs');
+    }) ?? [];
+    expect(args).toEqual(expect.arrayContaining(['--embed-subs', '--write-auto-subs', '--sub-langs', 'ja']));
+    expect(args[args.indexOf('--sub-langs') + 1]).toBe('ja');
+    expect(args).not.toContain('--write-subs');
+});
+
+test('auto-generated subtitles without a language warn in the settings and block the download', async () => {
+    const { page, logPath } = session;
+    const message =
+        'Auto-generated subtitles need a language. Fill in "Subtitle languages" in Settings (e.g. ja), or turn off "Include auto-generated subtitles".';
+    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await page.getByLabel('Subtitle languages').fill('');
+    await page.getByLabel('Download subtitles').check();
+    await page.getByLabel('Include auto-generated subtitles').check();
+    await expect(page.getByRole('alert')).toHaveText(message);
+    await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+
+    await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+    await submitUrl(page, 'https://example.com/ok');
+    await expect(page.getByText(message)).toBeVisible();
+    await expect(page.locator('.badge')).toHaveCount(0);
+    expect(readCalls(logPath).filter((call) => {
+        return call.includes('--write-auto-subs');
+    })).toEqual([]);
+
+    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await page.getByLabel('Subtitle languages').fill('ja');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test.describe('partial files', () => {
+    const PARTIAL_URL = 'https://example.com/partialfail';
+    const LIVE_URL = 'https://example.com/livefail';
+    const FAILED_BADGE = (page: Page) => {
+        return page.locator('.badge', { hasText: 'FAILED' });
+    };
+
+    function leftovers(downloadDir: string): string[] {
+        return ['Partial Fail [abc].mp4.part', 'Partial Fail [abc].f137.mp4.part', 'Partial Fail [abc].mp4.ytdl'].filter((name) => {
+            return existsSync(join(downloadDir, name));
+        });
+    }
+
+    test('deletes what a failed download left behind, by default, and only that download\'s files', async () => {
+        const { page, downloadDir } = session;
+        await submitUrl(page, PARTIAL_URL);
+        await expect(FAILED_BADGE(page)).toBeVisible();
+        await expect(page.getByRole('button', { name: 'CLEAR PARTIAL FILES' })).toHaveCount(0);
+        expect(leftovers(downloadDir)).toEqual([]);
+        expect(readFileSync(join(downloadDir, 'Other Video [xyz].mp4.part'), 'utf-8')).toBe('belongs to another download');
+        expect(readFileSync(join(downloadDir, 'Finished [fin].mp4'), 'utf-8')).toBe('complete file');
+    });
+
+    test('keeps the files when the setting is off and clears them from the card on request', async () => {
+        const own = await launch({ settings: { deletePartialsOnFailure: false } });
+        try {
+            await submitUrl(own.page, PARTIAL_URL);
+            await expect(FAILED_BADGE(own.page)).toBeVisible();
+            expect(leftovers(own.downloadDir)).toEqual(['Partial Fail [abc].mp4.part', 'Partial Fail [abc].f137.mp4.part', 'Partial Fail [abc].mp4.ytdl']);
+
+            await own.page.getByRole('button', { name: 'CLEAR PARTIAL FILES' }).click();
+            await expect(own.page.getByRole('button', { name: 'CLEAR PARTIAL FILES' })).toHaveCount(0);
+            expect(leftovers(own.downloadDir)).toEqual([]);
+            await expect(FAILED_BADGE(own.page)).toBeVisible();
+            expect(existsSync(join(own.downloadDir, 'Other Video [xyz].mp4.part'))).toBe(true);
+        } finally {
+            await closeQuietly(own);
+        }
+    });
+
+    test('removing a failed download deletes what it left behind', async () => {
+        const own = await launch({ settings: { deletePartialsOnFailure: false } });
+        try {
+            await submitUrl(own.page, PARTIAL_URL);
+            await expect(own.page.getByRole('button', { name: 'CLEAR PARTIAL FILES' })).toBeVisible();
+            await own.page.getByRole('button', { name: 'REMOVE' }).click();
+            await expect(own.page.getByTestId('job-card')).toHaveCount(0);
+            expect(leftovers(own.downloadDir)).toEqual([]);
+            expect(existsSync(join(own.downloadDir, 'Finished [fin].mp4'))).toBe(true);
+        } finally {
+            await closeQuietly(own);
+        }
+    });
+
+    test('keeps the recording of a live stream that failed, even with the setting on', async () => {
+        const { page, downloadDir } = session;
+        await submitUrl(page, LIVE_URL);
+        await expect(FAILED_BADGE(page)).toBeVisible();
+        await expect(page.getByRole('button', { name: 'CLEAR PARTIAL FILES' })).toBeVisible();
+        expect(readFileSync(join(downloadDir, 'Live Fail [abc].mp4.part'), 'utf-8')).toBe('unfinished');
+    });
+
+    test('asks before deleting a live recording and keeps it when the user declines', async () => {
+        const { page, downloadDir } = session;
+        await submitUrl(page, LIVE_URL);
+        await expect(page.getByRole('button', { name: 'CLEAR PARTIAL FILES' })).toBeVisible();
+        const messages: string[] = [];
+        page.once('dialog', async (dialog) => {
+            messages.push(dialog.message());
+            await dialog.dismiss();
+        });
+        await page.getByRole('button', { name: 'CLEAR PARTIAL FILES' }).click();
+        await expect.poll(() => {
+            return messages;
+        }).toEqual(['This live recording was not saved. Deleting it cannot be undone. Delete it?']);
+        expect(existsSync(join(downloadDir, 'Live Fail [abc].mp4.part'))).toBe(true);
+        await expect(page.getByRole('button', { name: 'CLEAR PARTIAL FILES' })).toBeVisible();
+    });
+
+    test('deletes a live recording once the user confirms, on removing the card', async () => {
+        const { page, downloadDir } = session;
+        await submitUrl(page, LIVE_URL);
+        await expect(page.getByRole('button', { name: 'CLEAR PARTIAL FILES' })).toBeVisible();
+        page.once('dialog', async (dialog) => {
+            await dialog.accept();
+        });
+        await page.getByRole('button', { name: 'REMOVE' }).click();
+        await expect(page.getByTestId('job-card')).toHaveCount(0);
+        expect(existsSync(join(downloadDir, 'Live Fail [abc].mp4.part'))).toBe(false);
+    });
+
+    test('CLEAR FINISHED removes the cards and leaves a live recording in the folder', async () => {
+        const { page, downloadDir } = session;
+        await submitUrl(page, LIVE_URL);
+        await expect(FAILED_BADGE(page)).toBeVisible();
+        await page.getByRole('button', { name: 'CLEAR FINISHED' }).click();
+        await expect(page.getByTestId('job-card')).toHaveCount(0);
+        expect(existsSync(join(downloadDir, 'Live Fail [abc].mp4.part'))).toBe(true);
+    });
+
+    test('the setting is on by default and is saved when turned off', async () => {
+        const { page, userData } = session;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        const toggle = page.getByLabel('Delete partial files when a download fails or is cancelled');
+        await expect(toggle).toBeChecked();
+        await toggle.uncheck();
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(userData)).toMatchObject({ deletePartialsOnFailure: false });
+    });
+});
+
+const ORIGIN_FOLDER = ['.config', 'BraveSoftware', 'Brave-Origin'];
+const FIREFOX_FOLDER = ['.config', 'mozilla', 'firefox'];
+
+function addChromiumBrowser(home: string, folder: string[], profileNames: Record<string, string> = { Default: 'Default' }, firstRun = true): string {
+    const dataDir = join(home, ...folder);
+    Object.keys(profileNames).forEach((profile) => {
+        mkdirSync(join(dataDir, profile), { recursive: true });
+        writeFileSync(join(dataDir, profile, 'Cookies'), '');
+    });
+    const infoCache = Object.fromEntries(
+        Object.entries(profileNames).map(([profile, name]) => {
+            return [profile, { name }];
+        })
+    );
+    writeFileSync(join(dataDir, 'Local State'), JSON.stringify({ profile: { info_cache: infoCache } }));
+    if (firstRun) {
+        writeFileSync(join(dataDir, 'First Run'), '');
+    }
+    return dataDir;
+}
+
+function addFirefox(home: string): string {
+    const dataDir = join(home, ...FIREFOX_FOLDER);
+    mkdirSync(join(dataDir, 'abcd.default-release'), { recursive: true });
+    writeFileSync(join(dataDir, 'profiles.ini'), '[Profile0]\nName=default-release\nIsRelative=1\nPath=abcd.default-release\n');
+    writeFileSync(join(dataDir, 'abcd.default-release', 'cookies.sqlite'), '');
+    return dataDir;
+}
+
+function browserOptions(page: Page): Promise<Array<string | null>> {
+    return page.getByLabel('Browser', { exact: true }).locator('option').allTextContents();
+}
+
+test.describe('browser detection', () => {
+    let fakeHome: string;
+    let fakeApps: string;
+    let own: Session;
+
+    // The .desktop entries of the real system are replaced by the ones in fakeApps, so the result does not depend on what is installed.
+    function launchOnFakeHome(settings: Record<string, unknown> = {}): Promise<Session> {
+        return launch({ env: { HOME: fakeHome, CYBER_DL_APPLICATION_DIRS: fakeApps }, settings });
+    }
+
+    test.beforeEach(() => {
+        fakeHome = mkdtempSync(join(tmpdir(), 'cyber-dl-home-'));
+        fakeApps = join(fakeHome, 'applications');
+        mkdirSync(fakeApps, { recursive: true });
+    });
+
+    test.afterEach(async () => {
+        await closeQuietly(own);
+        rmSync(fakeHome, { recursive: true, force: true });
+    });
+
+    test('lists the browsers found on the system and passes the chosen folder to yt-dlp', async () => {
+        const originDir = addChromiumBrowser(fakeHome, ORIGIN_FOLDER);
+        addFirefox(fakeHome);
+        own = await launchOnFakeHome();
+        const { page, userData, logPath } = own;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect.poll(() => {
+            return browserOptions(page);
+        }).toEqual(['Choose a browser…', 'Brave Origin', 'Firefox']);
+
+        await page.getByLabel('Use cookies from my browser').check();
+        await page.getByLabel('Browser', { exact: true }).selectOption({ label: 'Brave Origin' });
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(userData)).toMatchObject({ useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: originDir });
+        await expect(page.getByRole('alert')).toHaveCount(0);
+
+        await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+        await submitUrl(page, 'https://example.com/ok');
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        const args = readCalls(logPath).find((call) => {
+            return call.includes('--cookies-from-browser');
+        }) ?? [];
+        expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe(`brave:${originDir}`);
+    });
+
+    test('shows the profiles of the chosen browser by name and passes the one picked to yt-dlp', async () => {
+        const originDir = addChromiumBrowser(fakeHome, ORIGIN_FOLDER, { Default: 'Personal', 'Profile 1': 'Work' });
+        own = await launchOnFakeHome({ useBrowserCookies: true });
+        const { page, userData, logPath } = own;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect(page.getByLabel('Browser profile (optional)')).toHaveJSProperty('tagName', 'INPUT');
+        await page.getByLabel('Browser', { exact: true }).selectOption({ label: 'Brave Origin' });
+        const profile = page.getByLabel('Browser profile (optional)');
+        await expect(profile).toHaveJSProperty('tagName', 'SELECT');
+        await expect.poll(() => {
+            return profile.locator('option').allTextContents();
+        }).toEqual(['Automatic (most recently used)', 'Personal (Default)', 'Work (Profile 1)']);
+
+        await profile.selectOption({ label: 'Work (Profile 1)' });
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(userData)).toMatchObject({ cookiesBrowser: 'brave', cookiesBrowserDir: originDir, cookiesProfile: 'Profile 1' });
+
+        await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+        await submitUrl(page, 'https://example.com/ok');
+        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        const args = readCalls(logPath).find((call) => {
+            return call.includes('--cookies-from-browser');
+        }) ?? [];
+        expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe(`brave:${join(originDir, 'Profile 1')}`);
+    });
+
+    test('goes back to the automatic profile when another browser is chosen', async () => {
+        addChromiumBrowser(fakeHome, ORIGIN_FOLDER, { Default: 'Personal', 'Profile 1': 'Work' });
+        addFirefox(fakeHome);
+        own = await launchOnFakeHome({ useBrowserCookies: true });
+        const { page, userData } = own;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await page.getByLabel('Browser', { exact: true }).selectOption({ label: 'Brave Origin' });
+        await page.getByLabel('Browser profile (optional)').selectOption({ label: 'Work (Profile 1)' });
+        await page.getByLabel('Browser', { exact: true }).selectOption({ label: 'Firefox' });
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(userData)).toMatchObject({ cookiesBrowser: 'firefox', cookiesProfile: '' });
+        await expect.poll(() => {
+            return page.getByLabel('Browser profile (optional)').locator('option').allTextContents();
+        }).toEqual(['Automatic (most recently used)', 'default-release (abcd.default-release)']);
+    });
+
+    test('accepts a browser registered with the system even without the First Run marker, and shows its registered name', async () => {
+        addChromiumBrowser(fakeHome, ORIGIN_FOLDER, { Default: 'Default' }, false);
+        writeFileSync(join(fakeApps, 'brave-origin.desktop'), '[Desktop Entry]\nName=Brave Origin Browser\nExec=/usr/bin/brave-origin-stable %U\nMimeType=x-scheme-handler/http;x-scheme-handler/https;\n');
+        own = await launchOnFakeHome();
+        const { page } = own;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect.poll(() => {
+            return browserOptions(page);
+        }).toEqual(['Choose a browser…', 'Brave Origin Browser']);
+    });
+
+    test('does not take an app with an embedded browser for a browser, even though it is registered as something else', async () => {
+        addChromiumBrowser(fakeHome, ['.config', 'Codex'], { Default: 'Default' }, false);
+        writeFileSync(join(fakeApps, 'editor.desktop'), '[Desktop Entry]\nName=Editor\nExec=editor\nMimeType=text/plain;\n');
+        own = await launchOnFakeHome({ useBrowserCookies: true });
+        const { page } = own;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect(page.getByRole('alert')).toHaveText('No browser with saved cookies was found on this system.');
+        expect(await browserOptions(page)).toEqual(['Choose a browser…']);
+    });
+
+    test('looks for the profile inside the chosen browser folder', async () => {
+        const originDir = addChromiumBrowser(fakeHome, ORIGIN_FOLDER);
+        own = await launchOnFakeHome({ useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: originDir, cookiesProfile: 'Default' });
+        await submitUrl(own.page, 'https://example.com/ok');
+        await expect(own.page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        const args = readCalls(own.logPath).find((call) => {
+            return call.includes('--cookies-from-browser');
+        }) ?? [];
+        expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe(`brave:${join(originDir, 'Default')}`);
+    });
+
+    test('ignores apps that are not browsers and explains when none is found', async () => {
+        mkdirSync(join(fakeHome, '.config', 'Code', 'Network'), { recursive: true });
+        writeFileSync(join(fakeHome, '.config', 'Code', 'Local State'), '{}');
+        writeFileSync(join(fakeHome, '.config', 'Code', 'Network', 'Cookies'), '');
+        own = await launchOnFakeHome({ useBrowserCookies: true });
+        const { page } = own;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect(page.getByRole('alert')).toHaveText('No browser with saved cookies was found on this system.');
+        expect(await browserOptions(page)).toEqual(['Choose a browser…']);
+    });
+
+    test('warns when the saved browser is gone and lets the user pick a detected one', async () => {
+        addFirefox(fakeHome);
+        own = await launchOnFakeHome({ useBrowserCookies: true, cookiesBrowser: 'brave' });
+        const { page } = own;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect(page.getByRole('alert')).toHaveText('The saved browser (brave) was not found on this system. Choose one of the detected browsers.');
+        await page.getByLabel('Browser', { exact: true }).selectOption({ label: 'Firefox' });
+        await expect(page.getByRole('alert')).toHaveCount(0);
+        await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
+        expect(readSettings(own.userData)).toMatchObject({ cookiesBrowser: 'firefox', cookiesBrowserDir: join(fakeHome, ...FIREFOX_FOLDER) });
+    });
+
+    test('picks up a browser installed while the app is open when rescanning', async () => {
+        addFirefox(fakeHome);
+        own = await launchOnFakeHome();
+        const { page } = own;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect.poll(() => {
+            return browserOptions(page);
+        }).toEqual(['Choose a browser…', 'Firefox']);
+
+        addChromiumBrowser(fakeHome, ORIGIN_FOLDER);
+        await page.getByRole('button', { name: 'RESCAN BROWSERS' }).click();
+        await expect.poll(() => {
+            return browserOptions(page);
+        }).toEqual(['Choose a browser…', 'Brave Origin', 'Firefox']);
+    });
 });
 
 test('audio-only quick toggle switches to audio extraction', async () => {

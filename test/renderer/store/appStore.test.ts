@@ -137,10 +137,12 @@ describe('useAppStore queue actions', () => {
         await state.cancelJob('a');
         await state.retryJob('b');
         await state.removeJob('c');
+        await state.clearPartialFiles('d');
         await state.clearFinished();
         expect(mock.api.cancelJob).toHaveBeenCalledWith('a');
         expect(mock.api.retryJob).toHaveBeenCalledWith('b');
         expect(mock.api.removeJob).toHaveBeenCalledWith('c');
+        expect(mock.api.clearPartialFiles).toHaveBeenCalledWith('d');
         expect(mock.api.clearFinished).toHaveBeenCalledTimes(1);
     });
 });
@@ -281,6 +283,34 @@ describe('useAppStore tray support', () => {
         await useAppStore.getState().refreshTraySupport();
         expect(mock.api.getTraySupport).toHaveBeenCalledTimes(1);
         expect(useAppStore.getState().traySupport).toEqual({ available: false, reason: 'no tray here' });
+    });
+});
+
+describe('useAppStore detected browsers', () => {
+    const ORIGIN = {
+        label: 'Brave Origin',
+        engine: 'brave' as const,
+        dataDir: '/home/a/.config/BraveSoftware/Brave-Origin',
+        profiles: [{ id: 'Default', name: 'Personal' }]
+    };
+
+    it('starts unknown', () => {
+        expect(initial.browsers).toBeNull();
+    });
+
+    it('stores the detected browsers without asking for a rescan by default', async () => {
+        mock.api.listBrowsers.mockResolvedValueOnce([ORIGIN]);
+        await useAppStore.getState().loadBrowsers();
+        expect(mock.api.listBrowsers).toHaveBeenCalledTimes(1);
+        expect(mock.api.listBrowsers).toHaveBeenCalledWith(false);
+        expect(useAppStore.getState().browsers).toEqual([ORIGIN]);
+    });
+
+    it('asks the main process to scan again on refresh', async () => {
+        mock.api.listBrowsers.mockResolvedValueOnce([]);
+        await useAppStore.getState().loadBrowsers(true);
+        expect(mock.api.listBrowsers).toHaveBeenCalledWith(true);
+        expect(useAppStore.getState().browsers).toEqual([]);
     });
 });
 

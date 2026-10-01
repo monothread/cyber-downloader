@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { hasUnboundedAutoSubtitles, UNBOUNDED_AUTO_SUBTITLES_MESSAGE } from '@shared/subtitles';
 import { isValidHttpUrl } from '@shared/url';
 import { statSync } from 'node:fs';
 import type { AddJobResult, DownloadJob, DownloadError, DownloadInfo, HistoryEntry, ProgressInfo, Settings } from '@shared/types';
@@ -15,6 +16,9 @@ export interface QueueDependencies {
     fileSize?: (path: string) => number | null;
     // Turns the partial file of a recording that was ended by killing yt-dlp into the final file; returns its path.
     salvageRecording?: (filePath: string) => Promise<string | null>;
+    // The unfinished files (.part...) that belong to the download of a final file, and a way to delete files.
+    findPartialFiles?: (finalPath: string) => string[];
+    deleteFiles?: (paths: string[]) => void;
     addHistory: (entry: HistoryEntry) => void;
     onJobUpdate: (job: DownloadJob) => void;
     onJobRemoved: (id: string) => void;
@@ -53,6 +57,7 @@ export class QueueManager {
     private readonly extras = new Map<string, RequestExtras>();
     private readonly salvaging = new Set<Promise<void>>();
     private readonly livePaths = new Map<string, string>();
+    private readonly outputPaths = new Map<string, Set<string>>();
     private readonly tickers = new Map<string, ReturnType<typeof setInterval>>();
     private closed = false;
     private readonly generateId: () => string;
@@ -123,6 +128,9 @@ export class QueueManager {
         if (!isValidHttpUrl(trimmed)) {
             return { ok: false, job: null, message: 'Invalid URL. Use an http(s) link.' };
         }
+        if (hasUnboundedAutoSubtitles(this.deps.getSettings())) {
+            return { ok: false, job: null, message: UNBOUNDED_AUTO_SUBTITLES_MESSAGE };
+        }
         const job: DownloadJob = {
             id: this.generateId(),
             url: trimmed,
@@ -137,7 +145,8 @@ export class QueueManager {
             pageUrl: options.pageUrl ?? null,
             live: false,
             elapsedSeconds: 0,
-            downloadedBytes: 0
+            downloadedBytes: 0,
+            hasPartial: false
         };
         this.jobs.push(job);
         this.extras.set(job.id, options);
@@ -166,21 +175,28 @@ export class QueueManager {
         if (!job || (job.status !== 'error' && job.status !== 'cancelled')) {
             return;
         }
-        Object.assign(job, { status: 'queued', percent: 0, speed: '', eta: '', error: null, filePath: null, live: false, elapsedSeconds: 0, downloadedBytes: 0 });
+        Object.assign(job, { status: 'queued', percent: 0, speed: '', eta: '', error: null, filePath: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false });
+        this.outputPaths.delete(job.id);
         this.emit(job);
         this.pump();
     }
 
-    remove(id: string): void {
+    // Removing a failed or cancelled download also deletes what it left in the folder. The bulk clear keeps live recordings.
+    remove(id: string, options: { deleteLiveRecording?: boolean } = {}): void {
         const job = this.find(id);
         if (!job) {
             return;
         }
         if (job.status === 'running') {
             this.handles.get(id)?.cancel();
+        } else if (job.hasPartial) {
+            this.deleteLeftovers(job, options.deleteLiveRecording ?? true);
         }
         this.jobs.splice(this.jobs.indexOf(job), 1);
         this.extras.delete(id);
+        if (job.status !== 'running') {
+            this.outputPaths.delete(id);
+        }
         this.stopTicker(id);
         this.deps.onJobRemoved(id);
         this.pump();
@@ -190,8 +206,19 @@ export class QueueManager {
         this.jobs
             .filter(isFinished)
             .forEach((job) => {
-                this.remove(job.id);
+                this.remove(job.id, { deleteLiveRecording: false });
             });
+    }
+
+    // Deletes the unfinished files of a failed or cancelled download and keeps its card.
+    clearPartials(id: string): void {
+        const job = this.find(id);
+        if (!job || !job.hasPartial) {
+            return;
+        }
+        this.deleteLeftovers(job, true);
+        job.hasPartial = false;
+        this.emit(job);
     }
 
     private find(id: string): DownloadJob | undefined {
@@ -254,6 +281,7 @@ export class QueueManager {
     // A live stream has no end and no size to measure a percentage against: show how long it has been recording and
     // how much was written to its partial file instead.
     private applyInfo(job: DownloadJob, info: DownloadInfo): void {
+        this.outputPaths.set(job.id, (this.outputPaths.get(job.id) ?? new Set<string>()).add(info.filePath));
         if (!info.live || this.tickers.has(job.id)) {
             return;
         }
@@ -305,9 +333,48 @@ export class QueueManager {
         this.finish(job, { status: 'error', error: SALVAGE_FAILED_ERROR });
     }
 
+    private leftoversOf(job: DownloadJob): string[] {
+        const find = this.deps.findPartialFiles;
+        const paths = [...(this.outputPaths.get(job.id) ?? [])];
+        return find
+            ? [
+                  ...new Set(
+                      paths.flatMap((path) => {
+                          return find(path);
+                      })
+                  )
+              ]
+            : [];
+    }
+
+    private deleteLeftovers(job: DownloadJob, includeLiveRecording: boolean): void {
+        if (job.live && !includeLiveRecording) {
+            return;
+        }
+        const files = this.leftoversOf(job);
+        if (files.length > 0) {
+            this.deps.deleteFiles?.(files);
+        }
+    }
+
+    // After an error or a cancel: delete what was left behind when the user asked for it (live recordings are always kept,
+    // they can still be played), otherwise remember that it is there so the card can offer to clear it.
+    private settleLeftovers(job: DownloadJob): void {
+        const files = this.leftoversOf(job);
+        if (files.length > 0 && !job.live && this.deps.getSettings().deletePartialsOnFailure) {
+            this.deps.deleteFiles?.(files);
+            job.hasPartial = false;
+            return;
+        }
+        job.hasPartial = files.length > 0;
+    }
+
     private finish(job: DownloadJob, result: RunResult): void {
         this.stopTicker(job.id);
         if (!this.find(job.id)) {
+            // The card was removed while the download was running: whatever it left behind goes too, except a live recording.
+            this.deleteLeftovers(job, false);
+            this.outputPaths.delete(job.id);
             return;
         }
         if (result.status === 'done') {
@@ -318,6 +385,11 @@ export class QueueManager {
             this.recordHistory(job, 'error', result.error);
         } else {
             Object.assign(job, { status: 'cancelled', speed: '', eta: '' });
+        }
+        if (job.status === 'error' || job.status === 'cancelled') {
+            this.settleLeftovers(job);
+        } else {
+            this.outputPaths.delete(job.id);
         }
         this.emit(job);
         this.pump();

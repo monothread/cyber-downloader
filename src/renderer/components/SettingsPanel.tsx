@@ -1,6 +1,5 @@
 import {
     AUDIO_FORMATS,
-    BROWSERS,
     MAX_CONCURRENT,
     MAX_TITLE_LENGTH,
     MIN_CONCURRENT,
@@ -10,7 +9,9 @@ import {
     VIDEO_CONTAINERS
 } from '@shared/constants';
 import { useEffect } from 'react';
-import type { MaxResolution, ThemeName } from '@shared/types';
+import { chosenBrowserWarning, findChosenBrowser, NO_BROWSER_CHOSEN } from '@shared/browserChoice';
+import { hasUnboundedAutoSubtitles, UNBOUNDED_AUTO_SUBTITLES_MESSAGE } from '@shared/subtitles';
+import type { DetectedBrowser, MaxResolution, ThemeName } from '@shared/types';
 import { useAutoSaveSettings, type SaveStatus } from '../hooks/useAutoSaveSettings';
 import { useAppStore } from '../store/appStore';
 import { NumberField, SelectField, TextField, ToggleField } from './fields';
@@ -38,6 +39,39 @@ const THEME_LABELS: Record<ThemeName, string> = {
 
 function formatTheme(theme: ThemeName): string {
     return THEME_LABELS[theme];
+}
+
+function findBrowserByDir(browsers: readonly DetectedBrowser[], dataDir: string): DetectedBrowser | undefined {
+    return browsers.find((browser) => {
+        return browser.dataDir === dataDir;
+    });
+}
+
+const AUTOMATIC_PROFILE = '';
+
+// The profiles with cookies, plus the saved one when it is gone, so the menu never shows a value that is not in it.
+function profileOptions(browser: DetectedBrowser, saved: string): string[] {
+    const ids = browser.profiles.map((profile) => {
+        return profile.id;
+    });
+    return [AUTOMATIC_PROFILE, ...ids, ...(saved.length > 0 && !ids.includes(saved) ? [saved] : [])];
+}
+
+function formatProfile(browser: DetectedBrowser, id: string): string {
+    if (id === AUTOMATIC_PROFILE) {
+        return 'Automatic (most recently used)';
+    }
+    const profile = browser.profiles.find((candidate) => {
+        return candidate.id === id;
+    });
+    if (!profile) {
+        return `${id} (not found)`;
+    }
+    return profile.name === profile.id ? profile.id : `${profile.name} (${profile.id})`;
+}
+
+function formatBrowser(browsers: readonly DetectedBrowser[], dataDir: string): string {
+    return findBrowserByDir(browsers, dataDir)?.label ?? 'Choose a browser…';
 }
 
 export function SettingsPanel() {
@@ -71,8 +105,26 @@ export function SettingsPanel() {
     const refreshTraySupport = useAppStore((state) => {
         return state.refreshTraySupport;
     });
-    const { draft, status, change, edit } = useAutoSaveSettings(stored, saveSettings);
+    const browsers = useAppStore((state) => {
+        return state.browsers;
+    });
+    const loadBrowsers = useAppStore((state) => {
+        return state.loadBrowsers;
+    });
+    const { draft, status, change, edit, changeMany } = useAutoSaveSettings(stored, saveSettings);
+    const detectedBrowsers = browsers ?? [];
+    const chosenBrowser = findChosenBrowser(detectedBrowsers, draft);
+    const browserWarning = chosenBrowserWarning(browsers, draft);
+    const detectedDirs = detectedBrowsers.map((browser) => {
+        return browser.dataDir;
+    });
+    const browserOptions = chosenBrowser ? detectedDirs : [NO_BROWSER_CHOSEN, ...detectedDirs];
+    const unboundedAutoSubtitles = hasUnboundedAutoSubtitles(draft);
     const trayWarning = draft.closeToTray && traySupport !== null && !traySupport.available ? traySupport.reason : null;
+
+    useEffect(() => {
+        void loadBrowsers();
+    }, [loadBrowsers]);
 
     useEffect(() => {
         void refreshTraySupport();
@@ -158,6 +210,14 @@ export function SettingsPanel() {
                         change('restrictFilenames', value);
                     }}
                 />
+                <ToggleField
+                    label="Delete partial files when a download fails or is cancelled"
+                    checked={draft.deletePartialsOnFailure}
+                    hint="Live recordings are always kept, because they can still be saved. A retry starts over once the partial file is gone."
+                    onChange={(value) => {
+                        change('deletePartialsOnFailure', value);
+                    }}
+                />
             </fieldset>
 
             <fieldset className="panel">
@@ -222,6 +282,19 @@ export function SettingsPanel() {
                     }}
                 />
                 <ToggleField
+                    label="Include auto-generated subtitles"
+                    checked={draft.autoSubtitles}
+                    hint="Also downloads the captions YouTube generates automatically when the author did not upload any for the language."
+                    onChange={(value) => {
+                        change('autoSubtitles', value);
+                    }}
+                />
+                {unboundedAutoSubtitles && (
+                    <p className="field__warning" role="alert">
+                        {UNBOUNDED_AUTO_SUBTITLES_MESSAGE}
+                    </p>
+                )}
+                <ToggleField
                     label="Embed subtitles in the video"
                     checked={draft.embedSubtitles}
                     onChange={(value) => {
@@ -262,19 +335,56 @@ export function SettingsPanel() {
                 />
                 <SelectField
                     label="Browser"
-                    value={draft.cookiesBrowser}
-                    options={BROWSERS}
-                    onChange={(value) => {
-                        change('cookiesBrowser', value);
+                    value={chosenBrowser?.dataDir ?? NO_BROWSER_CHOSEN}
+                    options={browserOptions}
+                    formatOption={(dataDir) => {
+                        return formatBrowser(detectedBrowsers, dataDir);
+                    }}
+                    hint="Browsers found on this system when the app opened."
+                    onChange={(dataDir) => {
+                        const browser = findBrowserByDir(detectedBrowsers, dataDir);
+                        if (browser) {
+                            changeMany({ cookiesBrowser: browser.engine, cookiesBrowserDir: browser.dataDir, cookiesProfile: '' });
+                        }
                     }}
                 />
-                <TextField
-                    label="Browser profile (optional)"
-                    value={draft.cookiesProfile}
-                    onChange={(value) => {
-                        edit('cookiesProfile', value);
-                    }}
-                />
+                {browserWarning && (
+                    <p className="field__warning" role="alert">
+                        {browserWarning}
+                    </p>
+                )}
+                <div className="field-row">
+                    <button
+                        type="button"
+                        className="btn btn--small"
+                        onClick={() => {
+                            void loadBrowsers(true);
+                        }}
+                    >
+                        RESCAN BROWSERS
+                    </button>
+                </div>
+                {chosenBrowser && chosenBrowser.profiles.length > 0 ? (
+                    <SelectField
+                        label="Browser profile (optional)"
+                        value={draft.cookiesProfile}
+                        options={profileOptions(chosenBrowser, draft.cookiesProfile)}
+                        formatOption={(id) => {
+                            return formatProfile(chosenBrowser, id);
+                        }}
+                        onChange={(id) => {
+                            change('cookiesProfile', id);
+                        }}
+                    />
+                ) : (
+                    <TextField
+                        label="Browser profile (optional)"
+                        value={draft.cookiesProfile}
+                        onChange={(value) => {
+                            edit('cookiesProfile', value);
+                        }}
+                    />
+                )}
             </fieldset>
 
             <fieldset className="panel">

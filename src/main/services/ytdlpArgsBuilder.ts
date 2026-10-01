@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { Settings } from '@shared/types';
 import { FILE_PRINT_TEMPLATE, INFO_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from './progressParser';
 
@@ -91,21 +92,31 @@ function buildFormatArgs(settings: Settings): string[] {
     return ['-f', `bv*${heightFilter}+ba/b${heightFilter}`, '--merge-output-format', settings.videoContainer];
 }
 
+// BROWSER[:PROFILE] where PROFILE is a profile name or, for a browser found in a custom place, the folder to read from.
+function cookiesSource(settings: Settings): string {
+    const { cookiesBrowser, cookiesBrowserDir, cookiesProfile } = settings;
+    if (cookiesBrowserDir.length > 0) {
+        return `${cookiesBrowser}:${cookiesProfile.length > 0 ? join(cookiesBrowserDir, cookiesProfile) : cookiesBrowserDir}`;
+    }
+    return cookiesProfile.length > 0 ? `${cookiesBrowser}:${cookiesProfile}` : cookiesBrowser;
+}
+
 function buildCookieArgs(settings: Settings): string[] {
     if (!settings.useBrowserCookies) {
         return [];
     }
-    const profileSuffix = settings.cookiesProfile.length > 0 ? `:${settings.cookiesProfile}` : '';
-    return ['--cookies-from-browser', `${settings.cookiesBrowser}${profileSuffix}`];
+    return ['--cookies-from-browser', cookiesSource(settings)];
 }
 
 function buildSubtitleArgs(settings: Settings): string[] {
     if (!settings.writeSubtitles) {
         return [];
     }
-    const args = ['--write-subs', '--sub-langs', settings.subtitleLangs.length > 0 ? settings.subtitleLangs : 'all'];
-    if (settings.embedSubtitles) {
-        args.push('--embed-subs');
+    const args = ['--sub-langs', settings.subtitleLangs.length > 0 ? settings.subtitleLangs : 'all'];
+    // --embed-subs already downloads the author's subtitles and then deletes the files; an explicit --write-subs would keep them.
+    args.push(settings.embedSubtitles ? '--embed-subs' : '--write-subs');
+    if (settings.autoSubtitles) {
+        args.push('--write-auto-subs');
     }
     return args;
 }

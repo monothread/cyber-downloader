@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 
 function renderCard(job: DownloadJob) {
-    const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onShowFile: vi.fn() };
+    const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
     render(<JobCard job={job} {...handlers} />);
     return handlers;
 }
@@ -89,6 +89,77 @@ describe('JobCard', () => {
         expect(handlers.onRetry).toHaveBeenCalledWith('job-1');
         await user.click(screen.getByRole('button', { name: 'REMOVE' }));
         expect(handlers.onRemove).toHaveBeenCalledWith('job-1');
+    });
+
+    describe('partial files', () => {
+        afterEach(() => {
+            vi.restoreAllMocks();
+        });
+
+        it('offers to clear them on a failed or cancelled download that left some', async () => {
+            const user = userEvent.setup();
+            const handlers = renderCard(makeJob({ status: 'error', error: ERROR, hasPartial: true }));
+            await user.click(screen.getByRole('button', { name: 'CLEAR PARTIAL FILES' }));
+            expect(handlers.onClearPartials).toHaveBeenCalledTimes(1);
+            expect(handlers.onClearPartials).toHaveBeenCalledWith('job-1');
+        });
+
+        it('offers it for a cancelled download too', () => {
+            renderCard(makeJob({ status: 'cancelled', hasPartial: true }));
+            expect(screen.getByRole('button', { name: 'CLEAR PARTIAL FILES' })).toBeInTheDocument();
+        });
+
+        it.each([
+            ['a failed download without partial files', { status: 'error' as const, error: ERROR, hasPartial: false }],
+            ['a running download', { status: 'running' as const, hasPartial: true }],
+            ['a finished download', { status: 'done' as const, hasPartial: true, filePath: '/d/x.mp4' }]
+        ])('does not offer it for %s', (_case, overrides) => {
+            renderCard(makeJob(overrides));
+            expect(screen.queryByRole('button', { name: 'CLEAR PARTIAL FILES' })).not.toBeInTheDocument();
+        });
+
+        it('does not ask anything before clearing or removing an ordinary download', async () => {
+            const confirm = vi.spyOn(window, 'confirm');
+            const user = userEvent.setup();
+            const handlers = renderCard(makeJob({ status: 'error', error: ERROR, hasPartial: true }));
+            await user.click(screen.getByRole('button', { name: 'CLEAR PARTIAL FILES' }));
+            await user.click(screen.getByRole('button', { name: 'REMOVE' }));
+            expect(confirm).not.toHaveBeenCalled();
+            expect(handlers.onClearPartials).toHaveBeenCalledTimes(1);
+            expect(handlers.onRemove).toHaveBeenCalledTimes(1);
+        });
+
+        it('asks first and deletes a live recording only when confirmed', async () => {
+            const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+            const user = userEvent.setup();
+            const handlers = renderCard(makeJob({ status: 'error', error: ERROR, live: true, hasPartial: true }));
+            await user.click(screen.getByRole('button', { name: 'CLEAR PARTIAL FILES' }));
+            expect(confirm).toHaveBeenCalledWith('This live recording was not saved. Deleting it cannot be undone. Delete it?');
+            expect(handlers.onClearPartials).toHaveBeenCalledWith('job-1');
+            await user.click(screen.getByRole('button', { name: 'REMOVE' }));
+            expect(confirm).toHaveBeenCalledTimes(2);
+            expect(handlers.onRemove).toHaveBeenCalledWith('job-1');
+        });
+
+        it('keeps a live recording when the user declines', async () => {
+            const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+            const user = userEvent.setup();
+            const handlers = renderCard(makeJob({ status: 'error', error: ERROR, live: true, hasPartial: true }));
+            await user.click(screen.getByRole('button', { name: 'CLEAR PARTIAL FILES' }));
+            await user.click(screen.getByRole('button', { name: 'REMOVE' }));
+            expect(confirm).toHaveBeenCalledTimes(2);
+            expect(handlers.onClearPartials).not.toHaveBeenCalled();
+            expect(handlers.onRemove).not.toHaveBeenCalled();
+        });
+
+        it('removes a live card without partial files without asking', async () => {
+            const confirm = vi.spyOn(window, 'confirm');
+            const user = userEvent.setup();
+            const handlers = renderCard(makeJob({ status: 'done', live: true, hasPartial: false, filePath: '/d/live.mp4' }));
+            await user.click(screen.getByRole('button', { name: 'REMOVE' }));
+            expect(confirm).not.toHaveBeenCalled();
+            expect(handlers.onRemove).toHaveBeenCalledWith('job-1');
+        });
     });
 
     it('offers a retry button for cancelled jobs without an error', async () => {

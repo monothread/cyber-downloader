@@ -67,12 +67,14 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 - One field per link with an "+ ADD LINK" button; long links scroll inside the field
 - Best video + best audio, max resolution, output container (mp4/mkv/webm)
 - Audio-only mode (mp3/m4a/opus)
-- Cookies from your browser (chrome, firefox, brave, chromium, edge, opera, vivaldi)
-- Default download folder, playlists, subtitles, speed limit, parallel downloads
+- Cookies from your browser: the browsers installed on your system (and their profiles) are detected every time the app opens, including variants such as Brave Origin; use **RESCAN BROWSERS** in Settings after installing one
+- Default download folder, playlists, subtitles (including YouTube's auto-generated captions), speed limit, parallel downloads
+- Embedded subtitles leave a single file: the separate subtitle files are removed once they are inside the video
+- Failed or cancelled downloads clean up their `.part` files (Settings > OUTPUT); live recordings are always kept, and each card can also clear its leftovers by hand
 - Settings are saved automatically as you change them
 - Themes in Settings: Device (follows the system light/dark mode, default), Cyberpunk, Dark and Light
 - A FOLDER button on each link to send that download to another folder
-- Optional "keep running in the system tray" (KDE, XFCE, Cinnamon, MATE, LXQt and GNOME with the AppIndicator extension); right-click the tray icon to quit
+- Optional "keep running in the system tray" (KDE, XFCE, Cinnamon, MATE, LXQt and GNOME with the AppIndicator extension); right-click the tray icon to restart or quit
 - Title length limit so long titles never break the file name
 - Friendly error banner with technical details on demand
 - Live streams: recording time and size, **STOP & SAVE** to finish and keep the file, optional waiting for scheduled lives and recording from the start (when the source still offers it)

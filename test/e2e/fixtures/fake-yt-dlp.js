@@ -35,12 +35,29 @@ if (url.includes('unsupported')) {
     process.exit(1);
 }
 
-if (url.includes('fail')) {
+if (url.includes('fail') && !url.includes('partialfail') && !url.includes('livefail')) {
     process.stderr.write('ERROR: [youtube] abc: Video unavailable\n');
     process.exit(1);
 }
 
-if (url.includes('livestream')) {
+if (url.includes('partialfail') || url.includes('livefail')) {
+    // Fails halfway, like a dropped connection: the unfinished files stay in the folder, as yt-dlp leaves them.
+    const live = url.includes('livefail');
+    const finalPath = `${downloadDir}/${live ? 'Live Fail' : 'Partial Fail'} [abc].mp4`;
+    fs.mkdirSync(downloadDir, { recursive: true });
+    process.stdout.write(`CYBERINFO|${live ? 'True' : 'False'}|${finalPath}\n`);
+    fs.writeFileSync(`${finalPath}.part`, 'unfinished');
+    if (!live) {
+        fs.writeFileSync(`${downloadDir}/Partial Fail [abc].f137.mp4.part`, 'unfinished');
+        fs.writeFileSync(`${downloadDir}/Partial Fail [abc].mp4.ytdl`, '{}');
+        fs.writeFileSync(`${downloadDir}/Other Video [xyz].mp4.part`, 'belongs to another download');
+        fs.writeFileSync(`${downloadDir}/Finished [fin].mp4`, 'complete file');
+    }
+    setTimeout(() => {
+        process.stderr.write('ERROR: unable to download video data: <urlopen error [Errno 104] Connection reset by peer>\n');
+        process.exit(1);
+    }, 300);
+} else if (url.includes('livestream')) {
     // Like a real live recording: announces it is live, grows a .part file and, on SIGINT, finishes and keeps the file.
     const finalPath = `${downloadDir}/Live Show [abc].mp4`;
     fs.mkdirSync(downloadDir, { recursive: true });

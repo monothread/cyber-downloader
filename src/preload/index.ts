@@ -34,6 +34,9 @@ const api: CyberApi = {
     retryJob: (id) => {
         return ipcRenderer.invoke(IPC.queueRetry, id);
     },
+    clearPartialFiles: (id) => {
+        return ipcRenderer.invoke(IPC.queueClearPartials, id);
+    },
     removeJob: (id) => {
         return ipcRenderer.invoke(IPC.queueRemove, id);
     },
@@ -66,6 +69,9 @@ const api: CyberApi = {
     },
     getTraySupport: () => {
         return ipcRenderer.invoke(IPC.traySupport);
+    },
+    listBrowsers: (refresh) => {
+        return ipcRenderer.invoke(IPC.browsersList, refresh);
     },
     findStreams: (jobId, deep) => {
         return ipcRenderer.invoke(IPC.streamFind, jobId, deep);

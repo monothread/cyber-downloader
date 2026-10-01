@@ -17,6 +17,9 @@ export function QueueList() {
     const removeJob = useAppStore((state) => {
         return state.removeJob;
     });
+    const clearPartialFiles = useAppStore((state) => {
+        return state.clearPartialFiles;
+    });
     const clearFinished = useAppStore((state) => {
         return state.clearFinished;
     });
@@ -60,6 +63,9 @@ export function QueueList() {
                         }}
                         onRemove={(id) => {
                             void removeJob(id);
+                        }}
+                        onClearPartials={(id) => {
+                            void clearPartialFiles(id);
                         }}
                         onShowFile={(path) => {
                             void window.api.showItemInFolder(path);

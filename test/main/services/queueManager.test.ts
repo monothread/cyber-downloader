@@ -105,6 +105,32 @@ describe('QueueManager.add', () => {
         expect(updates).toHaveLength(0);
     });
 
+    it('rejects the download when auto-generated subtitles have no language, without creating a job', () => {
+        const { queue, runs, updates } = setup({ writeSubtitles: true, autoSubtitles: true, subtitleLangs: '' });
+        expect(queue.add(URL_A)).toEqual({
+            ok: false,
+            job: null,
+            message: 'Auto-generated subtitles need a language. Fill in "Subtitle languages" in Settings (e.g. ja), or turn off "Include auto-generated subtitles".'
+        });
+        expect(queue.list()).toEqual([]);
+        expect(runs).toHaveLength(0);
+        expect(updates).toHaveLength(0);
+    });
+
+    it('accepts the download when auto-generated subtitles have an explicit language', () => {
+        const { queue, runs } = setup({ writeSubtitles: true, autoSubtitles: true, subtitleLangs: 'ja' });
+        expect(queue.add(URL_A).ok).toBe(true);
+        expect(runs).toHaveLength(1);
+        expect(runs[0]?.args).toEqual(expect.arrayContaining(['--write-subs', '--write-auto-subs', '--sub-langs', 'ja']));
+    });
+
+    it('accepts the download with an empty language when auto-generated subtitles are off', () => {
+        const { queue, runs } = setup({ writeSubtitles: true, autoSubtitles: false, subtitleLangs: '' });
+        expect(queue.add(URL_A).ok).toBe(true);
+        expect(runs).toHaveLength(1);
+        expect(runs[0]?.args[(runs[0]?.args.indexOf('--sub-langs') ?? 0) + 1]).toBe('all');
+    });
+
     it('creates a job, starts it immediately and emits queued then running', () => {
         const { queue, runs, updates } = setup();
         const result = queue.add(`  ${URL_A} `);
@@ -124,7 +150,8 @@ describe('QueueManager.add', () => {
             pageUrl: null,
             live: false,
             elapsedSeconds: 0,
-            downloadedBytes: 0
+            downloadedBytes: 0,
+            hasPartial: false
         });
         expect(updates.map((job) => {
             return job.status;
@@ -331,6 +358,234 @@ describe('QueueManager.remove and clearFinished', () => {
         expect(queue.list().map((job) => {
             return job.id;
         })).toEqual(['job-3']);
+    });
+});
+
+describe('QueueManager partial files', () => {
+    const FILE_A = '/dl/Video A [abc].mp4';
+    const PARTIALS_A = [`${FILE_A}.part`, '/dl/Video A [abc].f137.mp4.part'];
+    const LIVE_FILE = '/dl/Live Show [live].mp4';
+
+    function setupWithPartials(settings: Partial<Settings> = {}) {
+        const partials = new Map<string, string[]>([
+            [FILE_A, PARTIALS_A],
+            ['/dl/Video B [def].mp4', ['/dl/Video B [def].mp4.part']],
+            [LIVE_FILE, [`${LIVE_FILE}.part`]]
+        ]);
+        const findPartialFiles = vi.fn((finalPath: string) => {
+            return partials.get(finalPath) ?? [];
+        });
+        const deleteFiles = vi.fn();
+        return { ...setup(settings, { findPartialFiles, deleteFiles }), findPartialFiles, deleteFiles };
+    }
+
+    async function failDownload(setupResult: ReturnType<typeof setupWithPartials>, filePath: string = FILE_A, live = false): Promise<void> {
+        setupResult.queue.add(URL_A);
+        setupResult.runs[0]?.onInfo({ live, filePath });
+        setupResult.runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        await flush();
+    }
+
+    describe('when the setting is on (default)', () => {
+        it('is on by default', () => {
+            expect(DEFAULT_SETTINGS.deletePartialsOnFailure).toBe(true);
+        });
+
+        it('deletes the partial files of a download that failed', async () => {
+            const result = setupWithPartials();
+            await failDownload(result);
+            expect(result.findPartialFiles).toHaveBeenCalledWith(FILE_A);
+            expect(result.deleteFiles).toHaveBeenCalledTimes(1);
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS_A);
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'error', hasPartial: false });
+        });
+
+        it('deletes the partial files of a download that was cancelled', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.onInfo({ live: false, filePath: FILE_A });
+            result.queue.cancel('job-1');
+            await flush();
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS_A);
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'cancelled', hasPartial: false });
+        });
+
+        it('deletes the partial files of every video a playlist reported, each only once', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.onInfo({ live: false, filePath: FILE_A });
+            result.runs[0]?.onInfo({ live: false, filePath: FILE_A });
+            result.runs[0]?.onInfo({ live: false, filePath: '/dl/Video B [def].mp4' });
+            result.runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+            await flush();
+            expect(result.deleteFiles).toHaveBeenCalledTimes(1);
+            expect(result.deleteFiles).toHaveBeenCalledWith([...PARTIALS_A, '/dl/Video B [def].mp4.part']);
+        });
+
+        it('keeps the recording of a live stream and remembers that it is there', async () => {
+            const result = setupWithPartials();
+            await failDownload(result, LIVE_FILE, true);
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'error', live: true, hasPartial: true });
+        });
+
+        it('does nothing for a download that never reported a file', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+            await flush();
+            expect(result.findPartialFiles).not.toHaveBeenCalled();
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+            expect(result.queue.getJob('job-1')?.hasPartial).toBe(false);
+        });
+
+        it('does nothing when the download left no partial file', async () => {
+            const result = setupWithPartials();
+            await failDownload(result, '/dl/Nothing.mp4');
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+            expect(result.queue.getJob('job-1')?.hasPartial).toBe(false);
+        });
+
+        it('does not look for partial files after a download that succeeded', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.onInfo({ live: false, filePath: FILE_A });
+            result.runs[0]?.resolve({ status: 'done', filePath: FILE_A });
+            await flush();
+            expect(result.findPartialFiles).not.toHaveBeenCalled();
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'done', hasPartial: false });
+        });
+    });
+
+    describe('when the setting is off', () => {
+        it('keeps the partial files and marks the job so the card can offer to clear them', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: false });
+            await failDownload(result);
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'error', hasPartial: true });
+            expect(result.updates.at(-1)).toMatchObject({ status: 'error', hasPartial: true });
+        });
+    });
+
+    describe('clearPartials', () => {
+        it('deletes what a failed download left behind and keeps its card', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: false });
+            await failDownload(result);
+            result.updates.length = 0;
+            result.queue.clearPartials('job-1');
+            expect(result.deleteFiles).toHaveBeenCalledTimes(1);
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS_A);
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'error', hasPartial: false });
+            expect(result.updates).toHaveLength(1);
+            expect(result.updates[0]).toMatchObject({ id: 'job-1', hasPartial: false });
+        });
+
+        it('also deletes a live recording, because the user asked for it', async () => {
+            const result = setupWithPartials();
+            await failDownload(result, LIVE_FILE, true);
+            result.queue.clearPartials('job-1');
+            expect(result.deleteFiles).toHaveBeenCalledWith([`${LIVE_FILE}.part`]);
+            expect(result.queue.getJob('job-1')?.hasPartial).toBe(false);
+        });
+
+        it('ignores running, finished and unknown downloads', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.onInfo({ live: false, filePath: FILE_A });
+            result.queue.clearPartials('job-1');
+            result.queue.clearPartials('missing');
+            result.runs[0]?.resolve({ status: 'done', filePath: FILE_A });
+            await flush();
+            result.queue.clearPartials('job-1');
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('remove', () => {
+        it('deletes what a failed download left behind', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: false });
+            await failDownload(result);
+            result.queue.remove('job-1');
+            expect(result.deleteFiles).toHaveBeenCalledTimes(1);
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS_A);
+            expect(result.queue.list()).toEqual([]);
+        });
+
+        it('deletes a live recording when it is removed one by one', async () => {
+            const result = setupWithPartials();
+            await failDownload(result, LIVE_FILE, true);
+            result.queue.remove('job-1');
+            expect(result.deleteFiles).toHaveBeenCalledWith([`${LIVE_FILE}.part`]);
+        });
+
+        it('does not look for files when a finished download is removed', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.onInfo({ live: false, filePath: FILE_A });
+            result.runs[0]?.resolve({ status: 'done', filePath: FILE_A });
+            await flush();
+            result.queue.remove('job-1');
+            expect(result.findPartialFiles).not.toHaveBeenCalled();
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+        });
+
+        it('deletes what a running download leaves behind once its process has stopped', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.onInfo({ live: false, filePath: FILE_A });
+            result.queue.remove('job-1');
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+            await flush();
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS_A);
+            expect(result.queue.list()).toEqual([]);
+        });
+
+        it('keeps the recording of a live stream that is removed while it is running', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.onInfo({ live: true, filePath: LIVE_FILE });
+            result.queue.remove('job-1');
+            await flush();
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('clearFinished', () => {
+        it('deletes what the failed downloads left but keeps the live recordings', async () => {
+            const result = setupWithPartials({ maxConcurrent: 3 });
+            result.queue.add(URL_A);
+            result.queue.add(URL_B);
+            result.runs[0]?.onInfo({ live: false, filePath: FILE_A });
+            result.runs[1]?.onInfo({ live: true, filePath: LIVE_FILE });
+            result.runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+            result.runs[1]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+            await flush();
+            result.deleteFiles.mockClear();
+            result.queue.clearFinished();
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+            expect(result.queue.list()).toEqual([]);
+        });
+
+        it('deletes the leftovers of failed downloads when the setting kept them', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: false });
+            await failDownload(result);
+            result.queue.clearFinished();
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS_A);
+        });
+    });
+
+    describe('retry', () => {
+        it('forgets the previous leftovers and keeps no flag for the new attempt', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: false });
+            await failDownload(result);
+            result.queue.retry('job-1');
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'running', hasPartial: false });
+            result.runs[1]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+            await flush();
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'error', hasPartial: false });
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+        });
     });
 });
 

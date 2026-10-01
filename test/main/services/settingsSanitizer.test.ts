@@ -17,6 +17,7 @@ describe('sanitizeSettings', () => {
             downloadDir: '/data/videos',
             useBrowserCookies: true,
             cookiesBrowser: 'chrome',
+            cookiesBrowserDir: '/home/a/.config/google-chrome',
             cookiesProfile: 'Default',
             maxResolution: '1080',
             videoContainer: 'mkv',
@@ -24,9 +25,11 @@ describe('sanitizeSettings', () => {
             audioFormat: 'opus',
             maxTitleLength: 120,
             restrictFilenames: true,
+            deletePartialsOnFailure: false,
             downloadPlaylist: true,
             writeSubtitles: true,
             subtitleLangs: 'en',
+            autoSubtitles: true,
             embedSubtitles: true,
             rateLimit: '2M',
             maxConcurrent: 3,
@@ -63,6 +66,9 @@ describe('sanitizeSettings', () => {
             closeToTray: 'yes',
             liveFromStart: 1,
             waitForLive: 'true',
+            cookiesBrowserDir: 7,
+            autoSubtitles: 'yes',
+            deletePartialsOnFailure: 'no',
             downloadDir: 5,
             maxTitleLength: '80',
             maxConcurrent: NaN
@@ -72,6 +78,9 @@ describe('sanitizeSettings', () => {
         expect(result.closeToTray).toBe(false);
         expect(result.liveFromStart).toBe(false);
         expect(result.waitForLive).toBe(false);
+        expect(result.autoSubtitles).toBe(false);
+        expect(result.deletePartialsOnFailure).toBe(true);
+        expect(result.cookiesBrowserDir).toBe('');
         expect(result.downloadDir).toBe('');
         expect(result.maxTitleLength).toBe(80);
         expect(result.maxConcurrent).toBe(2);

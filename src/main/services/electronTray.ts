@@ -4,6 +4,7 @@ import type { TrayHandle } from './trayManager';
 export interface TrayActions {
     show: () => void;
     toggle: () => void;
+    restart: () => void;
     quit: () => void;
 }
 
@@ -15,6 +16,7 @@ export function createElectronTray(iconPath: string, actions: TrayActions): Tray
     tray.setContextMenu(
         Menu.buildFromTemplate([
             { label: 'Show Cyber Downloader', click: actions.show },
+            { label: 'Restart Cyber Downloader', click: actions.restart },
             { type: 'separator' },
             { label: 'Quit', click: actions.quit }
         ])

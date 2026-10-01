@@ -100,6 +100,21 @@ describe('buildYtdlpArgs', () => {
         expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe('brave');
     });
 
+    it('points the cookies argument at the folder of a detected browser', () => {
+        const args = build({ useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: '/home/a/.config/BraveSoftware/Brave-Origin' });
+        expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe('brave:/home/a/.config/BraveSoftware/Brave-Origin');
+    });
+
+    it('looks for the profile inside the folder of a detected browser', () => {
+        const args = build({
+            useBrowserCookies: true,
+            cookiesBrowser: 'brave',
+            cookiesBrowserDir: '/home/a/.config/BraveSoftware/Brave-Origin',
+            cookiesProfile: 'Profile 1'
+        });
+        expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe('brave:/home/a/.config/BraveSoftware/Brave-Origin/Profile 1');
+    });
+
     it('adds the browser profile to the cookies argument', () => {
         const args = build({ useBrowserCookies: true, cookiesBrowser: 'firefox', cookiesProfile: 'work' });
         expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe('firefox:work');
@@ -115,10 +130,36 @@ describe('buildYtdlpArgs', () => {
         const args = build({ writeSubtitles: true, subtitleLangs: 'en,pt' });
         expect(args).toEqual(expect.arrayContaining(['--write-subs', '--sub-langs', 'en,pt']));
         expect(args).not.toContain('--embed-subs');
+        expect(args).not.toContain('--write-auto-subs');
     });
 
-    it('embeds subtitles when requested', () => {
-        expect(build({ writeSubtitles: true, embedSubtitles: true })).toContain('--embed-subs');
+    it('does not request auto-generated subtitles by default', () => {
+        expect(build({ writeSubtitles: true })).not.toContain('--write-auto-subs');
+    });
+
+    it('requests auto-generated subtitles when enabled', () => {
+        const args = build({ writeSubtitles: true, autoSubtitles: true, subtitleLangs: 'ja' });
+        expect(args).toEqual(expect.arrayContaining(['--write-subs', '--write-auto-subs', '--sub-langs', 'ja']));
+    });
+
+    it('embeds subtitles without --write-subs, so yt-dlp deletes the separate subtitle files afterwards', () => {
+        const args = build({ writeSubtitles: true, embedSubtitles: true, subtitleLangs: 'ja' });
+        expect(args).toEqual(expect.arrayContaining(['--embed-subs', '--sub-langs', 'ja']));
+        expect(args[args.indexOf('--sub-langs') + 1]).toBe('ja');
+        expect(args).not.toContain('--write-subs');
+        expect(args).not.toContain('--write-auto-subs');
+    });
+
+    it('embeds auto-generated subtitles without --write-subs', () => {
+        const args = build({ writeSubtitles: true, embedSubtitles: true, autoSubtitles: true, subtitleLangs: 'ja' });
+        expect(args).toEqual(expect.arrayContaining(['--embed-subs', '--write-auto-subs', '--sub-langs', 'ja']));
+        expect(args).not.toContain('--write-subs');
+    });
+
+    it('keeps the subtitle file next to the video when they are not embedded', () => {
+        const args = build({ writeSubtitles: true, embedSubtitles: false });
+        expect(args).toContain('--write-subs');
+        expect(args).not.toContain('--embed-subs');
     });
 
     it('requests all subtitle languages when none is configured', () => {
@@ -127,8 +168,9 @@ describe('buildYtdlpArgs', () => {
     });
 
     it('ignores subtitle options when subtitles are disabled', () => {
-        const args = build({ writeSubtitles: false, embedSubtitles: true });
+        const args = build({ writeSubtitles: false, embedSubtitles: true, autoSubtitles: true });
         expect(args).not.toContain('--write-subs');
+        expect(args).not.toContain('--write-auto-subs');
         expect(args).not.toContain('--embed-subs');
     });
 

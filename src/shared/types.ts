@@ -8,12 +8,26 @@ export interface LinkRequest {
 
 export type ThemeName = 'device' | 'cyberpunk' | 'dark' | 'light';
 export type BrowserName = 'chrome' | 'firefox' | 'brave' | 'chromium' | 'edge' | 'opera' | 'vivaldi';
+// A browser profile that has cookies: `id` is its folder inside the browser's data folder.
+export interface BrowserProfile {
+    id: string;
+    name: string;
+}
+
+// A browser found on this system: `engine` tells yt-dlp how to decrypt its cookies, `dataDir` is where its profiles live.
+export interface DetectedBrowser {
+    label: string;
+    engine: BrowserName;
+    dataDir: string;
+    profiles: BrowserProfile[];
+}
 export type MaxResolution = 'best' | '2160' | '1440' | '1080' | '720' | '480';
 
 export interface Settings {
     downloadDir: string;
     useBrowserCookies: boolean;
     cookiesBrowser: BrowserName;
+    cookiesBrowserDir: string;
     cookiesProfile: string;
     maxResolution: MaxResolution;
     videoContainer: VideoContainer;
@@ -21,9 +35,11 @@ export interface Settings {
     audioFormat: AudioFormat;
     maxTitleLength: number;
     restrictFilenames: boolean;
+    deletePartialsOnFailure: boolean;
     downloadPlaylist: boolean;
     writeSubtitles: boolean;
     subtitleLangs: string;
+    autoSubtitles: boolean;
     embedSubtitles: boolean;
     rateLimit: string;
     maxConcurrent: number;
@@ -73,6 +89,8 @@ export interface DownloadJob {
     live: boolean;
     elapsedSeconds: number;
     downloadedBytes: number;
+    // Unfinished files of this download are still in the folder (after an error or a cancel).
+    hasPartial: boolean;
 }
 
 export interface ProgressInfo {
@@ -182,6 +200,7 @@ export interface CyberApi {
     cancelJob: (id: string) => Promise<void>;
     stopJob: (id: string) => Promise<void>;
     retryJob: (id: string) => Promise<void>;
+    clearPartialFiles: (id: string) => Promise<void>;
     removeJob: (id: string) => Promise<void>;
     clearFinished: () => Promise<void>;
     listHistory: () => Promise<HistoryEntry[]>;
@@ -193,6 +212,7 @@ export interface CyberApi {
     downloadAppUpdate: () => Promise<void>;
     installAppUpdate: () => Promise<void>;
     getTraySupport: () => Promise<TraySupport>;
+    listBrowsers: (refresh?: boolean) => Promise<DetectedBrowser[]>;
     findStreams: (jobId: string, deep: boolean) => Promise<StreamFindResult>;
     cancelStreamFind: (jobId: string) => Promise<void>;
     downloadStream: (candidateId: string) => Promise<AddJobResult>;

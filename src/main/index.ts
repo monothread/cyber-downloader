@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import { IPC } from '@shared/constants';
 import { registerHandlers } from './ipc/registerHandlers';
@@ -7,9 +7,15 @@ import { attachWindowDiagnostics } from './services/windowDiagnostics';
 import { AppUpdateService } from './services/appUpdateService';
 import { BinaryResolver } from './services/binaryResolver';
 import { sniffStreams } from './services/browserSniffer';
+import { BrowserCatalog } from './services/browserCatalog';
+import { defaultFileProbe, detectBrowsers, type DetectionEnvironment } from './services/browserDetector';
+import { listRegisteredBrowsers } from './services/browserRegistry';
+import { defaultExecFile } from './services/binaryLocator';
 import { createElectronTray } from './services/electronTray';
 import { getElectronUpdater } from './services/electronUpdater';
+import { findPartialFiles, removeFiles } from './services/partialFiles';
 import { HistoryStore } from './services/historyStore';
+import { buildRelaunchOptions } from './services/relaunch';
 import { salvageRecording } from './services/recordingSalvage';
 import { QueueManager } from './services/queueManager';
 import { SettingsStore } from './services/settingsStore';
@@ -32,6 +38,7 @@ ignoreStdioErrors();
 let mainWindow: BrowserWindow | null = null;
 let trayManager: TrayManager | null = null;
 let requestQuit: (() => Promise<boolean>) | null = null;
+let requestRestart: (() => Promise<boolean>) | null = null;
 let quitting = false;
 let diagnosticLog: DiagnosticLog | null = null;
 let bridgeWarningShown = false;
@@ -127,15 +134,24 @@ function sendToRenderer(channel: string, payload?: unknown): void {
     }
 }
 
-async function confirmQuit(pending: number): Promise<boolean> {
+interface PendingPrompt {
+    action: string;
+    title: string;
+    detail: string;
+}
+
+const QUIT_PROMPT: PendingPrompt = { action: 'Quit', title: 'Quit Cyber Downloader?', detail: 'Quitting now will cancel them.' };
+const RESTART_PROMPT: PendingPrompt = { action: 'Restart', title: 'Restart Cyber Downloader?', detail: 'Restarting now will cancel them.' };
+
+async function confirmPending(prompt: PendingPrompt, pending: number): Promise<boolean> {
     const options: Electron.MessageBoxOptions = {
         type: 'warning',
-        buttons: ['Quit', 'Cancel'],
+        buttons: [prompt.action, 'Cancel'],
         defaultId: 1,
         cancelId: 1,
-        title: 'Quit Cyber Downloader?',
+        title: prompt.title,
         message: describePending(pending),
-        detail: 'Quitting now will cancel them.'
+        detail: prompt.detail
     };
     const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options);
     return result.response === 0;
@@ -172,6 +188,12 @@ function bootstrap(): void {
         salvageRecording: (filePath) => {
             return salvageRecording({ ffmpegBinary: resolver.ffmpeg(settingsStore.get()).path, filePath });
         },
+        findPartialFiles: (finalPath) => {
+            return findPartialFiles(finalPath);
+        },
+        deleteFiles: (paths) => {
+            removeFiles(paths);
+        },
         startRun: (binary, args, onProgress, onInfo) => {
             return runYtdlp({ binary, args, onProgress, onInfo, env: resolver.spawnEnv() });
         },
@@ -201,8 +223,22 @@ function bootstrap(): void {
         pendingCount: () => {
             return queue.pendingCount();
         },
-        confirm: confirmQuit,
+        confirm: (pending) => {
+            return confirmPending(QUIT_PROMPT, pending);
+        },
         quit: () => {
+            app.quit();
+        }
+    });
+    requestRestart = createQuitRequester({
+        pendingCount: () => {
+            return queue.pendingCount();
+        },
+        confirm: (pending) => {
+            return confirmPending(RESTART_PROMPT, pending);
+        },
+        quit: () => {
+            app.relaunch(buildRelaunchOptions(process.env, process.argv));
             app.quit();
         }
     });
@@ -214,6 +250,12 @@ function bootstrap(): void {
             return createElectronTray(iconPath(), {
                 show: showWindow,
                 toggle: toggleWindow,
+                restart: () => {
+                    if (queue.pendingCount() > 0) {
+                        showWindow();
+                    }
+                    void requestRestart?.();
+                },
                 quit: () => {
                     if (queue.pendingCount() > 0) {
                         showWindow();
@@ -231,6 +273,16 @@ function bootstrap(): void {
         refine: (streams) => {
             return dropVariantPlaylists(streams, defaultFetchPlaylist);
         }
+    });
+    const browserCatalog = new BrowserCatalog(async () => {
+        const environment: DetectionEnvironment = { platform: process.platform, homeDir: app.getPath('home'), env: process.env };
+        // CYBER_DL_APPLICATION_DIRS replaces the folders holding the .desktop entries (used by the end-to-end tests).
+        const applicationDirs = process.env.CYBER_DL_APPLICATION_DIRS?.split(delimiter);
+        const registered = await listRegisteredBrowsers(
+            { ...environment, applicationDirs },
+            { listFiles: defaultFileProbe.listFiles, readText: defaultFileProbe.readText, exec: defaultExecFile }
+        );
+        return detectBrowsers(environment, defaultFileProbe, registered);
     });
     trayManager = manager;
     void manager.sync(settingsStore.get().closeToTray);
@@ -264,6 +316,7 @@ function bootstrap(): void {
         refreshTraySupport: () => {
             return manager.refreshSupport();
         },
+        browserCatalog,
         streamFinder,
         sendStreamProgress: (progress) => {
             sendToRenderer(IPC.eventStreamProgress, progress);
