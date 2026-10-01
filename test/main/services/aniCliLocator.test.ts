@@ -217,7 +217,7 @@ describe('AniCliLocator.prepareTools', () => {
         expect(links.get('/data/anime/tools/yt-dlp')).toBe('/app/resources/bin/yt-dlp');
     });
 
-    it('creates real links on the file system and is safe to repeat', () => {
+    it.skipIf(process.platform === 'win32')('creates real links on the file system and is safe to repeat', () => {
         const root = makeTempDir();
         const locator = new AniCliLocator({ bundledDir: join(root, 'bin'), scriptsDir: join(root, 'scripts'), userBinDir: join(root, 'user'), dataDir: join(root, 'data') });
         mkdirSync(join(root, 'bin'), { recursive: true });
@@ -339,6 +339,20 @@ describe('AniCliLocator.withPatches', () => {
         expect(result.path).toBe(join(root, 'data', 'ani-cli.patched'));
         expect(readFileSync(result.path, 'utf-8')).toContain('pullwave_pick_subtitle() {');
         expect(locator.withPatches({ path: join(root, 'missing'), source: 'bundled' }).path).toBe(join(root, 'missing'));
+    });
+});
+
+describe('AniCliLocator.prepareTools on the real file system of Windows', () => {
+    it.skipIf(process.platform !== 'win32')('makes no links, only the folder of the history, and can be repeated', () => {
+        const root = makeTempDir();
+        const locator = new AniCliLocator({ bundledDir: join(root, 'bin'), scriptsDir: join(root, 's'), userBinDir: join(root, 'u'), dataDir: join(root, 'data') });
+        const tools: AniTools = { ytdlp: { path: join(root, 'bin', 'yt-dlp.exe'), source: 'bundled' }, ffmpeg: { path: 'ffmpeg', source: 'system' } };
+
+        locator.prepareTools(tools);
+        locator.prepareTools(tools);
+
+        expect(existsSync(join(root, 'data', 'history'))).toBe(true);
+        expect(existsSync(join(root, 'data', 'tools'))).toBe(false);
     });
 });
 

@@ -140,8 +140,14 @@ export class AnimeDb {
             mkdirSync(dirname(path), { recursive: true });
         }
         this.db = new DatabaseSync(path);
-        this.db.exec('PRAGMA foreign_keys = ON');
-        this.migrate();
+        try {
+            this.db.exec('PRAGMA foreign_keys = ON');
+            this.migrate();
+        } catch (error) {
+            // The file must not stay open (and locked, on Windows) when the library cannot be used.
+            this.db.close();
+            throw error;
+        }
     }
 
     private migrate(): void {

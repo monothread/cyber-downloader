@@ -207,7 +207,10 @@ describe('createDefaultUpdaterDependencies', () => {
         });
         deps.makeDirectory(join(root, 'bin', 'nested'));
         deps.writeFile(join(root, 'bin', 'nested', 'a.tmp'), '#!/bin/sh\n');
-        expect(statSync(join(root, 'bin', 'nested', 'a.tmp')).mode & 0o111).not.toBe(0);
+        if (process.platform !== 'win32') {
+            // Windows has no execute permission to check.
+            expect(statSync(join(root, 'bin', 'nested', 'a.tmp')).mode & 0o111).not.toBe(0);
+        }
 
         deps.replaceFile(join(root, 'bin', 'nested', 'a.tmp'), join(root, 'bin', 'nested', 'a'));
         expect(deps.readText(join(root, 'bin', 'nested', 'a'))).toBe('#!/bin/sh\n');

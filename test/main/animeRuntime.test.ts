@@ -2,12 +2,26 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AnimeJob } from '@shared/anime';
 import { DEFAULT_SETTINGS, IPC } from '@shared/constants';
-import { createAnimeRuntime, REMOVE_RETRY_MS, type AnimeRuntimeOptions } from '@main/animeRuntime';
+import { createAnimeRuntime, REMOVE_RETRY_MS, type AnimeRuntime, type AnimeRuntimeOptions } from '@main/animeRuntime';
 import { AnimeDb } from '@main/services/animeDb';
 import { BinaryResolver } from '@main/services/binaryResolver';
 import { cleanTempDirs, makeTempDir } from '../helpers/tempDir';
 
+// The library keeps its file open (and Windows will not delete an open file): close what a test opened before cleaning up.
+const opened: AnimeRuntime[] = [];
+
+function open(given: AnimeRuntimeOptions): AnimeRuntime | null {
+    const runtime = createAnimeRuntime(given);
+    if (runtime) {
+        opened.push(runtime);
+    }
+    return runtime;
+}
+
 afterEach(() => {
+    opened.splice(0).forEach((runtime) => {
+        runtime.db.close();
+    });
     cleanTempDirs();
 });
 
@@ -38,18 +52,18 @@ async function flush(): Promise<void> {
 
 describe('createAnimeRuntime', () => {
     it('does not exist where the section is not available', () => {
-        expect(createAnimeRuntime(options({ platform: 'darwin' }).options)).toBeNull();
-        expect(createAnimeRuntime(options({ platform: 'freebsd' }).options)).toBeNull();
+        expect(open(options({ platform: 'darwin' }).options)).toBeNull();
+        expect(open(options({ platform: 'freebsd' }).options)).toBeNull();
     });
 
     it('exists on Linux and on Windows', () => {
-        expect(createAnimeRuntime(options({ platform: 'linux' }).options)).not.toBeNull();
-        expect(createAnimeRuntime(options({ platform: 'win32' }).options)).not.toBeNull();
+        expect(open(options({ platform: 'linux' }).options)).not.toBeNull();
+        expect(open(options({ platform: 'win32' }).options)).not.toBeNull();
     });
 
     it('creates the library under the data folder', () => {
         const { root, options: given } = options();
-        const runtime = createAnimeRuntime(given);
+        const runtime = open(given);
         expect(runtime).not.toBeNull();
         expect(existsSync(join(root, 'data', 'anime', 'anime.db'))).toBe(true);
         expect(runtime?.db.list()).toEqual([]);
@@ -62,12 +76,12 @@ describe('createAnimeRuntime', () => {
         const episode = previous.ensureEpisode(previous.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' }).id, '1');
         previous.close();
 
-        const runtime = createAnimeRuntime(given);
+        const runtime = open(given);
         expect(runtime?.db.getEpisode(episode.id)).toMatchObject({ status: 'error', error: { code: 'UNKNOWN' } });
     });
 
     it('serves the video and the subtitles of a downloaded episode only', () => {
-        const runtime = createAnimeRuntime(options().options);
+        const runtime = open(options().options);
         const db = runtime?.db as AnimeDb;
         const anime = db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
         const done = db.ensureEpisode(anime.id, '1');
@@ -81,7 +95,7 @@ describe('createAnimeRuntime', () => {
     });
 
     it('does not serve a downloaded episode that has no file recorded', () => {
-        const runtime = createAnimeRuntime(options().options);
+        const runtime = open(options().options);
         const db = runtime?.db as AnimeDb;
         const episode = db.ensureEpisode(db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' }).id, '1');
         db.markFailed(episode.id, 'error', null);
@@ -90,13 +104,13 @@ describe('createAnimeRuntime', () => {
 
     it('tells the screen when the library changes', () => {
         const { send, options: given } = options();
-        createAnimeRuntime(given)?.handlers.onLibraryChanged();
+        open(given)?.handlers.onLibraryChanged();
         expect(send).toHaveBeenCalledWith(IPC.eventAnimeLibrary);
     });
 
     it('deletes files for the handlers', () => {
         const { root, options: given } = options();
-        const runtime = createAnimeRuntime(given);
+        const runtime = open(given);
         const video = join(root, 'a.mp4');
         writeFileSync(video, 'x');
         runtime?.handlers.removeFiles([video, join(root, 'missing.vtt')]);
@@ -105,7 +119,7 @@ describe('createAnimeRuntime', () => {
 
     it('has a stream handler that refuses what it was not asked to open, and a stream quality from the settings', async () => {
         const { options: given } = options({ getSettings: () => { return { ...DEFAULT_SETTINGS, animeQuality: '480p' }; } });
-        const runtime = createAnimeRuntime(given);
+        const runtime = open(given);
         expect(runtime?.handlers.streamQuality()).toBe('480p');
         expect((await (runtime?.streamHandler as (request: Request) => Promise<Response>)(new Request('pullwave-stream://p/unknown/abc'))).status).toBe(404);
 
@@ -132,7 +146,7 @@ describe('createAnimeRuntime', () => {
             makeDirectory: vi.fn()
         };
         const { root, options: given } = options({ updaterDependencies });
-        const runtime = createAnimeRuntime(given);
+        const runtime = open(given);
 
         expect(await runtime?.handlers.updateAniCli()).toEqual({ ok: true, output: 'Updated ani-cli unknown → 9.0.0.' });
         expect(updaterDependencies.replaceFile).toHaveBeenCalledWith(join(root, 'data', 'bin', 'ani-cli.tmp'), join(root, 'data', 'bin', 'ani-cli'));
@@ -146,20 +160,20 @@ describe('createAnimeRuntime', () => {
             },
             updaterDependencies: { fetchText, checkSyntax: vi.fn(), readText: vi.fn(), writeFile: vi.fn(), replaceFile: vi.fn(), removeFile: vi.fn(), makeDirectory: vi.fn() }
         });
-        const result = await createAnimeRuntime(given)?.handlers.updateAniCli();
+        const result = await open(given)?.handlers.updateAniCli();
         expect(result?.ok).toBe(false);
         expect(fetchText).not.toHaveBeenCalled();
     });
 
     it('updates with the real network and shell when none are given (the script is not touched when the answer is bad)', () => {
         const { options: given } = options();
-        const runtime = createAnimeRuntime(given);
+        const runtime = open(given);
         expect(typeof runtime?.handlers.updateAniCli).toBe('function');
     });
 
     it('removes folders and tells where the anime go, for the handlers', () => {
         const { root, options: given } = options();
-        const runtime = createAnimeRuntime(given);
+        const runtime = open(given);
         const folder = join(root, 'Downloads', 'Pullwave Anime', 'Naruto');
         mkdirSync(join(folder, 'nested'), { recursive: true });
         writeFileSync(join(folder, 'a.part'), 'x');
@@ -172,7 +186,7 @@ describe('createAnimeRuntime', () => {
 
     it('uses the anime folder of the settings', () => {
         const { options: given } = options({ getSettings: () => { return { ...DEFAULT_SETTINGS, animeDownloadDir: '/media/anime' }; } });
-        expect(createAnimeRuntime(given)?.handlers.baseDirectory()).toBe('/media/anime');
+        expect(open(given)?.handlers.baseDirectory()).toBe('/media/anime');
     });
 
     describe('removing again what could not be removed at once', () => {
@@ -186,7 +200,7 @@ describe('createAnimeRuntime', () => {
             const video = join(root, 'a.mp4');
             writeFileSync(video, 'x');
             const files = vi.fn();
-            const runtime = createAnimeRuntime({ ...given, remover: { files, folders: vi.fn() } });
+            const runtime = open({ ...given, remover: { files, folders: vi.fn() } });
 
             runtime?.handlers.removeFiles([video, join(root, 'gone.vtt')]);
             expect(files.mock.calls).toEqual([[[video, join(root, 'gone.vtt')]]]);
@@ -200,7 +214,7 @@ describe('createAnimeRuntime', () => {
             vi.useFakeTimers();
             const { root, options: given } = options({ removeRetryMs: 500 });
             const files = vi.fn();
-            createAnimeRuntime({ ...given, remover: { files, folders: vi.fn() } })?.handlers.removeFiles([join(root, 'gone.mp4')]);
+            open({ ...given, remover: { files, folders: vi.fn() } })?.handlers.removeFiles([join(root, 'gone.mp4')]);
             vi.advanceTimersByTime(1000);
             expect(files).toHaveBeenCalledTimes(1);
         });
@@ -211,7 +225,7 @@ describe('createAnimeRuntime', () => {
             const folder = join(root, 'Naruto');
             mkdirSync(folder);
             const folders = vi.fn();
-            createAnimeRuntime({ ...given, remover: { files: vi.fn(), folders } })?.handlers.removeFolders([folder]);
+            open({ ...given, remover: { files: vi.fn(), folders } })?.handlers.removeFolders([folder]);
             vi.advanceTimersByTime(100);
             expect(folders.mock.calls).toEqual([[[folder]], [[folder]]]);
         });
@@ -222,7 +236,7 @@ describe('createAnimeRuntime', () => {
             const video = join(root, 'a.mp4');
             writeFileSync(video, 'x');
             const files = vi.fn();
-            createAnimeRuntime({ ...given, remover: { files, folders: vi.fn() } })?.handlers.removeFiles([video]);
+            open({ ...given, remover: { files, folders: vi.fn() } })?.handlers.removeFiles([video]);
             vi.advanceTimersByTime(REMOVE_RETRY_MS - 1);
             expect(files).toHaveBeenCalledTimes(1);
             vi.advanceTimersByTime(1);
@@ -233,7 +247,7 @@ describe('createAnimeRuntime', () => {
             const { root, options: given } = options({ removeRetryMs: 10 });
             const video = join(root, 'a.mp4');
             writeFileSync(video, 'x');
-            createAnimeRuntime(given)?.handlers.removeFiles([video]);
+            open(given)?.handlers.removeFiles([video]);
             expect(existsSync(video)).toBe(false);
         });
     });
@@ -241,7 +255,7 @@ describe('createAnimeRuntime', () => {
     it('wires the queue to the folders, the screen and ani-cli', async () => {
         const { root, send, options: given } = options();
         mkdirSync(join(root, 'resources', 'bin'), { recursive: true });
-        const runtime = createAnimeRuntime(given);
+        const runtime = open(given);
 
         runtime?.queue.enqueue({ title: 'Naruto', query: 'naruto', index: 1, audio: 'sub', episodes: ['1'] });
         await flush();
