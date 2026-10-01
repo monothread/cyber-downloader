@@ -89,8 +89,25 @@ jobs:
           Invoke-Strict @('sh', $run, $ani, '-S', '1', 'cyberpunk', 'edgerunners') $common
 
           "##### address of episode 1 (debug player)"
-          Invoke-Strict @('sh', $run, $ani, '-S', '1', '-e', '1', '-q', 'worst', 'cyberpunk', 'edgerunners') ($common + @{ ANI_CLI_PLAYER = 'debug' })
+          $debug = $common.Clone()
+          $debug['ANI_CLI_PLAYER'] = 'debug'
+          Invoke-Strict @('sh', $run, $ani, '-S', '1', '-e', '1', '-q', 'worst', 'cyberpunk', 'edgerunners') $debug
 
           "##### download episode 1 at the lowest quality"
           Invoke-Strict @('sh', $run, $ani, '-d', '-S', '1', '-e', '1', '-q', 'worst', 'cyberpunk', 'edgerunners') $common | Select-Object -Last 25
           Get-ChildItem "$env:RUNNER_TEMP/ani-dl" | Format-Table Name, Length
+
+          "##### the script still parses under busybox.exe after a change (sh -n)"
+          Invoke-Strict @('sh', '-n', $ani) @{}
+          "##### a download that is cancelled: the whole tree must go"
+          $slow = $common.Clone()
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = "$bin\ani\busybox.exe"
+          foreach ($a in @('sh', '-c', 'sleep 60 & sleep 60')) { [void]$psi.ArgumentList.Add($a) }
+          $psi.UseShellExecute = $false
+          $proc = [System.Diagnostics.Process]::Start($psi)
+          Start-Sleep -Seconds 2
+          "children before: " + (Get-CimInstance Win32_Process -Filter "ParentProcessId=$($proc.Id)" | Measure-Object).Count
+          & "$env:SystemRoot\System32\taskkill.exe" /PID $proc.Id /T /F | Out-Null
+          Start-Sleep -Seconds 1
+          "busybox processes left after taskkill /T /F: " + (Get-Process busybox -ErrorAction SilentlyContinue | Measure-Object).Count
