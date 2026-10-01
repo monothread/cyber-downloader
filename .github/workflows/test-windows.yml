@@ -3,7 +3,7 @@ name: Test Windows
 # Runs what is specific to the anime section on a real Windows runner: the unit tests that do not assume POSIX paths, the
 # end-to-end tests with a fake ani-cli (BusyBox for Windows runs the shell script, the tools are found through Path, cancelling
 # ends the process tree, the protocols serve files) and, on request, a run against the real source ani-cli reads.
-# Run it manually from the Actions tab (live=true also runs the real-source tests), or push to the feature branch.
+# Run it manually from the Actions tab (live=true also runs the real-source tests).
 on:
   workflow_dispatch:
     inputs:
@@ -11,16 +11,13 @@ on:
         description: 'Also run the tests that use the real source (needs the network; the source can change or block)'
         type: boolean
         default: false
-  push:
-    branches: [feature/anime-windows]
-    paths: ['.github/workflows/test-windows.yml', 'src/**', 'test/**', 'resources/ani-scripts/**', 'scripts/fetch-binaries.mjs', 'package.json']
 
 jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 40
     env:
-      PULLWAVE_LIVE: ${{ (github.event_name == 'push' || inputs.live) && '1' || '0' }}
+      PULLWAVE_LIVE: ${{ inputs.live && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
 
