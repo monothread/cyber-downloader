@@ -2,11 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ANIME_SUBTITLE_LANGUAGES, ANIME_SUBTITLE_SETTINGS } from '@shared/anime';
+import { executableName } from '@main/services/binaryResolver';
 import { patchSubtitleSelection, SUBTITLE_LABELS_VARIABLE, SUBTITLE_PICK_FUNCTION, subtitleLabels } from '@main/services/aniSubtitles';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
 
 const ROOT = join(__dirname, '../../..');
-const BUSYBOX = join(ROOT, 'resources', 'bin', 'ani', 'busybox');
+const BUSYBOX = join(ROOT, 'resources', 'bin', 'ani', executableName('busybox'));
 const REAL_SCRIPT = join(ROOT, 'resources', 'bin', 'ani', 'ani-cli');
 const HAS_TOOLS = existsSync(BUSYBOX) && existsSync(REAL_SCRIPT);
 
@@ -96,12 +97,15 @@ describe('patchSubtitleSelection', () => {
         const noDefault = json.replace('"default":true', '"default":false');
 
         // The utilities are found through links to busybox, as Pullwave makes them for ani-cli.
+        // BusyBox for Windows runs its applets itself, so there is nothing to link there.
         function toolsDirectory(): string {
             const directory = join(makeTempDir(), 'tools');
             mkdirSync(directory);
-            ['sed', 'grep'].forEach((name) => {
-                symlinkSync(BUSYBOX, join(directory, name));
-            });
+            if (process.platform !== 'win32') {
+                ['sed', 'grep'].forEach((name) => {
+                    symlinkSync(BUSYBOX, join(directory, name));
+                });
+            }
             return directory;
         }
 
@@ -109,7 +113,7 @@ describe('patchSubtitleSelection', () => {
             const directory = makeTempDir();
             const file = join(directory, 'pick.sh');
             writeFileSync(file, `${SUBTITLE_PICK_FUNCTION}\npullwave_pick_subtitle "$JSON"\n`);
-            return execFileSync(BUSYBOX, ['sh', file], { env: { JSON: source, [SUBTITLE_LABELS_VARIABLE]: labels, PATH: toolsDirectory() }, encoding: 'utf-8' });
+            return execFileSync(BUSYBOX, ['sh', file], { env: { JSON: source, [SUBTITLE_LABELS_VARIABLE]: labels, PATH: toolsDirectory(), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) }, encoding: 'utf-8' });
         }
 
         it('takes the first language that exists, in the order given', () => {

@@ -32,6 +32,7 @@ test.beforeAll(async () => {
     app = await electron.launch({ executablePath: ELECTRON_PATH, args: [ROOT, '--no-sandbox', `--user-data-dir=${userData}`] });
     page = await app.firstWindow();
     await page.waitForSelector('.logo');
+    await expect(page.getByText('// BOOTING SYSTEMS…')).toBeHidden({ timeout: 60000 });
 });
 
 test.afterAll(async () => {

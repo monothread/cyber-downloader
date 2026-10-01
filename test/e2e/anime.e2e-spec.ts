@@ -40,6 +40,8 @@ async function launch(userData: string, settings: Record<string, unknown> = {}):
     });
     const page = await app.firstWindow();
     await page.waitForSelector('.logo');
+    // The screens only show up once yt-dlp and ffmpeg were probed, which can take a while the first time on Windows.
+    await expect(page.getByText('// BOOTING SYSTEMS…')).toBeHidden({ timeout: 60000 });
     return { app, page, userData, animeDir, callsLog: join(userData, 'anime', 'history', 'calls.log') };
 }
 

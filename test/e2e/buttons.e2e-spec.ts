@@ -43,6 +43,8 @@ async function launch(theme: string): Promise<void> {
     page = await app.firstWindow();
     await page.setViewportSize({ width: 1100, height: 780 });
     await page.waitForSelector('.logo');
+    // The screens only show up once yt-dlp and ffmpeg were probed, which can take a while the first time on Windows.
+    await expect(page.getByText('// BOOTING SYSTEMS…')).toBeHidden({ timeout: 60000 });
 }
 
 test.afterEach(async () => {
