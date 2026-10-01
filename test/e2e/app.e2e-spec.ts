@@ -157,6 +157,33 @@ test('downloads a video, shows progress completion and records history', async (
     await expect(item).toContainText('COMPLETE');
 });
 
+test('shows what yt-dlp is doing to the downloaded file until it is ready', async () => {
+    const { page, logPath } = session;
+    await submitUrl(page, 'https://example.com/convert');
+
+    const card = page.getByTestId('job-card');
+    await expect(card.locator('.badge')).toHaveText('PROCESSING');
+    await expect(card).toHaveClass(/job--processing/);
+    await expect(card.getByText('Converting the audio')).toBeVisible();
+    await expect(card.getByRole('progressbar', { name: 'Processing the downloaded file' })).toBeVisible();
+    await expect(card.getByRole('button')).toHaveCount(0);
+    await expect(card.getByText('Moving the file to the folder')).toBeVisible();
+    await expect(card.locator('.badge')).toHaveText('COMPLETE');
+    await expect(card).not.toHaveClass(/job--processing/);
+    await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    await expect(card.getByRole('button', { name: 'SHOW FILE' })).toBeVisible();
+
+    const args = lastYtdlpCall(logPath, 'convert');
+    expect(args).toContain('postprocess:CYBERPP|%(progress.status)s|%(progress.postprocessor)s');
+    expect(args).not.toContain('--no-quiet');
+
+    await page.getByRole('button', { name: 'HISTORY' }).click();
+    const item = page.locator('.history__item--done');
+    await expect(item).toHaveCount(1);
+    await expect(item).toContainText('Fake Video');
+    await expect(item).toContainText('COMPLETE');
+});
+
 test('shows a friendly error banner with details and retries the download', async () => {
     const { page } = session;
     await submitUrl(page, 'https://example.com/fail');
@@ -2167,7 +2194,8 @@ test.describe('find stream', () => {
         await expect(panel().getByRole('listitem')).toHaveCount(1, { timeout: 40000 });
         await panel().getByRole('button', { name: 'Download stream 1' }).click();
 
-        const streamCard = page.getByTestId('job-card').nth(1);
+        // The newest download is listed first.
+        const streamCard = page.getByTestId('job-card').first();
         await expect(streamCard.getByRole('alert').filter({ hasText: 'Access refused by the server' })).toBeVisible();
         await expect(streamCard.getByRole('button', { name: 'FIND STREAM' })).toHaveCount(0);
         await streamCard.getByRole('button', { name: 'FIND A FRESH LINK' }).click();
@@ -2175,7 +2203,7 @@ test.describe('find stream', () => {
         const freshPanel = streamCard.getByRole('region', { name: 'Stream finder' });
         await expect(freshPanel.getByRole('listitem')).toHaveCount(1, { timeout: 40000 });
         await expect(freshPanel.getByRole('listitem')).toContainText('/forbidden/videoplayback?id=bound1');
-        await expect(page.getByTestId('job-card').first().getByRole('region', { name: 'Stream finder' })).toHaveCount(0);
+        await expect(page.getByTestId('job-card').last().getByRole('region', { name: 'Stream finder' })).toHaveCount(0);
     });
 
     test('lists one video once when it is asked for through near-identical addresses', async () => {

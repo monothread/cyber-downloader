@@ -323,6 +323,49 @@ describe('JobCard live phases', () => {
         });
     });
 
+    describe('processing the downloaded file', () => {
+        const processing = (overrides: Partial<DownloadJob> = {}) => {
+            return makeJob({ status: 'running', live: false, percent: 100, title: 'Some Video', speed: '', eta: '', postProcess: 'ExtractAudio', ...overrides });
+        };
+
+        it('shows the PROCESSING badge, a sweeping bar and the step that is running', () => {
+            render(<JobCard job={processing()} {...makeHandlers()} />);
+            expect(screen.getByText('PROCESSING')).toHaveClass('badge', 'badge--processing');
+            expect(screen.getByText('Converting the audio')).toHaveClass('job__processing');
+            expect(screen.getByRole('progressbar', { name: 'Processing the downloaded file' })).toHaveClass('progress--processing');
+            expect(screen.getByTestId('job-card')).toHaveClass('job', 'job--running', 'job--processing');
+            expect(screen.queryByText('DOWNLOADING')).not.toBeInTheDocument();
+            expect(screen.queryByText('100.0%')).not.toBeInTheDocument();
+        });
+
+        it('follows the step as it changes', () => {
+            const { rerender } = render(<JobCard job={processing()} {...makeHandlers()} />);
+            rerender(<JobCard job={processing({ postProcess: 'Metadata' })} {...makeHandlers()} />);
+            expect(screen.getByText('Writing the metadata')).toBeInTheDocument();
+            expect(screen.queryByText('Converting the audio')).not.toBeInTheDocument();
+        });
+
+        it('has no actions while the file is processed', () => {
+            render(<JobCard job={processing()} {...makeHandlers()} />);
+            expect(screen.queryByRole('button', { name: 'CANCEL' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'STOP & SAVE' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'FINISH NOW' })).not.toBeInTheDocument();
+        });
+
+        it('goes back to the usual view when the step is over', () => {
+            const { rerender } = render(<JobCard job={processing()} {...makeHandlers()} />);
+            rerender(<JobCard job={processing({ postProcess: null, status: 'done' })} {...makeHandlers()} />);
+            expect(screen.getByText('COMPLETE')).toBeInTheDocument();
+            expect(screen.queryByText('PROCESSING')).not.toBeInTheDocument();
+            expect(screen.getByTestId('job-card')).not.toHaveClass('job--processing');
+        });
+
+        it('keeps CANCEL for a download that is not processing', () => {
+            render(<JobCard job={processing({ postProcess: null, percent: 40, speed: '1MiB/s' })} {...makeHandlers()} />);
+            expect(screen.getByRole('button', { name: 'CANCEL' })).toBeInTheDocument();
+        });
+    });
+
     describe('saving the file after STOP & SAVE', () => {
         const saving = (overrides: Partial<DownloadJob> = {}) => {
             return makeJob({ status: 'running', live: true, percent: 0, title: 'Live Show', elapsedSeconds: 754, saving: true, ...overrides });

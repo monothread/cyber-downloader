@@ -180,6 +180,24 @@ if (url.includes('quiet')) {
     setInterval(() => {
         progress(50);
     }, 200);
+} else if (url.includes('convert')) {
+    // The download is complete and yt-dlp then converts the audio and moves the file; each step takes a moment, as with ffmpeg.
+    progress(60);
+    progress(100);
+    const step = (status, processor) => {
+        // The real yt-dlp writes these progress lines to stderr when it is quiet (it is, because of --print).
+        process.stderr.write(`CYBERPP|${status}|${processor}\n`);
+    };
+    step('started', 'ExtractAudio');
+    setTimeout(() => {
+        step('finished', 'ExtractAudio');
+        step('started', 'MoveFiles');
+    }, 1500);
+    setTimeout(() => {
+        step('finished', 'MoveFiles');
+        process.stdout.write(`CYBERFILE|${downloadDir}/${title} [abc].mp3\n`);
+        process.exit(0);
+    }, 2700);
 } else {
     progress(60);
     progress(100);

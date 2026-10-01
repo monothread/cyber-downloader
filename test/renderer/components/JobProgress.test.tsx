@@ -43,6 +43,14 @@ describe('JobProgress', () => {
         expect(bar).not.toHaveAttribute('aria-valuenow');
     });
 
+    it('shows a sweeping bar while the downloaded file is processed', () => {
+        render(<JobProgress job={makeJob({ percent: 100, postProcess: 'ExtractAudio' })} phase="processing" t={t} />);
+        const bar = screen.getByRole('progressbar', { name: 'Processing the downloaded file' });
+        expect(bar).toHaveClass('progress', 'progress--processing');
+        expect(bar).not.toHaveAttribute('aria-valuenow');
+        expect(screen.queryByRole('progressbar', { name: 'Download progress' })).not.toBeInTheDocument();
+    });
+
     it('shows a sweeping bar while a stopped recording is saved', () => {
         render(<JobProgress job={makeJob({ live: true, saving: true })} phase="saving" t={t} />);
         const bar = screen.getByRole('progressbar', { name: 'Closing the recording and saving the file' });
@@ -90,6 +98,25 @@ describe('JobMeta', () => {
         render(<JobMeta job={makeJob({ live: true, endCheck: END_CHECK })} phase="verifying" t={t} />);
         expect(screen.getByText('The stream stopped. Checking whether it really ended… 4s')).toHaveClass('job__verifying');
         expect(screen.queryByText('● LIVE')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['ExtractAudio', 'Converting the audio'],
+        ['Merger', 'Joining video and audio'],
+        ['VideoConvertor', 'Converting the video'],
+        ['FixupM3u8', 'Fixing the file'],
+        ['Metadata', 'Writing the metadata'],
+        ['EmbedThumbnail', 'Embedding the thumbnail'],
+        ['EmbedSubtitle', 'Embedding the subtitles'],
+        ['SponsorBlock', 'Processing the chapters'],
+        ['MoveFiles', 'Moving the file to the folder'],
+        ['SomethingNew', 'Processing the file']
+    ])('says what the %s step is doing, without the percentage, speed or eta', (processor, text) => {
+        render(<JobMeta job={makeJob({ percent: 100, speed: '6.6MiB/s', eta: '00:01', postProcess: processor })} phase="processing" t={t} />);
+        expect(screen.getByText(text)).toHaveClass('job__processing');
+        expect(screen.queryByText('100.0%')).not.toBeInTheDocument();
+        expect(screen.queryByText('6.6MiB/s')).not.toBeInTheDocument();
+        expect(screen.queryByText('ETA 00:01')).not.toBeInTheDocument();
     });
 
     it('says that the file is being saved, without the recording details', () => {

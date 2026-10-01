@@ -6,9 +6,12 @@ import {
     INFO_PREFIX,
     INFO_PRINT_TEMPLATE,
     PROGRESS_PREFIX,
+    POSTPROCESS_PREFIX,
+    POSTPROCESS_TEMPLATE,
     PROGRESS_TEMPLATE,
     parseFileLine,
     parseInfoLine,
+    parsePostProcessLine,
     parseProgressLine
 } from '@main/services/progressParser';
 
@@ -21,6 +24,11 @@ describe('progress templates', () => {
 
     it('exposes the yt-dlp file print template', () => {
         expect(FILE_PRINT_TEMPLATE).toBe('after_move:CYBERFILE|%(filepath)s');
+    });
+
+    it('exposes the template that announces when each post-processor starts and finishes', () => {
+        expect(POSTPROCESS_PREFIX).toBe('CYBERPP|');
+        expect(POSTPROCESS_TEMPLATE).toBe('postprocess:CYBERPP|%(progress.status)s|%(progress.postprocessor)s');
     });
 
     it('exposes the template that announces each download and whether it is live', () => {
@@ -104,6 +112,43 @@ describe('parseInfoLine', () => {
         expect(parseInfoLine(`${INFO_PREFIX}True`)).toBeNull();
         expect(parseInfoLine('CYBERFILE|/d/v.mp4')).toBeNull();
         expect(parseInfoLine('')).toBeNull();
+    });
+});
+
+describe('parsePostProcessLine', () => {
+    it('parses the start of a post-processor', () => {
+        expect(parsePostProcessLine('CYBERPP|started|ExtractAudio')).toEqual({ status: 'started', processor: 'ExtractAudio' });
+    });
+
+    it('parses the end of a post-processor', () => {
+        expect(parsePostProcessLine('CYBERPP|finished|Merger')).toEqual({ status: 'finished', processor: 'Merger' });
+    });
+
+    it('keeps the name of post-processors that have digits or are not known to the app', () => {
+        expect(parsePostProcessLine('CYBERPP|started|FixupM3u8')).toEqual({ status: 'started', processor: 'FixupM3u8' });
+        expect(parsePostProcessLine('CYBERPP|started|SomethingNew')).toEqual({ status: 'started', processor: 'SomethingNew' });
+    });
+
+    it('trims the status and ignores extra fields after the processor name', () => {
+        expect(parsePostProcessLine('CYBERPP| started |MoveFiles')).toEqual({ status: 'started', processor: 'MoveFiles' });
+    });
+
+    it('ignores an unknown status', () => {
+        expect(parsePostProcessLine('CYBERPP|processing|Merger')).toBeNull();
+        expect(parsePostProcessLine('CYBERPP||Merger')).toBeNull();
+    });
+
+    it('ignores a missing or not available processor name', () => {
+        expect(parsePostProcessLine('CYBERPP|started|')).toBeNull();
+        expect(parsePostProcessLine('CYBERPP|started|NA')).toBeNull();
+        expect(parsePostProcessLine('CYBERPP|started')).toBeNull();
+    });
+
+    it('ignores every other line', () => {
+        expect(parsePostProcessLine('CYBERPROG|100.0%|1MiB/s|00:00|1|1|NA|t')).toBeNull();
+        expect(parsePostProcessLine('[Merger] Merging formats into "a.mp4"')).toBeNull();
+        expect(parsePostProcessLine(' CYBERPP|started|Merger')).toBeNull();
+        expect(parsePostProcessLine('')).toBeNull();
     });
 });
 

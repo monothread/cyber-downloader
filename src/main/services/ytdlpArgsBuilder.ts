@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { DownloadOptions, Settings } from '@shared/types';
-import { FILE_PRINT_TEMPLATE, INFO_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from './progressParser';
+import { FILE_PRINT_TEMPLATE, INFO_PRINT_TEMPLATE, POSTPROCESS_TEMPLATE, PROGRESS_TEMPLATE } from './progressParser';
 
 const FILENAME_BYTE_LIMIT = '240';
 const LIVE_WAIT_SECONDS = '30';
@@ -165,6 +165,8 @@ export function buildYtdlpArgs(
         '--no-simulate',
         '--progress-template',
         PROGRESS_TEMPLATE,
+        '--progress-template',
+        POSTPROCESS_TEMPLATE,
         '--print',
         FILE_PRINT_TEMPLATE,
         '--print',

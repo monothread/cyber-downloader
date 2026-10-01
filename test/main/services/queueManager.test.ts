@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { DownloadError, DownloadInfo, DownloadJob, HistoryEntry, ProgressInfo, Settings } from '@shared/types';
+import type { DownloadError, DownloadInfo, DownloadJob, HistoryEntry, PostProcessEvent, ProgressInfo, Settings } from '@shared/types';
 import { applyLanguage } from '@main/services/language';
 import { LIVE_END_RETRY_MS, LIVE_TICK_MS, QueueManager, type QueueDependencies } from '@main/services/queueManager';
 import { buildYtdlpArgs } from '@main/services/ytdlpArgsBuilder';
@@ -11,6 +11,7 @@ interface ControlledRun {
     onProgress: (progress: ProgressInfo) => void;
     onInfo: (info: DownloadInfo) => void;
     onWaiting: (() => void) | undefined;
+    onPostProcess: ((event: PostProcessEvent) => void) | undefined;
     resolve: (result: RunResult) => void;
     cancel: ReturnType<typeof vi.fn>;
     stop: ReturnType<typeof vi.fn>;
@@ -46,7 +47,7 @@ function setup(settings: Partial<Settings> = {}, extraDeps: Partial<QueueDepende
         fileSize: (path) => {
             return fileSizes.get(path) ?? null;
         },
-        startRun: (binary, args, onProgress, onInfo, onWaiting): RunHandle => {
+        startRun: (binary, args, onProgress, onInfo, onWaiting, onPostProcess): RunHandle => {
             let resolveResult: (result: RunResult) => void = () => {
                 return undefined;
             };
@@ -59,7 +60,7 @@ function setup(settings: Partial<Settings> = {}, extraDeps: Partial<QueueDepende
             const stop = vi.fn(() => {
                 resolveResult({ status: 'done', filePath: '/dl/recorded.mp4' });
             });
-            runs.push({ binary, args, onProgress, onInfo, onWaiting, resolve: resolveResult, cancel, stop });
+            runs.push({ binary, args, onProgress, onInfo, onWaiting, onPostProcess, resolve: resolveResult, cancel, stop });
             return { result, cancel, stop };
         },
         addHistory: (entry) => {
@@ -180,7 +181,8 @@ describe('QueueManager.add', () => {
             waitingForLive: false,
             endCheck: null,
             merging: false,
-            saving: false
+            saving: false,
+            postProcess: null
         });
         expect(updates.map((job) => {
             return job.status;
@@ -1745,6 +1747,126 @@ describe('QueueManager end of live check', () => {
             await settle();
             expect(context.runs[3]?.args).toContain('%(title).80s [%(id)s] (part 2).%(ext)s');
         });
+    });
+});
+
+describe('QueueManager post-processing of the downloaded file', () => {
+    const FILE = '/dl/Video [abc].mp3';
+    const started = (processor: string): PostProcessEvent => {
+        return { status: 'started', processor };
+    };
+
+    function downloadFinished() {
+        const context = setup();
+        context.queue.add(URL_A);
+        context.runs[0]?.onProgress(progress({ percent: 100, speed: '6.61MiB/s', eta: '00:01', title: 'Video' }));
+        return context;
+    }
+
+    it('starts without a post-processor', () => {
+        const { queue } = setup();
+        queue.add(URL_A);
+        expect(queue.getJob('job-1')?.postProcess).toBeNull();
+    });
+
+    it('marks the card as processing, with the step name, and drops the speed and eta that no longer apply', () => {
+        const { queue, runs, updates } = downloadFinished();
+        expect(queue.getJob('job-1')).toMatchObject({ postProcess: null, speed: '6.61MiB/s', eta: '00:01' });
+        runs[0]?.onPostProcess?.(started('ExtractAudio'));
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'running', postProcess: 'ExtractAudio', percent: 100, speed: '', eta: '' });
+        expect(updates.at(-1)).toMatchObject({ id: 'job-1', postProcess: 'ExtractAudio', speed: '', eta: '' });
+    });
+
+    it('moves from one step to the next', () => {
+        const { queue, runs } = downloadFinished();
+        runs[0]?.onPostProcess?.(started('Merger'));
+        runs[0]?.onPostProcess?.({ status: 'finished', processor: 'Merger' });
+        expect(queue.getJob('job-1')?.postProcess).toBe('Merger');
+        runs[0]?.onPostProcess?.(started('Metadata'));
+        expect(queue.getJob('job-1')?.postProcess).toBe('Metadata');
+    });
+
+    it('ignores the end of a step, which is followed by another start or by the end of the run', () => {
+        const { queue, runs, updates } = downloadFinished();
+        const before = updates.length;
+        runs[0]?.onPostProcess?.({ status: 'finished', processor: 'ExtractAudio' });
+        expect(queue.getJob('job-1')?.postProcess).toBeNull();
+        expect(updates).toHaveLength(before);
+    });
+
+    it('stops showing the step when a new download stream reports progress (the next item of a playlist)', () => {
+        const { queue, runs } = downloadFinished();
+        runs[0]?.onPostProcess?.(started('ExtractAudio'));
+        runs[0]?.onProgress(progress({ percent: 3, speed: '1MiB/s', eta: '00:09', title: 'Next' }));
+        expect(queue.getJob('job-1')).toMatchObject({ postProcess: null, percent: 3, speed: '1MiB/s' });
+    });
+
+    it('clears the step when the download completes', async () => {
+        const { queue, runs, history } = downloadFinished();
+        runs[0]?.onPostProcess?.(started('MoveFiles'));
+        runs[0]?.resolve({ status: 'done', filePath: FILE });
+        await flush();
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'done', percent: 100, filePath: FILE, postProcess: null });
+        expect(history).toEqual([{ id: 'job-1', url: URL_A, title: 'Video', filePath: FILE, status: 'done', errorTitle: null, finishedAt: expect.any(Number) }]);
+    });
+
+    it('clears the step when the download fails', async () => {
+        const { queue, runs } = downloadFinished();
+        runs[0]?.onPostProcess?.(started('ExtractAudio'));
+        runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        await flush();
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'error', error: DOWNLOAD_ERROR, postProcess: null });
+    });
+
+    it('clears the step when the download is cancelled', async () => {
+        const { queue, runs } = downloadFinished();
+        runs[0]?.onPostProcess?.(started('Merger'));
+        queue.cancel('job-1');
+        await flush();
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'cancelled', postProcess: null });
+    });
+
+    it('does not keep the step after a failed download is retried', async () => {
+        const { queue, runs } = downloadFinished();
+        runs[0]?.onPostProcess?.(started('ExtractAudio'));
+        runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+        await flush();
+        queue.retry('job-1');
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'running', postProcess: null });
+    });
+
+    it('does not mark a card as processing after it was removed', async () => {
+        const { queue, runs, updates } = downloadFinished();
+        queue.remove('job-1');
+        const before = updates.length;
+        runs[0]?.onPostProcess?.(started('ExtractAudio'));
+        expect(queue.getJob('job-1')).toBeUndefined();
+        expect(updates).toHaveLength(before);
+    });
+
+    it('does not show the step while the end of a live recording is checked', async () => {
+        vi.useFakeTimers();
+        try {
+            const { queue, runs } = setup({ verifyLiveEnd: true, verifyLiveEndSeconds: 10 });
+            queue.add(URL_A);
+            runs[0]?.onInfo({ live: true, filePath: '/dl/Live [abc].mp4' });
+            runs[0]?.onPostProcess?.(started('MoveFiles'));
+            expect(queue.getJob('job-1')?.postProcess).toBe('MoveFiles');
+            runs[0]?.resolve({ status: 'done', filePath: '/dl/Live [abc].mp4' });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(queue.getJob('job-1')).toMatchObject({ status: 'running', postProcess: null, endCheck: { secondsLeft: 10, totalSeconds: 10 } });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('only touches the card of the run that reported the step', () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A);
+        queue.add(URL_B);
+        runs[1]?.onPostProcess?.(started('Merger'));
+        expect(queue.getJob('job-1')?.postProcess).toBeNull();
+        expect(queue.getJob('job-2')?.postProcess).toBe('Merger');
     });
 });
 

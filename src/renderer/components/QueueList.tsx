@@ -1,6 +1,7 @@
 import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 import { JobCard } from './JobCard';
+import { sortForDisplay } from './jobStatus';
 
 export function QueueList() {
     const t = useTranslator();
@@ -49,7 +50,7 @@ export function QueueList() {
                     </button>
                 )}
             </div>
-            {jobs.map((job) => {
+            {sortForDisplay(jobs).map((job) => {
                 return (
                     <JobCard
                         key={job.id}

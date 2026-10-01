@@ -85,7 +85,7 @@ export function JobCard({ job, onCancel, onStop, onRetry, onRemove, onClearParti
                         {t('job.finishNow')}
                     </button>
                 )}
-                {isActive && phase !== 'verifying' && phase !== 'merging' && phase !== 'saving' && (
+                {isActive && phase !== 'verifying' && phase !== 'merging' && phase !== 'saving' && phase !== 'processing' && (
                     <button
                         type="button"
                         className="btn btn--small btn--hot"

@@ -178,6 +178,23 @@ describe('components in another language', () => {
     });
 
     it.each([
+        ['en', 'PROCESSING', 'Processing the downloaded file', 'Converting the audio', 'Joining video and audio'],
+        ['pt', 'PROCESSANDO', 'Processando o arquivo baixado', 'Convertendo o áudio', 'Juntando vídeo e áudio'],
+        ['es', 'PROCESANDO', 'Procesando el archivo descargado', 'Convirtiendo el audio', 'Uniendo vídeo y audio'],
+        ['zh', '处理中', '正在处理已下载的文件', '正在转换音频', '正在合并视频和音频'],
+        ['ja', '処理中', 'ダウンロードしたファイルを処理しています', '音声を変換しています', '映像と音声を結合しています']
+    ] as const)('translates the processing of the downloaded file in "%s"', (language, badge, label, audio, merge) => {
+        useLanguage(language);
+        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        const { rerender } = render(<JobCard job={makeJob({ postProcess: 'ExtractAudio' })} {...handlers} />);
+        expect(screen.getByText(badge)).toBeInTheDocument();
+        expect(screen.getByText(audio)).toBeInTheDocument();
+        expect(screen.getByRole('progressbar', { name: label })).toBeInTheDocument();
+        rerender(<JobCard job={makeJob({ postProcess: 'Merger' })} {...handlers} />);
+        expect(screen.getByText(merge)).toBeInTheDocument();
+    });
+
+    it.each([
         ['en', 'SAVING FILE', 'Closing the recording and saving the file', 'Saving the recording. Do not close the app'],
         ['pt', 'SALVANDO ARQUIVO', 'Encerrando a gravação e salvando o arquivo', 'Salvando a gravação. Não feche o aplicativo'],
         ['es', 'GUARDANDO ARCHIVO', 'Cerrando la grabación y guardando el archivo', 'Guardando la grabación. No cierres la aplicación'],

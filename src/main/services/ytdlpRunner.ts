@@ -1,8 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import type { DownloadError, DownloadInfo, ProgressInfo } from '@shared/types';
+import type { DownloadError, DownloadInfo, PostProcessEvent, ProgressInfo } from '@shared/types';
 import { mapDownloadError, mapSpawnError } from './errorMapper';
 import { killProcessTree, type GroupKill, type TaskkillSpawn } from './processTree';
-import { isWaitLine, parseFileLine, parseInfoLine, parseProgressLine } from './progressParser';
+import { isWaitLine, parseFileLine, parseInfoLine, parsePostProcessLine, parseProgressLine, POSTPROCESS_PREFIX } from './progressParser';
 
 // After yt-dlp exits its pipes may still be held open by a process it started (an ffmpeg left behind), which would keep
 // the download "running" forever: the result is given anyway once this time has passed.
@@ -36,6 +36,8 @@ export interface RunOptions {
     onInfo?: (info: DownloadInfo) => void;
     // yt-dlp is waiting for a scheduled live stream to start.
     onWaiting?: () => void;
+    // A post-processor (the ffmpeg steps after the download: conversion, merge, metadata...) started or finished.
+    onPostProcess?: (event: PostProcessEvent) => void;
     env?: NodeJS.ProcessEnv;
     spawnFn?: SpawnFn;
     platform?: NodeJS.Platform;
@@ -67,6 +69,16 @@ export function createLineSplitter(onLine: (line: string) => void): { push: (chu
     };
 }
 
+// The post-process progress lines are not errors: they must not end up in the text shown for a failed download.
+function withoutPostProcessLines(stderr: string): string {
+    return stderr
+        .split(/(?<=\n)/)
+        .filter((line) => {
+            return !line.startsWith(POSTPROCESS_PREFIX);
+        })
+        .join('');
+}
+
 export function runYtdlp(options: RunOptions): RunHandle {
     const spawnFn = options.spawnFn ?? defaultSpawn;
     const child = spawnFn(options.binary, options.args, options.env);
@@ -91,7 +103,20 @@ export function runYtdlp(options: RunOptions): RunHandle {
             options.onWaiting?.();
             return;
         }
+        const postProcess = parsePostProcessLine(line);
+        if (postProcess) {
+            options.onPostProcess?.(postProcess);
+            return;
+        }
         filePath = parseFileLine(line) ?? filePath;
+    });
+
+    // In quiet mode (which `--print` implies) yt-dlp writes the post-process progress lines to stderr, not stdout.
+    const stderrSplitter = createLineSplitter((line) => {
+        const postProcess = parsePostProcessLine(line);
+        if (postProcess) {
+            options.onPostProcess?.(postProcess);
+        }
     });
 
     child.stdout.setEncoding('utf-8');
@@ -99,6 +124,7 @@ export function runYtdlp(options: RunOptions): RunHandle {
     child.stdout.on('data', stdoutSplitter.push);
     child.stderr.on('data', (chunk: string) => {
         stderr += chunk;
+        stderrSplitter.push(chunk);
     });
 
     let settled = false;
@@ -126,6 +152,7 @@ export function runYtdlp(options: RunOptions): RunHandle {
             timers.forEach(clearTimeout);
             timers.clear();
             stdoutSplitter.flush();
+            stderrSplitter.flush();
             if (cancelled) {
                 resolve({ status: 'cancelled' });
                 return;
@@ -138,7 +165,7 @@ export function runYtdlp(options: RunOptions): RunHandle {
                 resolve({ status: 'done', filePath });
                 return;
             }
-            resolve({ status: 'error', error: mapDownloadError(stderr, code) });
+            resolve({ status: 'error', error: mapDownloadError(withoutPostProcessLines(stderr), code) });
         };
         child.once('error', (error: NodeJS.ErrnoException) => {
             settled = true;

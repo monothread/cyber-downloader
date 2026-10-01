@@ -1,4 +1,4 @@
-import type { DownloadInfo, ProgressInfo } from '@shared/types';
+import type { DownloadInfo, PostProcessEvent, ProgressInfo } from '@shared/types';
 import { createLineSplitter, defaultSpawn, EXIT_GRACE_MS, KILL_ESCALATION_MS, runYtdlp, STOP_ESCALATION_MS } from '@main/services/ytdlpRunner';
 import { createFakeChild } from '../../helpers/fakeChild';
 
@@ -109,6 +109,140 @@ describe('runYtdlp', () => {
         expect(infos).toEqual([{ live: true, filePath: '/d/Live [abc].mp4' }]);
         fake.emitter.emit('close', 0);
         await run.result;
+    });
+
+    it('reports when each post-processor starts and finishes, in order, without mistaking them for the file path', async () => {
+        const fake = createFakeChild();
+        const events: PostProcessEvent[] = [];
+        const progress: ProgressInfo[] = [];
+        const run = runYtdlp({
+            binary: 'yt-dlp',
+            args: [],
+            spawnFn: () => {
+                return fake.child;
+            },
+            onProgress: (item) => {
+                progress.push(item);
+            },
+            onPostProcess: (event) => {
+                events.push(event);
+            }
+        });
+        fake.stdout.write('CYBERPROG|100.0%|6.61MiB/s|NA|26225|0.003|NA|sample\nCYBERPP|started|ExtractAudio\nCYBERPP|fini');
+        fake.stdout.write('shed|ExtractAudio\nCYBERPP|started|MoveFiles\nCYBERPP|finished|MoveFiles\nCYBERFILE|/d/sample [sample].mp3\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        expect(progress).toHaveLength(1);
+        expect(events).toEqual([
+            { status: 'started', processor: 'ExtractAudio' },
+            { status: 'finished', processor: 'ExtractAudio' },
+            { status: 'started', processor: 'MoveFiles' },
+            { status: 'finished', processor: 'MoveFiles' }
+        ]);
+        fake.emitter.emit('close', 0);
+        await expect(run.result).resolves.toEqual({ status: 'done', filePath: '/d/sample [sample].mp3' });
+    });
+
+    it('reports the post-processors that yt-dlp writes to stderr, as it does in quiet mode', async () => {
+        const fake = createFakeChild();
+        const events: PostProcessEvent[] = [];
+        const progress: ProgressInfo[] = [];
+        const run = runYtdlp({
+            binary: 'yt-dlp',
+            args: [],
+            spawnFn: () => {
+                return fake.child;
+            },
+            onProgress: (item) => {
+                progress.push(item);
+            },
+            onPostProcess: (event) => {
+                events.push(event);
+            }
+        });
+        fake.stdout.write('CYBERPROG|100.0%|6.61MiB/s|NA|26225|0.003|NA|sample\n');
+        fake.stderr.write('CYBERPP|started|ExtractAudio\nCYBERPP|fini');
+        fake.stderr.write('shed|ExtractAudio\r\nCYBERPP|started|MoveFiles\nCYBERPP|finished|MoveFiles\n');
+        fake.stdout.write('CYBERFILE|/d/sample [sample].mp3\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        expect(progress).toHaveLength(1);
+        expect(events).toEqual([
+            { status: 'started', processor: 'ExtractAudio' },
+            { status: 'finished', processor: 'ExtractAudio' },
+            { status: 'started', processor: 'MoveFiles' },
+            { status: 'finished', processor: 'MoveFiles' }
+        ]);
+        fake.emitter.emit('close', 0);
+        await expect(run.result).resolves.toEqual({ status: 'done', filePath: '/d/sample [sample].mp3' });
+    });
+
+    it('reports a post-process line that is the last thing on stderr, without a line end', async () => {
+        const fake = createFakeChild();
+        const events: PostProcessEvent[] = [];
+        const run = runYtdlp({
+            binary: 'yt-dlp',
+            args: [],
+            spawnFn: () => {
+                return fake.child;
+            },
+            onProgress: vi.fn(),
+            onPostProcess: (event) => {
+                events.push(event);
+            }
+        });
+        fake.stderr.write('CYBERPP|started|Merger');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        expect(events).toEqual([]);
+        fake.emitter.emit('close', 0);
+        await run.result;
+        expect(events).toEqual([{ status: 'started', processor: 'Merger' }]);
+    });
+
+    it('keeps the post-process lines out of the error text of a failed download', async () => {
+        const fake = createFakeChild();
+        const events: PostProcessEvent[] = [];
+        const run = runYtdlp({
+            binary: 'yt-dlp',
+            args: [],
+            spawnFn: () => {
+                return fake.child;
+            },
+            onProgress: vi.fn(),
+            onPostProcess: (event) => {
+                events.push(event);
+            }
+        });
+        fake.stderr.write('CYBERPP|started|ExtractAudio\nERROR: Video unavailable\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        fake.emitter.emit('close', 1);
+        await expect(run.result).resolves.toEqual({
+            status: 'error',
+            error: {
+                code: 'UNAVAILABLE',
+                title: 'Video unavailable',
+                hint: 'The video may be private, removed or blocked in your region.',
+                raw: 'ERROR: Video unavailable'
+            }
+        });
+        expect(events).toEqual([{ status: 'started', processor: 'ExtractAudio' }]);
+    });
+
+    it('works without a post-process listener', async () => {
+        const { fake, run, progress } = start();
+        fake.stdout.write('CYBERPP|started|Merger\nCYBERFILE|/d/a.mp4\n');
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        fake.emitter.emit('close', 0);
+        await expect(run.result).resolves.toEqual({ status: 'done', filePath: '/d/a.mp4' });
+        expect(progress).toEqual([]);
     });
 
     it('works without a waiting listener', async () => {

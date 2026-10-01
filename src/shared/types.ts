@@ -125,6 +125,8 @@ export interface DownloadJob {
     merging: boolean;
     // STOP & SAVE was asked and the recording is being closed into its file.
     saving: boolean;
+    // Name of the yt-dlp post-processor (ffmpeg step after the download, such as ExtractAudio or Merger) that is running.
+    postProcess: string | null;
 }
 
 export interface ProgressInfo {
@@ -135,6 +137,12 @@ export interface ProgressInfo {
     downloadedBytes: number | null;
     elapsedSeconds: number | null;
     live: boolean;
+}
+
+// yt-dlp reports when each post-processor (the steps that run after the bytes are downloaded) starts and finishes.
+export interface PostProcessEvent {
+    status: 'started' | 'finished';
+    processor: string;
 }
 
 export interface DownloadInfo {

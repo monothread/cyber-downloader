@@ -1,6 +1,6 @@
 import type { Translator } from '@shared/i18n';
 import type { DownloadJob } from '@shared/types';
-import { formatBytes, formatDuration, formatPercent, type LivePhase } from './jobStatus';
+import { formatBytes, formatDuration, formatPercent, processingTextKey, type LivePhase } from './jobStatus';
 
 interface JobProgressProps {
     job: DownloadJob;
@@ -8,7 +8,7 @@ interface JobProgressProps {
     t: Translator;
 }
 
-// The bar of a card: sweeping while a stopped recording is saved or its parts of a recording are joined, draining while a live stream's end is checked, sweeping while waiting for one to start,
+// The bar of a card: sweeping while the downloaded file is processed, while a stopped recording is saved or its parts of a recording are joined, draining while a live stream's end is checked, sweeping while waiting for one to start,
 // striped while recording it, and a percentage otherwise.
 export function JobProgress({ job, phase, t }: JobProgressProps) {
     if (phase === 'verifying' && job.endCheck !== null) {
@@ -22,6 +22,13 @@ export function JobProgress({ job, phase, t }: JobProgressProps) {
                 aria-valuenow={job.endCheck.secondsLeft}
             >
                 <div className="progress__bar" style={{ animationDuration: `${job.endCheck.totalSeconds}s` }} />
+            </div>
+        );
+    }
+    if (phase === 'processing') {
+        return (
+            <div className="progress progress--processing" role="progressbar" aria-label={t('job.processingLabel')}>
+                <div className="progress__bar" />
             </div>
         );
     }
@@ -71,8 +78,8 @@ export function JobMeta({ job, phase, t }: JobProgressProps) {
     return (
         <div className="job__meta">
             <JobMetaMain job={job} phase={phase} t={t} />
-            {job.speed && <span>{job.speed}</span>}
-            {job.eta && <span>{t('job.eta', { eta: job.eta })}</span>}
+            {phase !== 'processing' && job.speed && <span>{job.speed}</span>}
+            {phase !== 'processing' && job.eta && <span>{t('job.eta', { eta: job.eta })}</span>}
         </div>
     );
 }
@@ -80,6 +87,9 @@ export function JobMeta({ job, phase, t }: JobProgressProps) {
 function JobMetaMain({ job, phase, t }: JobProgressProps) {
     if (phase === 'verifying' && job.endCheck !== null) {
         return <span className="job__verifying">{t('job.verifyingText', { seconds: job.endCheck.secondsLeft })}</span>;
+    }
+    if (phase === 'processing') {
+        return <span className="job__processing">{t(processingTextKey(job.postProcess))}</span>;
     }
     if (phase === 'saving') {
         return <span className="job__saving">{t('job.savingText')}</span>;

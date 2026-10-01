@@ -193,8 +193,8 @@ function bootstrap(): void {
         deleteFiles: (paths) => {
             removeFiles(paths);
         },
-        startRun: (binary, args, onProgress, onInfo, onWaiting) => {
-            return runYtdlp({ binary, args, onProgress, onInfo, onWaiting, env: resolver.spawnEnv() });
+        startRun: (binary, args, onProgress, onInfo, onWaiting, onPostProcess) => {
+            return runYtdlp({ binary, args, onProgress, onInfo, onWaiting, onPostProcess, env: resolver.spawnEnv() });
         },
         addHistory: (entry) => {
             historyStore.add(entry);

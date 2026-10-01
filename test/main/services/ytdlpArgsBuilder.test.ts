@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import type { Settings } from '@shared/types';
-import { FILE_PRINT_TEMPLATE, INFO_PRINT_TEMPLATE, PROGRESS_TEMPLATE } from '@main/services/progressParser';
+import { FILE_PRINT_TEMPLATE, INFO_PRINT_TEMPLATE, POSTPROCESS_TEMPLATE, PROGRESS_TEMPLATE } from '@main/services/progressParser';
 import { buildYtdlpArgs, escapeTitleForTemplate, splitArguments } from '@main/services/ytdlpArgsBuilder';
 
 const URL = 'https://example.com/watch?v=abc';
@@ -39,6 +39,8 @@ describe('buildYtdlpArgs', () => {
             '--no-simulate',
             '--progress-template',
             PROGRESS_TEMPLATE,
+            '--progress-template',
+            POSTPROCESS_TEMPLATE,
             '--print',
             FILE_PRINT_TEMPLATE,
             '--print',
@@ -57,6 +59,17 @@ describe('buildYtdlpArgs', () => {
             '--',
             URL
         ]);
+    });
+
+    it('asks yt-dlp to report each post-processor without turning on the verbose output', () => {
+        const args = build({ audioOnly: true });
+        expect(
+            args.filter((arg) => {
+                return arg === POSTPROCESS_TEMPLATE;
+            })
+        ).toHaveLength(1);
+        expect(args[args.indexOf(POSTPROCESS_TEMPLATE) - 1]).toBe('--progress-template');
+        expect(args).not.toContain('--no-quiet');
     });
 
     it('always places the URL last after the separator', () => {

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { hasUnboundedAutoSubtitles } from '@shared/subtitles';
 import { isValidHttpUrl } from '@shared/url';
 import { statSync } from 'node:fs';
-import type { AddJobResult, DownloadJob, DownloadError, DownloadInfo, HistoryEntry, ProgressInfo, Settings } from '@shared/types';
+import type { AddJobResult, DownloadJob, DownloadError, DownloadInfo, HistoryEntry, PostProcessEvent, ProgressInfo, Settings } from '@shared/types';
 import type { RunHandle, RunResult } from './ytdlpRunner';
 import { buildYtdlpArgs, type RequestExtras } from './ytdlpArgsBuilder';
 import { translateMain } from './language';
@@ -17,7 +17,8 @@ export interface QueueDependencies {
         args: string[],
         onProgress: (progress: ProgressInfo) => void,
         onInfo: (info: DownloadInfo) => void,
-        onWaiting?: () => void
+        onWaiting?: () => void,
+        onPostProcess?: (event: PostProcessEvent) => void
     ) => RunHandle;
     // Size of a file on disk, or null when it does not exist (used to show how much of a live stream is recorded).
     fileSize?: (path: string) => number | null;
@@ -197,7 +198,8 @@ export class QueueManager {
             waitingForLive: false,
             endCheck: null,
             merging: false,
-            saving: false
+            saving: false,
+            postProcess: null
         };
         this.jobs.push(job);
         this.extras.set(job.id, options);
@@ -230,7 +232,7 @@ export class QueueManager {
         if (!job || (job.status !== 'error' && job.status !== 'cancelled')) {
             return;
         }
-        Object.assign(job, { status: 'queued', percent: 0, speed: '', eta: '', error: null, filePath: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false, waitingForLive: false, endCheck: null, merging: false, saving: false });
+        Object.assign(job, { status: 'queued', percent: 0, speed: '', eta: '', error: null, filePath: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false, waitingForLive: false, endCheck: null, merging: false, saving: false, postProcess: null });
         this.outputPaths.delete(job.id);
         this.parts.delete(job.id);
         this.stopRequested.delete(job.id);
@@ -341,6 +343,9 @@ export class QueueManager {
             },
             () => {
                 this.applyWaiting(job);
+            },
+            (event) => {
+                this.applyPostProcess(job, event);
             }
         );
         this.handles.set(job.id, handle);
@@ -348,6 +353,7 @@ export class QueueManager {
             if (this.handles.get(job.id) === handle) {
                 this.handles.delete(job.id);
             }
+            job.postProcess = null;
             if (resumedPart !== undefined && !wentLive) {
                 this.endCheckAttemptEnded(job);
                 return;
@@ -368,6 +374,15 @@ export class QueueManager {
     }
 
     // yt-dlp prints "[wait]" while it waits for a scheduled live stream; the first recording line ends the wait.
+    // The download is complete and yt-dlp is now converting, merging or tagging the file: the speed no longer means anything.
+    private applyPostProcess(job: DownloadJob, event: PostProcessEvent): void {
+        if (event.status !== 'started' || !this.find(job.id)) {
+            return;
+        }
+        Object.assign(job, { postProcess: event.processor, percent: 100, speed: '', eta: '', waitingForLive: false });
+        this.emit(job);
+    }
+
     private applyWaiting(job: DownloadJob): void {
         if (job.waitingForLive || job.live) {
             return;
@@ -516,6 +531,7 @@ export class QueueManager {
     private applyProgress(job: DownloadJob, progress: ProgressInfo): void {
         job.live = job.live || progress.live;
         job.waitingForLive = false;
+        job.postProcess = null;
         job.downloadedBytes = progress.downloadedBytes ?? job.downloadedBytes;
         if (!this.tickers.has(job.id)) {
             job.elapsedSeconds = progress.elapsedSeconds ?? job.elapsedSeconds;
@@ -622,6 +638,7 @@ export class QueueManager {
         job.waitingForLive = false;
         job.merging = false;
         job.saving = false;
+        job.postProcess = null;
         if (!this.find(job.id)) {
             // The card was removed while the download was running: whatever it left behind goes too, except a live recording.
             this.deleteLeftovers(job, false);
