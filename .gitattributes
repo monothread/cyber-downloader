@@ -1,0 +1,6 @@
+# Scripts that run under sh must keep LF endings: a CRLF makes them fail on Windows checkouts.
+* text=auto
+*.sh text eol=lf
+resources/ani-scripts/* text eol=lf
+test/e2e/fixtures/*.sh text eol=lf
+scripts/spike/* text eol=lf
