@@ -469,7 +469,7 @@ test('shows the version of ani-cli at the top and in the settings, and does not 
 test('shows the anime settings and saves them', async () => {
     const { page, userData } = session;
     await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
-    await expect(page.getByText('ANIME')).toBeVisible();
+    await expect(page.locator('.settings legend', { hasText: /^ANIME$/ })).toBeVisible();
     await expect(page.getByLabel('Anime quality')).toHaveValue('720p');
     await page.getByLabel('Anime quality').selectOption('worst');
     await page.getByLabel('Anime audio').selectOption('dub');
