@@ -23,6 +23,8 @@ export interface QueueDependencies {
     fileSize?: (path: string) => number | null;
     // Turns the partial file of a recording that was ended by killing yt-dlp into the final file; returns its path.
     salvageRecording?: (filePath: string) => Promise<string | null>;
+    // Joins the parts of a recording that was resumed after the stream came back (in order) into the first one; returns its path.
+    mergeParts?: (paths: string[]) => Promise<string | null>;
     // The unfinished files (.part...) that belong to the download of a final file, and a way to delete files.
     findPartialFiles?: (finalPath: string) => string[];
     deleteFiles?: (paths: string[]) => void;
@@ -120,6 +122,8 @@ export class QueueManager {
             return;
         }
         this.stopRequested.add(id);
+        job.saving = true;
+        this.emit(job);
         this.handles.get(id)?.stop();
     }
 
@@ -142,7 +146,7 @@ export class QueueManager {
                 handle.cancel();
             }
         });
-        if (waiting.length > 0) {
+        if (waiting.length > 0 || this.salvaging.size > 0) {
             await Promise.race([
                 Promise.allSettled(waiting).then(() => {
                     return Promise.allSettled([...this.salvaging]);
@@ -191,7 +195,9 @@ export class QueueManager {
             hasPartial: false,
             customized: Object.keys(options.options ?? {}).length > 0,
             waitingForLive: false,
-            endCheck: null
+            endCheck: null,
+            merging: false,
+            saving: false
         };
         this.jobs.push(job);
         this.extras.set(job.id, options);
@@ -224,7 +230,7 @@ export class QueueManager {
         if (!job || (job.status !== 'error' && job.status !== 'cancelled')) {
             return;
         }
-        Object.assign(job, { status: 'queued', percent: 0, speed: '', eta: '', error: null, filePath: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false, waitingForLive: false, endCheck: null });
+        Object.assign(job, { status: 'queued', percent: 0, speed: '', eta: '', error: null, filePath: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false, waitingForLive: false, endCheck: null, merging: false, saving: false });
         this.outputPaths.delete(job.id);
         this.parts.delete(job.id);
         this.stopRequested.delete(job.id);
@@ -357,7 +363,7 @@ export class QueueManager {
                 this.beginEndCheck(job, result);
                 return;
             }
-            this.finish(job, result);
+            this.finishMerged(job, result);
         });
     }
 
@@ -456,7 +462,7 @@ export class QueueManager {
         const attempt = this.handles.get(job.id);
         this.handles.delete(job.id);
         attempt?.cancel();
-        this.finish(job, check.original);
+        this.finishMerged(job, check.original);
     }
 
     // The card was removed during the check: nothing to finish, only timers and the running attempt to stop.
@@ -529,10 +535,48 @@ export class QueueManager {
             return null;
         }) : null;
         if (saved) {
-            this.finish(job, { status: 'done', filePath: saved });
+            this.finish(job, await this.withMergedParts(job, { status: 'done', filePath: saved }));
             return;
         }
         this.finish(job, { status: 'error', error: SALVAGE_FAILED_ERROR });
+    }
+
+    private partsToMerge(job: DownloadJob, result: RunResult): string[] {
+        const paths = [...(this.outputPaths.get(job.id) ?? [])];
+        const resumed = (this.parts.get(job.id) ?? 1) > 1;
+        const mergeable = result.status === 'done' && resumed && this.deps.mergeParts !== undefined && this.find(job.id) !== undefined;
+        return mergeable && paths.length > 1 ? paths : [];
+    }
+
+    // A recording that was resumed after the stream came back ends as one file: the parts are joined, in order, into the
+    // first one. If they cannot be joined the card ends as it was, and every part stays in the folder.
+    private async withMergedParts(job: DownloadJob, result: RunResult): Promise<RunResult> {
+        const paths = this.partsToMerge(job, result);
+        if (paths.length === 0 || !this.deps.mergeParts) {
+            return result;
+        }
+        job.merging = true;
+        this.emit(job);
+        const merged = await this.deps.mergeParts(paths).catch(() => {
+            return null;
+        });
+        return merged ? { status: 'done', filePath: merged } : result;
+    }
+
+    private finishMerged(job: DownloadJob, result: RunResult): void {
+        if (this.partsToMerge(job, result).length === 0) {
+            this.finish(job, result);
+            return;
+        }
+        this.stopTicker(job.id);
+        const merging = this.withMergedParts(job, result)
+            .then((merged) => {
+                this.finish(job, merged);
+            })
+            .finally(() => {
+                this.salvaging.delete(merging);
+            });
+        this.salvaging.add(merging);
     }
 
     private leftoversOf(job: DownloadJob): string[] {
@@ -576,6 +620,8 @@ export class QueueManager {
         this.parts.delete(job.id);
         this.stopRequested.delete(job.id);
         job.waitingForLive = false;
+        job.merging = false;
+        job.saving = false;
         if (!this.find(job.id)) {
             // The card was removed while the download was running: whatever it left behind goes too, except a live recording.
             this.deleteLeftovers(job, false);

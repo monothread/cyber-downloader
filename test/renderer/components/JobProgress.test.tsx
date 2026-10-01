@@ -43,6 +43,22 @@ describe('JobProgress', () => {
         expect(bar).not.toHaveAttribute('aria-valuenow');
     });
 
+    it('shows a sweeping bar while a stopped recording is saved', () => {
+        render(<JobProgress job={makeJob({ live: true, saving: true })} phase="saving" t={t} />);
+        const bar = screen.getByRole('progressbar', { name: 'Closing the recording and saving the file' });
+        expect(bar).toHaveClass('progress', 'progress--saving');
+        expect(bar).not.toHaveAttribute('aria-valuenow');
+        expect(screen.queryByRole('progressbar', { name: 'Recording a live stream' })).not.toBeInTheDocument();
+    });
+
+    it('shows a sweeping bar while the parts of a recording are joined', () => {
+        render(<JobProgress job={makeJob({ live: true, merging: true })} phase="merging" t={t} />);
+        const bar = screen.getByRole('progressbar', { name: 'Joining the parts of the recording into one file' });
+        expect(bar).toHaveClass('progress', 'progress--merging');
+        expect(bar).not.toHaveAttribute('aria-valuenow');
+        expect(screen.queryByRole('progressbar', { name: 'Recording a live stream' })).not.toBeInTheDocument();
+    });
+
     it('is not live once the job finished', () => {
         render(<JobProgress job={makeJob({ live: true, status: 'done', percent: 100 })} phase={null} t={t} />);
         expect(screen.getByRole('progressbar', { name: 'Download progress' })).toHaveAttribute('aria-valuenow', '100');
@@ -74,6 +90,22 @@ describe('JobMeta', () => {
         render(<JobMeta job={makeJob({ live: true, endCheck: END_CHECK })} phase="verifying" t={t} />);
         expect(screen.getByText('The stream stopped. Checking whether it really ended… 4s')).toHaveClass('job__verifying');
         expect(screen.queryByText('● LIVE')).not.toBeInTheDocument();
+    });
+
+    it('says that the file is being saved, without the recording details', () => {
+        render(<JobMeta job={makeJob({ live: true, saving: true, elapsedSeconds: 754, downloadedBytes: 2048 })} phase="saving" t={t} />);
+        expect(screen.getByText('Saving the recording. Do not close the app')).toHaveClass('job__saving');
+        expect(screen.queryByText('● LIVE')).not.toBeInTheDocument();
+        expect(screen.queryByText('12:34')).not.toBeInTheDocument();
+        expect(screen.queryByText('2.0 KiB')).not.toBeInTheDocument();
+    });
+
+    it('says that the parts are being joined, without the recording details', () => {
+        render(<JobMeta job={makeJob({ live: true, merging: true, elapsedSeconds: 754, downloadedBytes: 2048 })} phase="merging" t={t} />);
+        expect(screen.getByText('Joining the parts of the recording into one file')).toHaveClass('job__merging');
+        expect(screen.queryByText('● LIVE')).not.toBeInTheDocument();
+        expect(screen.queryByText('12:34')).not.toBeInTheDocument();
+        expect(screen.queryByText('2.0 KiB')).not.toBeInTheDocument();
     });
 
     it('says that it is waiting for the stream to start', () => {

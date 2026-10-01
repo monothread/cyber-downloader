@@ -181,6 +181,8 @@ export function makeJob(overrides: Partial<DownloadJob> = {}): DownloadJob {
         customized: false,
         waitingForLive: false,
         endCheck: null,
+        merging: false,
+        saving: false,
         ...overrides
     };
 }

@@ -113,28 +113,50 @@ describe('livePhase', () => {
     const END_CHECK = { secondsLeft: 7, totalSeconds: 10 };
 
     it('is verifying while the end of a running job is checked', () => {
-        expect(livePhase({ status: 'running', endCheck: END_CHECK, waitingForLive: false })).toBe('verifying');
+        expect(livePhase({ status: 'running', endCheck: END_CHECK, waitingForLive: false, merging: false, saving: false })).toBe('verifying');
     });
 
     it('is waiting while a running job waits for a scheduled live stream', () => {
-        expect(livePhase({ status: 'running', endCheck: null, waitingForLive: true })).toBe('waiting');
+        expect(livePhase({ status: 'running', endCheck: null, waitingForLive: true, merging: false, saving: false })).toBe('waiting');
     });
 
     it('prefers verifying when both are set', () => {
-        expect(livePhase({ status: 'running', endCheck: END_CHECK, waitingForLive: true })).toBe('verifying');
+        expect(livePhase({ status: 'running', endCheck: END_CHECK, waitingForLive: true, merging: false, saving: false })).toBe('verifying');
     });
 
     it('is null for a running job doing neither', () => {
-        expect(livePhase({ status: 'running', endCheck: null, waitingForLive: false })).toBeNull();
+        expect(livePhase({ status: 'running', endCheck: null, waitingForLive: false, merging: false, saving: false })).toBeNull();
+    });
+
+    it('is merging while the parts of a running job are joined', () => {
+        expect(livePhase({ status: 'running', endCheck: null, waitingForLive: false, merging: true, saving: false })).toBe('merging');
+    });
+
+    it('is saving while a recording that was told to stop is closed', () => {
+        expect(livePhase({ status: 'running', endCheck: null, waitingForLive: false, merging: false, saving: true })).toBe('saving');
+    });
+
+    it('prefers saving over verifying and waiting', () => {
+        expect(livePhase({ status: 'running', endCheck: END_CHECK, waitingForLive: true, merging: false, saving: true })).toBe('saving');
+    });
+
+    it('prefers merging over saving', () => {
+        expect(livePhase({ status: 'running', endCheck: null, waitingForLive: false, merging: true, saving: true })).toBe('merging');
+    });
+
+    it('prefers merging over the other phases', () => {
+        expect(livePhase({ status: 'running', endCheck: END_CHECK, waitingForLive: true, merging: true, saving: false })).toBe('merging');
     });
 
     it.each(['queued', 'done', 'error', 'cancelled'] as const)('is null for a job that is %s', (status) => {
-        expect(livePhase({ status, endCheck: END_CHECK, waitingForLive: true })).toBeNull();
+        expect(livePhase({ status, endCheck: END_CHECK, waitingForLive: true, merging: true, saving: true })).toBeNull();
     });
 });
 
 describe('statusLabel for the live phases', () => {
-    it('says VERIFYING END and WAITING FOR LIVE', () => {
+    it('says VERIFYING END, WAITING FOR LIVE and JOINING PARTS', () => {
+        expect(statusLabel('running', true, t, 'saving')).toBe('SAVING FILE');
+        expect(statusLabel('running', true, t, 'merging')).toBe('JOINING PARTS');
         expect(statusLabel('running', true, t, 'verifying')).toBe('VERIFYING END');
         expect(statusLabel('running', false, t, 'waiting')).toBe('WAITING FOR LIVE');
     });

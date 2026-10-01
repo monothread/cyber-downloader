@@ -32,3 +32,4 @@
 - Live streams (D-031): end check with configurable seconds (default 10) that looks for the stream again and resumes in a new file, waiting-for-live effect from yt-dlp's `[wait]` lines, STOP & SAVE never re-checked. e2e now pin `verifyLiveEnd` off unless a test turns it on.
 - Options for one download (D-032): OPTIONS button per link with a modal for quality/format and live settings, inherited per field, kept on retry, CUSTOM badge on the card.
 - Fix (D-033): CANCEL left the ffmpeg of a live recording running and the card stuck on RECORDING; yt-dlp now runs in its own process group, cancel/stop escalate (SIGTERM→SIGKILL, Ctrl+C→group end + salvage) and the result no longer waits for pipes held by orphans.
+- Live recordings that resume (D-034): the parts are joined into one file with ffmpeg's concat demuxer when the card ends, with JOINING PARTS and SAVING FILE states on the card (`merging`, `saving`). Unit 1528, e2e 106; not verified against a real site.

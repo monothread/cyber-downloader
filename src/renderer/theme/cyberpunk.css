@@ -19,12 +19,14 @@
     --glow-hot: 0 0 18px rgba(255, 43, 214, 0.7);
     --glow-red: 0 0 14px rgba(255, 42, 85, 0.25);
     --glow-yellow: 0 0 14px rgba(252, 238, 10, 0.25);
+    --glow-green: 0 0 14px rgba(57, 255, 136, 0.25);
     --glow-inset: inset 0 0 30px rgba(0, 240, 255, 0.04);
     --text-glow: 0 0 8px var(--cyan);
     --logo-glow: 0 0 8px var(--cyan), 0 0 22px rgba(0, 240, 255, 0.5);
     --tint-cyan: rgba(0, 240, 255, 0.05);
     --tint-red: rgba(255, 42, 85, 0.08);
     --tint-yellow: rgba(252, 238, 10, 0.07);
+    --tint-green: rgba(57, 255, 136, 0.06);
     --toast-error-text: #ffd6df;
     --body-bg: radial-gradient(1200px 600px at 80% -10%, #2a0a3d 0%, transparent 60%), radial-gradient(900px 500px at -10% 110%, #04283a 0%, transparent 55%), var(--bg);
     --scanlines: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 0, rgba(255, 255, 255, 0.035) 1px, transparent 1px, transparent 3px);
@@ -289,6 +291,8 @@ body::after {
 .job--cancelled, .job--queued { border-left-color: var(--muted); }
 .job--verifying { border-left-color: var(--yellow); animation: job-verify-pulse 1.2s ease-in-out infinite; }
 .job--waiting { border-left-color: var(--magenta); animation: job-wait-pulse 2s ease-in-out infinite; }
+.job--saving { border-left-color: var(--cyan); animation: job-save-pulse 1.3s ease-in-out infinite; }
+.job--merging { border-left-color: var(--green); animation: job-merge-pulse 1.6s ease-in-out infinite; }
 
 .job__badges { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .badge--custom { color: var(--yellow); }
@@ -317,6 +321,8 @@ body::after {
 .badge--queued, .badge--cancelled { color: var(--muted); }
 .badge--verifying { color: var(--yellow); animation: badge-blink 0.8s steps(2, jump-none) infinite; }
 .badge--waiting { color: var(--magenta); animation: badge-blink 1.4s ease-in-out infinite; }
+.badge--saving { color: var(--cyan); animation: badge-blink 0.9s ease-in-out infinite; }
+.badge--merging { color: var(--green); animation: badge-blink 1s ease-in-out infinite; }
 
 .progress {
     height: 8px;
@@ -526,14 +532,54 @@ body::after {
 .job__waiting { color: var(--magenta); font-weight: 700; letter-spacing: 1px; }
 .job__waiting::after { content: '...'; display: inline-block; width: 1.5em; text-align: left; animation: wait-dots 1.4s steps(4, end) infinite; overflow: hidden; vertical-align: bottom; }
 
+/* A stopped recording being closed into its file: a cyan bar with a scan line, until the file is ready. */
+.progress--saving { position: relative; }
+.progress--saving .progress__bar {
+    width: 100%;
+    background: repeating-linear-gradient(90deg, var(--cyan) 0 10px, transparent 10px 14px);
+    box-shadow: 0 0 10px var(--cyan);
+    opacity: 0.6;
+}
+.progress--saving::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 28%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    animation: scan-sweep 0.9s linear infinite;
+}
+.job__saving { color: var(--cyan); font-weight: 700; letter-spacing: 1px; }
+.job__saving::after { content: '...'; display: inline-block; width: 1.5em; text-align: left; animation: wait-dots 1.4s steps(4, end) infinite; overflow: hidden; vertical-align: bottom; }
+
+/* Joining the parts of a recording: a bar that fills and a scan line that sweeps over it, until the file is ready. */
+.progress--merging { position: relative; }
+.progress--merging .progress__bar {
+    width: 100%;
+    background: repeating-linear-gradient(90deg, var(--green) 0 10px, transparent 10px 14px);
+    box-shadow: 0 0 10px var(--green);
+    opacity: 0.6;
+}
+.progress--merging::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 28%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    animation: scan-sweep 1.1s linear infinite;
+}
+.job__merging { color: var(--green); font-weight: 700; letter-spacing: 1px; }
+.job__merging::after { content: '...'; display: inline-block; width: 1.5em; text-align: left; animation: wait-dots 1.4s steps(4, end) infinite; overflow: hidden; vertical-align: bottom; }
+
 @keyframes verify-drain { from { width: 100%; } to { width: 0%; } }
 @keyframes scan-sweep { from { left: -28%; } to { left: 100%; } }
 @keyframes badge-blink { 50% { opacity: 0.35; } }
 @keyframes wait-dots { from { width: 0; } to { width: 1.5em; } }
 @keyframes job-verify-pulse { 50% { box-shadow: var(--glow-yellow), inset 0 0 18px var(--tint-yellow); } }
+@keyframes job-save-pulse { 50% { box-shadow: var(--glow-strong), inset 0 0 18px var(--tint-cyan); } }
+@keyframes job-merge-pulse { 50% { box-shadow: var(--glow-green), inset 0 0 18px var(--tint-green); } }
 @keyframes job-wait-pulse { 50% { box-shadow: var(--glow-hot), inset 0 0 18px var(--tint-cyan); } }
 @media (prefers-reduced-motion: reduce) {
-    .job--verifying, .job--waiting, .badge--verifying, .badge--waiting, .progress--verify::after, .progress--waiting::after, .job__waiting::after { animation: none; }
+    .job--verifying, .job--waiting, .job--merging, .job--saving, .badge--verifying, .badge--waiting, .badge--merging, .badge--saving, .progress--verify::after, .progress--waiting::after, .progress--merging::after, .progress--saving::after, .job__waiting::after, .job__merging::after, .job__saving::after { animation: none; }
     .progress--verify .progress__bar { animation: none; width: 100%; }
 }
 .link-row__folder { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; color: var(--muted); font-size: 12px; min-width: 0; }

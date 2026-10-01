@@ -121,6 +121,10 @@ export interface DownloadJob {
     waitingForLive: boolean;
     // Set while the app checks whether a live stream really ended.
     endCheck: LiveEndCheck | null;
+    // The parts of a live recording that was resumed are being joined into one file.
+    merging: boolean;
+    // STOP & SAVE was asked and the recording is being closed into its file.
+    saving: boolean;
 }
 
 export interface ProgressInfo {

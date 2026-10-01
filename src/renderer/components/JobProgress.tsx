@@ -8,7 +8,7 @@ interface JobProgressProps {
     t: Translator;
 }
 
-// The bar of a card: draining while a live stream's end is checked, sweeping while waiting for one to start,
+// The bar of a card: sweeping while a stopped recording is saved or its parts of a recording are joined, draining while a live stream's end is checked, sweeping while waiting for one to start,
 // striped while recording it, and a percentage otherwise.
 export function JobProgress({ job, phase, t }: JobProgressProps) {
     if (phase === 'verifying' && job.endCheck !== null) {
@@ -22,6 +22,20 @@ export function JobProgress({ job, phase, t }: JobProgressProps) {
                 aria-valuenow={job.endCheck.secondsLeft}
             >
                 <div className="progress__bar" style={{ animationDuration: `${job.endCheck.totalSeconds}s` }} />
+            </div>
+        );
+    }
+    if (phase === 'saving') {
+        return (
+            <div className="progress progress--saving" role="progressbar" aria-label={t('job.savingLabel')}>
+                <div className="progress__bar" />
+            </div>
+        );
+    }
+    if (phase === 'merging') {
+        return (
+            <div className="progress progress--merging" role="progressbar" aria-label={t('job.mergingLabel')}>
+                <div className="progress__bar" />
             </div>
         );
     }
@@ -66,6 +80,12 @@ export function JobMeta({ job, phase, t }: JobProgressProps) {
 function JobMetaMain({ job, phase, t }: JobProgressProps) {
     if (phase === 'verifying' && job.endCheck !== null) {
         return <span className="job__verifying">{t('job.verifyingText', { seconds: job.endCheck.secondsLeft })}</span>;
+    }
+    if (phase === 'saving') {
+        return <span className="job__saving">{t('job.savingText')}</span>;
+    }
+    if (phase === 'merging') {
+        return <span className="job__merging">{t('job.mergingText')}</span>;
     }
     if (phase === 'waiting') {
         return <span className="job__waiting">{t('job.waitingText')}</span>;

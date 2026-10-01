@@ -84,7 +84,10 @@ if (url.includes('partialfail') || url.includes('livefail')) {
             fs.appendFileSync(`${finalPath}.part`, Buffer.alloc(2048));
         }, 50);
     };
-    process.on('SIGINT', finish);
+    // Closing the file takes a moment, as it does for a real recording, so the "saving" state of the card can be seen.
+    process.on('SIGINT', () => {
+        setTimeout(finish, 1200);
+    });
     if (attempt) {
         // Reconnecting takes a moment, as a real attempt does.
         setTimeout(goLive, 1500);

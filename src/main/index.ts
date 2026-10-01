@@ -17,6 +17,7 @@ import { findPartialFiles, removeFiles } from './services/partialFiles';
 import { applyLanguage, translateMain } from './services/language';
 import { HistoryStore } from './services/historyStore';
 import { restartApplication } from './services/relaunch';
+import { mergeParts } from './services/partsMerger';
 import { salvageRecording } from './services/recordingSalvage';
 import { QueueManager } from './services/queueManager';
 import { SettingsStore } from './services/settingsStore';
@@ -182,6 +183,9 @@ function bootstrap(): void {
         },
         salvageRecording: (filePath) => {
             return salvageRecording({ ffmpegBinary: resolver.ffmpeg(settingsStore.get()).path, filePath });
+        },
+        mergeParts: (paths) => {
+            return mergeParts({ ffmpegBinary: resolver.ffmpeg(settingsStore.get()).path, paths });
         },
         findPartialFiles: (finalPath) => {
             return findPartialFiles(finalPath);

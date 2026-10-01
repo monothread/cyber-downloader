@@ -323,6 +323,73 @@ describe('JobCard live phases', () => {
         });
     });
 
+    describe('saving the file after STOP & SAVE', () => {
+        const saving = (overrides: Partial<DownloadJob> = {}) => {
+            return makeJob({ status: 'running', live: true, percent: 0, title: 'Live Show', elapsedSeconds: 754, saving: true, ...overrides });
+        };
+
+        it('shows the SAVING FILE badge, a sweeping bar and the explanation', () => {
+            const { container } = render(<JobCard job={saving()} {...makeHandlers()} />);
+            expect(screen.getByText('SAVING FILE')).toHaveClass('badge', 'badge--saving');
+            expect(screen.getByText('Saving the recording. Do not close the app')).toHaveClass('job__saving');
+            expect(screen.getByRole('progressbar', { name: 'Closing the recording and saving the file' })).toHaveClass('progress--saving');
+            expect(screen.getByTestId('job-card')).toHaveClass('job', 'job--running', 'job--saving');
+            expect(container.querySelector('.job__live')).toBeNull();
+            expect(screen.queryByText('RECORDING')).not.toBeInTheDocument();
+        });
+
+        it('replaces every action, so STOP & SAVE cannot be clicked twice', () => {
+            render(<JobCard job={saving()} {...makeHandlers()} />);
+            expect(screen.queryByRole('button', { name: 'STOP & SAVE' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'FINISH NOW' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'CANCEL' })).not.toBeInTheDocument();
+        });
+
+        it('goes from the recording view to saving as soon as the flag is set', () => {
+            const { rerender } = render(<JobCard job={saving({ saving: false })} {...makeHandlers()} />);
+            expect(screen.getByRole('button', { name: 'STOP & SAVE' })).toBeInTheDocument();
+            rerender(<JobCard job={saving()} {...makeHandlers()} />);
+            expect(screen.getByText('SAVING FILE')).toBeInTheDocument();
+        });
+
+        it('has no effect once the job is finished', () => {
+            render(<JobCard job={saving({ status: 'done' })} {...makeHandlers()} />);
+            expect(screen.getByText('COMPLETE')).toBeInTheDocument();
+            expect(screen.queryByText('SAVING FILE')).not.toBeInTheDocument();
+            expect(screen.getByTestId('job-card')).not.toHaveClass('job--saving');
+        });
+    });
+
+    describe('joining the parts of the recording', () => {
+        const merging = (overrides: Partial<DownloadJob> = {}) => {
+            return makeJob({ status: 'running', live: true, percent: 0, title: 'Live Show', elapsedSeconds: 754, merging: true, ...overrides });
+        };
+
+        it('shows the JOINING PARTS badge, a sweeping bar and the explanation', () => {
+            const { container } = render(<JobCard job={merging()} {...makeHandlers()} />);
+            expect(screen.getByText('JOINING PARTS')).toHaveClass('badge', 'badge--merging');
+            expect(screen.getByText('Joining the parts of the recording into one file')).toHaveClass('job__merging');
+            expect(screen.getByRole('progressbar', { name: 'Joining the parts of the recording into one file' })).toHaveClass('progress--merging');
+            expect(screen.getByTestId('job-card')).toHaveClass('job', 'job--running', 'job--merging');
+            expect(container.querySelector('.job__live')).toBeNull();
+            expect(screen.queryByText('RECORDING')).not.toBeInTheDocument();
+        });
+
+        it('has no actions while the files are being joined', () => {
+            render(<JobCard job={merging()} {...makeHandlers()} />);
+            expect(screen.queryByRole('button', { name: 'STOP & SAVE' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'FINISH NOW' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'CANCEL' })).not.toBeInTheDocument();
+        });
+
+        it('has no effect once the job is finished', () => {
+            render(<JobCard job={merging({ status: 'done' })} {...makeHandlers()} />);
+            expect(screen.getByText('COMPLETE')).toBeInTheDocument();
+            expect(screen.queryByText('JOINING PARTS')).not.toBeInTheDocument();
+            expect(screen.getByTestId('job-card')).not.toHaveClass('job--merging');
+        });
+    });
+
     describe('waiting for a scheduled live stream', () => {
         it('shows the WAITING FOR LIVE badge and a sweeping bar', () => {
             render(<JobCard job={waiting()} {...makeHandlers()} />);

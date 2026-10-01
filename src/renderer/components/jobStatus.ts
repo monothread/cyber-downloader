@@ -1,12 +1,19 @@
 import type { Translator } from '@shared/i18n';
 import type { DownloadError, DownloadJob, ErrorCode, JobStatus } from '@shared/types';
 
-export type LivePhase = 'verifying' | 'waiting';
+export type LivePhase = 'verifying' | 'waiting' | 'merging' | 'saving';
 
-// A running job is either checking whether a live stream really ended or waiting for a scheduled one to start.
-export function livePhase(job: Pick<DownloadJob, 'status' | 'endCheck' | 'waitingForLive'>): LivePhase | null {
+// A running job is either closing a recording that was told to stop, joining the parts of a live recording, checking whether a live stream really ended or waiting
+// for a scheduled one to start.
+export function livePhase(job: Pick<DownloadJob, 'status' | 'endCheck' | 'waitingForLive' | 'merging' | 'saving'>): LivePhase | null {
     if (job.status !== 'running') {
         return null;
+    }
+    if (job.merging) {
+        return 'merging';
+    }
+    if (job.saving) {
+        return 'saving';
     }
     if (job.endCheck !== null) {
         return 'verifying';

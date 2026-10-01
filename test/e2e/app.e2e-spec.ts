@@ -3,13 +3,14 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '../..');
 const ELECTRON_PATH = createRequire(__filename)('electron') as unknown as string;
 const FAKE_YTDLP = resolve(__dirname, 'fixtures/fake-yt-dlp.js');
+const FAKE_FFMPEG = resolve(__dirname, 'fixtures/fake-ffmpeg.js');
 const BUNDLED_DIR = join(ROOT, 'resources', 'bin');
 const HAS_BUNDLED_BINARIES = ['yt-dlp', 'ffmpeg', 'deno'].every((name) => {
     return existsSync(join(BUNDLED_DIR, name));
@@ -1846,8 +1847,8 @@ test.describe('end of live check and waiting for a live stream', () => {
         await expect(page.locator('.history__item--done')).toHaveCount(1);
     });
 
-    test('keeps recording in a new file of the same card when the stream comes back', async () => {
-        const { page, downloadDir } = await relaunchWith({ verifyLiveEnd: true, verifyLiveEndSeconds: 6 });
+    test('keeps recording in the same card when the stream comes back and joins the parts into one file', async () => {
+        const { page, downloadDir } = await relaunchWith({ verifyLiveEnd: true, verifyLiveEndSeconds: 6, ffmpegPath: FAKE_FFMPEG });
         await submitUrl(page, 'https://example.com/liveback');
 
         const card = page.getByTestId('job-card');
@@ -1858,10 +1859,32 @@ test.describe('end of live check and waiting for a live stream', () => {
         await expect(page.getByTestId('job-card')).toHaveCount(1);
 
         await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+        await expect(card.locator('.badge')).toHaveText('SAVING FILE');
+        await expect(card).toHaveClass(/job--saving/);
+        await expect(card.getByText('Saving the recording. Do not close the app')).toBeVisible();
+        await expect(card.getByRole('button')).toHaveCount(0);
+        await expect(card.locator('.badge')).toHaveText('JOINING PARTS');
+        await expect(card).toHaveClass(/job--merging/);
+        await expect(card.getByText('Joining the parts of the recording into one file')).toBeVisible();
+        await expect(card.getByRole('button')).toHaveCount(0);
         await expect(card.locator('.badge')).toHaveText('COMPLETE');
-        await expect(card.locator('.badge')).not.toHaveText('VERIFYING END');
-        expect(existsSync(join(downloadDir, 'Live Back [abc].mp4'))).toBe(true);
-        expect(existsSync(join(downloadDir, 'Live Back [abc] (part 2).mp4'))).toBe(true);
+        await expect(card).not.toHaveClass(/job--merging/);
+        expect(readdirSync(downloadDir)).toEqual(['Live Back [abc].mp4']);
+        expect(statSync(join(downloadDir, 'Live Back [abc].mp4')).size).toBeGreaterThan(2048);
+        await page.getByRole('button', { name: 'HISTORY' }).click();
+        await expect(page.locator('.history__item--done')).toHaveCount(1);
+    });
+
+    test('keeps every part in the folder when they cannot be joined', async () => {
+        const { page, downloadDir } = await relaunchWith({ verifyLiveEnd: true, verifyLiveEndSeconds: 6, ffmpegPath: '/nonexistent/ffmpeg' });
+        await submitUrl(page, 'https://example.com/liveback');
+
+        const card = page.getByTestId('job-card');
+        await expect(card.locator('.badge')).toHaveText('VERIFYING END');
+        await expect(card.locator('.badge')).toHaveText('RECORDING', { timeout: 10000 });
+        await card.getByRole('button', { name: 'STOP & SAVE' }).click();
+        await expect(card.locator('.badge')).toHaveText('COMPLETE');
+        expect(readdirSync(downloadDir).sort()).toEqual(['Live Back [abc] (part 2).mp4', 'Live Back [abc].mp4']);
         await page.getByRole('button', { name: 'HISTORY' }).click();
         await expect(page.locator('.history__item--done')).toHaveCount(1);
     });
@@ -1983,8 +2006,10 @@ test.describe('stopping and cancelling a recording whose ffmpeg is left behind',
         const pid = orphanPid();
 
         await card.getByRole('button', { name: 'STOP & SAVE' }).click();
-        await expect(card.locator('.badge')).not.toHaveText('RECORDING', { timeout: 25000 });
-        await expect(card.locator('.badge')).toHaveText(/COMPLETE|FAILED/);
+        await expect(card.locator('.badge')).toHaveText('SAVING FILE');
+        await expect(card.getByRole('button')).toHaveCount(0);
+        await expect(card.locator('.badge')).toHaveText(/COMPLETE|FAILED/, { timeout: 25000 });
+        await expect(card).not.toHaveClass(/job--saving/);
         await expect.poll(() => {
             return isAlive(pid);
         }).toBe(false);

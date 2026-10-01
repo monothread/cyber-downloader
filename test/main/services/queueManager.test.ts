@@ -178,7 +178,9 @@ describe('QueueManager.add', () => {
             hasPartial: false,
             customized: false,
             waitingForLive: false,
-            endCheck: null
+            endCheck: null,
+            merging: false,
+            saving: false
         });
         expect(updates.map((job) => {
             return job.status;
@@ -895,6 +897,65 @@ describe('QueueManager live recordings', () => {
         expect(history).toHaveLength(1);
     });
 
+    it('marks the card as saving as soon as stop is asked and until the file is closed', async () => {
+        const { queue, runs, updates } = setup();
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        runs[0]?.stop.mockImplementation(() => {
+            return undefined;
+        });
+        expect(queue.getJob('job-1')?.saving).toBe(false);
+        queue.stop('job-1');
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'running', saving: true });
+        expect(updates.at(-1)).toMatchObject({ id: 'job-1', status: 'running', saving: true });
+        runs[0]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: LIVE_FILE, saving: false });
+    });
+
+    it('keeps the card saving while a killed recording is converted into its file', async () => {
+        let finishSalvage: (path: string | null) => void = () => {
+            return undefined;
+        };
+        const salvageRecording = vi.fn().mockImplementation(() => {
+            return new Promise<string | null>((resolve) => {
+                finishSalvage = resolve;
+            });
+        });
+        const { queue, runs } = setup({}, { salvageRecording });
+        queue.add(URL_A);
+        runs[0]?.onInfo(liveInfo);
+        runs[0]?.stop.mockImplementation(() => {
+            return undefined;
+        });
+        queue.stop('job-1');
+        runs[0]?.resolve({ status: 'stopped' });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'running', saving: true });
+        finishSalvage(LIVE_FILE);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: LIVE_FILE, saving: false });
+    });
+
+    it('never marks a card as saving when stop is ignored', () => {
+        const { queue, runs } = setup();
+        queue.add(URL_A);
+        queue.stop('job-1');
+        queue.stop('missing');
+        expect(queue.getJob('job-1')?.saving).toBe(false);
+        expect(runs[0]?.stop).not.toHaveBeenCalled();
+    });
+
+    it('does not mark the card as saving when stop only ends the end check', async () => {
+        const context = setup({ verifyLiveEnd: true, verifyLiveEndSeconds: 10 });
+        context.queue.add(URL_A);
+        context.runs[0]?.onInfo(liveInfo);
+        context.runs[0]?.resolve({ status: 'done', filePath: LIVE_FILE });
+        await vi.advanceTimersByTimeAsync(0);
+        context.queue.stop('job-1');
+        expect(context.queue.getJob('job-1')).toMatchObject({ saving: false });
+    });
+
     it('stop ignores jobs that are not live, not running or unknown', async () => {
         const { queue, runs } = setup({ maxConcurrent: 1 });
         queue.add(URL_A);
@@ -1391,6 +1452,153 @@ describe('QueueManager end of live check', () => {
             context.queue.stop('job-1');
             await settle();
             expect(context.runs[1]?.stop).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('merging the parts when the stream came back', () => {
+        async function recordTwoParts(mergeParts: QueueDependencies['mergeParts'], extraDeps: Partial<QueueDependencies> = {}) {
+            const context = setup({ verifyLiveEnd: true, verifyLiveEndSeconds: 10 }, { mergeParts, ...extraDeps });
+            context.queue.add(URL_A);
+            context.runs[0]?.onInfo(liveInfo);
+            await endRecording(context);
+            context.runs[1]?.onInfo({ live: true, filePath: NEXT_FILE });
+            return context;
+        }
+
+        async function endSecondPart(context: Awaited<ReturnType<typeof recordTwoParts>>): Promise<void> {
+            context.runs[1]?.resolve({ status: 'done', filePath: NEXT_FILE });
+            await settle();
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 10);
+        }
+
+        it('joins the parts in order into the first file when the time runs out', async () => {
+            const mergeParts = vi.fn().mockResolvedValue(LIVE_FILE);
+            const context = await recordTwoParts(mergeParts);
+            await endSecondPart(context);
+            expect(mergeParts).toHaveBeenCalledTimes(1);
+            expect(mergeParts).toHaveBeenCalledWith([LIVE_FILE, NEXT_FILE]);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', percent: 100, filePath: LIVE_FILE, endCheck: null });
+            expect(context.history).toEqual([
+                { id: 'job-1', url: URL_A, title: URL_A, filePath: LIVE_FILE, status: 'done', errorTitle: null, finishedAt: expect.any(Number) }
+            ]);
+        });
+
+        it('keeps the card running until the merge ends', async () => {
+            let finishMerge: (path: string | null) => void = () => {
+                return undefined;
+            };
+            const mergeParts = vi.fn().mockImplementation(() => {
+                return new Promise<string | null>((resolve) => {
+                    finishMerge = resolve;
+                });
+            });
+            const context = await recordTwoParts(mergeParts);
+            await endSecondPart(context);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'running', filePath: null, merging: true });
+            expect(context.updates.at(-1)).toMatchObject({ id: 'job-1', status: 'running', merging: true });
+            expect(context.history).toEqual([]);
+            finishMerge(LIVE_FILE);
+            await settle();
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: LIVE_FILE, merging: false });
+            expect(context.history).toHaveLength(1);
+        });
+
+        it('joins the parts when the user ends the check by hand', async () => {
+            const mergeParts = vi.fn().mockResolvedValue(LIVE_FILE);
+            const context = await recordTwoParts(mergeParts);
+            context.runs[1]?.resolve({ status: 'done', filePath: NEXT_FILE });
+            await settle();
+            context.queue.stop('job-1');
+            await settle();
+            expect(mergeParts).toHaveBeenCalledWith([LIVE_FILE, NEXT_FILE]);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: LIVE_FILE });
+        });
+
+        it('joins the parts after STOP & SAVE of the resumed recording', async () => {
+            const mergeParts = vi.fn().mockResolvedValue(LIVE_FILE);
+            const salvageRecording = vi.fn().mockResolvedValue(NEXT_FILE);
+            const context = await recordTwoParts(mergeParts, { salvageRecording });
+            context.runs[1]?.resolve({ status: 'stopped' });
+            await settle();
+            expect(salvageRecording).toHaveBeenCalledWith(NEXT_FILE);
+            expect(mergeParts).toHaveBeenCalledTimes(1);
+            expect(mergeParts).toHaveBeenCalledWith([LIVE_FILE, NEXT_FILE]);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: LIVE_FILE });
+        });
+
+        it('finishes with the last part and keeps every file when the merge fails', async () => {
+            const mergeParts = vi.fn().mockResolvedValue(null);
+            const context = await recordTwoParts(mergeParts);
+            await endSecondPart(context);
+            expect(mergeParts).toHaveBeenCalledTimes(1);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: NEXT_FILE, merging: false });
+        });
+
+        it('finishes with the last part when the merge throws', async () => {
+            const mergeParts = vi.fn().mockRejectedValue(new Error('ffmpeg crashed'));
+            const context = await recordTwoParts(mergeParts);
+            await endSecondPart(context);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: NEXT_FILE, merging: false });
+        });
+
+        it('does not merge when the last part ended with an error', async () => {
+            const mergeParts = vi.fn().mockResolvedValue(LIVE_FILE);
+            const context = await recordTwoParts(mergeParts);
+            context.runs[1]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+            await settle();
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 10);
+            expect(mergeParts).not.toHaveBeenCalled();
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'error', error: DOWNLOAD_ERROR });
+        });
+
+        it('does not merge when the stream never came back', async () => {
+            const mergeParts = vi.fn().mockResolvedValue(LIVE_FILE);
+            const context = setup({ verifyLiveEnd: true, verifyLiveEndSeconds: 10 }, { mergeParts });
+            context.queue.add(URL_A);
+            context.runs[0]?.onInfo(liveInfo);
+            await endRecording(context);
+            await vi.advanceTimersByTimeAsync(LIVE_TICK_MS * 10);
+            expect(mergeParts).not.toHaveBeenCalled();
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: LIVE_FILE, merging: false });
+            expect(context.updates.some((job) => {
+                return job.merging;
+            })).toBe(false);
+        });
+
+        it('does not merge the files of a download that is not a resumed live recording', async () => {
+            const mergeParts = vi.fn().mockResolvedValue(LIVE_FILE);
+            const context = setup({}, { mergeParts });
+            context.queue.add(URL_A);
+            context.runs[0]?.onInfo({ live: false, filePath: LIVE_FILE });
+            context.runs[0]?.onInfo({ live: false, filePath: NEXT_FILE });
+            context.runs[0]?.resolve({ status: 'done', filePath: NEXT_FILE });
+            await settle();
+            expect(mergeParts).not.toHaveBeenCalled();
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: NEXT_FILE });
+        });
+
+        it('waits for the merge to end when the app is closed', async () => {
+            let finishMerge: (path: string | null) => void = () => {
+                return undefined;
+            };
+            const mergeParts = vi.fn().mockImplementation(() => {
+                return new Promise<string | null>((resolve) => {
+                    finishMerge = resolve;
+                });
+            });
+            const context = await recordTwoParts(mergeParts);
+            context.runs[1]?.resolve({ status: 'done', filePath: NEXT_FILE });
+            await settle();
+            let closed = false;
+            const shutdown = context.queue.shutdown(60000).then(() => {
+                closed = true;
+            });
+            await settle();
+            expect(closed).toBe(false);
+            finishMerge(LIVE_FILE);
+            await shutdown;
+            expect(closed).toBe(true);
+            expect(context.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: LIVE_FILE });
         });
     });
 

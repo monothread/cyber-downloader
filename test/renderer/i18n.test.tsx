@@ -178,6 +178,36 @@ describe('components in another language', () => {
     });
 
     it.each([
+        ['en', 'SAVING FILE', 'Closing the recording and saving the file', 'Saving the recording. Do not close the app'],
+        ['pt', 'SALVANDO ARQUIVO', 'Encerrando a gravação e salvando o arquivo', 'Salvando a gravação. Não feche o aplicativo'],
+        ['es', 'GUARDANDO ARCHIVO', 'Cerrando la grabación y guardando el archivo', 'Guardando la grabación. No cierres la aplicación'],
+        ['zh', '正在保存文件', '正在结束录制并保存文件', '正在保存录制内容，请勿关闭应用'],
+        ['ja', 'ファイル保存中', '録画を終了してファイルを保存しています', '録画を保存しています。アプリを閉じないでください']
+    ] as const)('translates the saving of a stopped recording in "%s"', (language, badge, label, text) => {
+        useLanguage(language);
+        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        render(<JobCard job={makeJob({ live: true, saving: true })} {...handlers} />);
+        expect(screen.getByText(badge)).toBeInTheDocument();
+        expect(screen.getByText(text)).toBeInTheDocument();
+        expect(screen.getByRole('progressbar', { name: label })).toBeInTheDocument();
+    });
+
+    it.each([
+        ['en', 'JOINING PARTS', 'Joining the parts of the recording into one file'],
+        ['pt', 'JUNTANDO PARTES', 'Juntando as partes da gravação em um único arquivo'],
+        ['es', 'UNIENDO PARTES', 'Uniendo las partes de la grabación en un solo archivo'],
+        ['zh', '合并分段', '正在将录制的各个分段合并为一个文件'],
+        ['ja', 'パート結合中', '録画のパートを1つのファイルに結合しています']
+    ] as const)('translates the joining of the parts of a recording in "%s"', (language, badge, text) => {
+        useLanguage(language);
+        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        render(<JobCard job={makeJob({ live: true, merging: true })} {...handlers} />);
+        expect(screen.getByText(badge)).toBeInTheDocument();
+        expect(screen.getByText(text)).toBeInTheDocument();
+        expect(screen.getByRole('progressbar', { name: text })).toBeInTheDocument();
+    });
+
+    it.each([
         ['en', 'VERIFYING END', 'The stream stopped. Checking whether it really ended… 6s', 'FINISH NOW', 'WAITING FOR LIVE', 'Waiting for the live stream to start'],
         ['pt', 'VERIFICANDO FIM', 'A transmissão parou. Verificando se realmente terminou… 6s', 'FINALIZAR AGORA', 'AGUARDANDO A LIVE', 'Aguardando a transmissão ao vivo começar'],
         ['es', 'VERIFICANDO FIN', 'La transmisión se detuvo. Comprobando si realmente terminó… 6s', 'FINALIZAR AHORA', 'ESPERANDO EL DIRECTO', 'Esperando a que empiece la transmisión en directo'],
