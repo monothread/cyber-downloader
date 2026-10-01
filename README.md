@@ -1,11 +1,11 @@
 # PULLWAVE — yt-dlp GUI for Linux and Windows
 
-Pullwave is a cyberpunk-themed desktop video downloader (Electron + React + TypeScript) for Linux and Windows: a graphical frontend that wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp). On Linux it also has an **anime section** built on [ani-cli](https://github.com/pystardust/ani-cli) (search, download, library and player).
+Pullwave is a cyberpunk-themed desktop video downloader (Electron + React + TypeScript) for Linux and Windows: a graphical frontend that wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp). It also has an **anime section** built on [ani-cli](https://github.com/pystardust/ani-cli) (search, download, library and player), on Linux and on Windows 10 (version 1903) or newer.
 
 > **Disclaimer:** every download made with this program is **at the user's own risk and responsibility**. The authors and contributors are not responsible for what is downloaded or for how it is used. You must only download content you have the right to download. See [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Install
-Download the file for your system from the [Releases page](https://github.com/monothread/pullwave/releases/latest). Nothing else has to be installed: yt-dlp, ffmpeg/ffprobe and deno are bundled (on Linux also ani-cli with the small tools it runs on).
+Download the file for your system from the [Releases page](https://github.com/monothread/pullwave/releases/latest). Nothing else has to be installed: yt-dlp, ffmpeg/ffprobe, deno and, for the anime section, ani-cli with the small tools it runs on are bundled.
 
 | System | File |
 |---|---|
@@ -44,8 +44,8 @@ Or right-click the file > Properties > Permissions > "Allow executing file as pr
 Once installed, the app checks for new versions by itself (Settings > APP UPDATES).
 
 ## Requirements
-- **Using the packaged app:** nothing else. yt-dlp, ffmpeg/ffprobe and deno are bundled; on Linux so are ani-cli, busybox and a static curl (the anime section never uses what is installed on the system).
-- **Developing:** Node.js 22+. To build the Linux packages you also need `rpm` (rpmbuild), `libarchive-tools` (bsdtar) and `zstd` (`npm run check:tools` tells you what is missing). `npm run fetch-binaries` downloads the bundled binaries into `resources/bin` (checksum-verified; `npm run dist` runs it automatically); on Linux that includes ani-cli, busybox and curl in `resources/bin/ani`.
+- **Using the packaged app:** nothing else. yt-dlp, ffmpeg/ffprobe and deno are bundled, and so are ani-cli, BusyBox and a static curl (the anime section never uses what is installed on the system).
+- **Developing:** Node.js 22+. To build the Linux packages you also need `rpm` (rpmbuild), `libarchive-tools` (bsdtar) and `zstd` (`npm run check:tools` tells you what is missing). `npm run fetch-binaries` downloads the bundled binaries into `resources/bin` (checksum-verified; `npm run dist` runs it automatically); that includes ani-cli, BusyBox and curl in `resources/bin/ani`.
 - You can still point to your own yt-dlp/ffmpeg in **Settings > Advanced**.
 
 ## Scripts
@@ -57,7 +57,7 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 | `npm run test:e2e` | Build + end-to-end tests (Playwright driving the real Electron app with a fake yt-dlp) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint (zero warnings allowed) |
-| `npm run fetch-binaries` | Download yt-dlp, ffmpeg and deno into `resources/bin` and, on Linux, ani-cli + busybox + curl into `resources/bin/ani` (`-- --force` to refresh) |
+| `npm run fetch-binaries` | Download yt-dlp, ffmpeg and deno into `resources/bin` and ani-cli + BusyBox + curl into `resources/bin/ani` (`-- --force` to refresh) |
 | `npm run dist` | Linux: check the rpm/pacman tools, fetch binaries, build, and package AppImage + deb + rpm + pacman into `dist/` (never publishes) |
 | `npm run dist:win` | Windows machine: same, for the NSIS installer |
 | `npm run release` / `npm run release:win` | Same as `dist` / `dist:win`, then upload to a draft GitHub Release (needs `GH_TOKEN`). CI workflows do the same on GitHub; see [`docs/RELEASING.md`](docs/RELEASING.md) |
@@ -84,10 +84,10 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 - **Find stream**: when yt-dlp does not understand a page, scan it (and, if needed, watch it in a hidden browser window) for the video stream and pick one to download
 - Self-updating app: checks GitHub Releases, one click to download and one to restart into the new version
 - Update yt-dlp from the UI (downloads the latest verified release into the app data folder)
-- **Anime (Linux only)**, see below
+- **Anime (Linux and Windows)**, see below
 
-## Anime (Linux)
-A section for anime on top of [ani-cli](https://github.com/pystardust/ani-cli), which ships inside the app together with the small tools it needs; nothing has to be installed.
+## Anime
+A section for anime on top of [ani-cli](https://github.com/pystardust/ani-cli), which ships inside the app together with the small tools it needs (BusyBox and curl; BusyBox for Windows on Windows); nothing has to be installed. It needs Windows 10 version 1903 or newer on Windows.
 
 - **Search** an anime (subtitled or dubbed), open it and see its episodes.
 - **Download** episodes or a whole season. The number of downloads running or waiting is a button at the top of the section; it opens the list on a screen of its own, with BACK to return.
@@ -97,7 +97,7 @@ A section for anime on top of [ani-cli](https://github.com/pystardust/ani-cli), 
 - **Subtitles** in the language of the app (or one chosen in Settings > ANIME), when the source offers it.
 - ani-cli's version is shown at the top; **UPDATE ANI-CLI** in Settings fetches the latest one (checked before it is installed).
 
-The episodes come from an external source that ani-cli reads; it can change or block requests at any time, and updating ani-cli is often what fixes it. The same disclaimer applies: see [DISCLAIMER.md](DISCLAIMER.md). Some codecs may not play inside the app.
+The episodes come from an external source that ani-cli reads; it can change or block requests at any time, and updating ani-cli is often what fixes it. Some antivirus programs distrust small unsigned tools such as BusyBox or curl; they are the official builds, pinned by checksum (see `resources/THIRD_PARTY_NOTICES.md`). The same disclaimer applies: see [DISCLAIMER.md](DISCLAIMER.md). Some codecs may not play inside the app.
 
 ## Find stream
 When a download fails because yt-dlp does not understand the page (for example "Unsupported URL"), the job card shows **FIND STREAM**. The app first scans the page's HTML, then, if nothing is found, loads the page in a hidden, sandboxed browser window for up to 25 seconds and watches which video playlists/files it requests. You choose one of the streams found and it is downloaded like any other link (with the page as referer).

@@ -37,8 +37,8 @@ Rules that keep the updater working:
 - The repository must be **public** (the app does not carry a token).
 - The bundled yt-dlp has its own update mechanism (the "UPDATE YT-DLP" button), independent of the app version.
 - ffmpeg and deno only change when you rebuild the package (`npm run fetch-binaries -- --force`) and release a new version.
-- On Linux `npm run fetch-binaries` (run by `npm run dist` / `npm run release`) also downloads **ani-cli, busybox and curl** into `resources/bin/ani`, each pinned to one version and one sha256 in `scripts/fetch-binaries.mjs`. To move to a newer ani-cli, change the commit and hash there (the in-app "UPDATE ANI-CLI" button is independent, like the yt-dlp one). The Windows build does not include them. busybox.net publishes no checksums, so its hash is pinned in the script.
-- The anime section (Linux only) is not covered by the CI workflows' tests of a real ani-cli; run `npm run test:e2e` locally (it uses a fake one) before releasing.
+- `npm run fetch-binaries` (run by `npm run dist` / `npm run release`) also downloads **ani-cli, busybox and curl** into `resources/bin/ani` (`busybox.exe` and `curl.exe` on Windows), each pinned to one version and one sha256 in `scripts/fetch-binaries.mjs`. To move to a newer ani-cli, change the commit and hash there (the in-app "UPDATE ANI-CLI" button is independent, like the yt-dlp one). busybox.net publishes no checksums, so the Linux hash is pinned in the script; the Windows build (busybox-w32 from frippery.org) is also compared with the signed `SHA256SUM` the site publishes.
+- Before releasing, run `npm run test:e2e` locally (Linux, with a fake ani-cli) and the **Test Windows** workflow (Actions tab; `live=true` also runs the tests that use the real source, which needs the network and can fail because of the source). The Windows installer is not code-signed; antivirus programs may distrust BusyBox/curl, which are the official builds.
 - Code signing is not required on Linux. On Windows it is optional, but unsigned installers trigger a SmartScreen warning.
 
 ## Troubleshooting
