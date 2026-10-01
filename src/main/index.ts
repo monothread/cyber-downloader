@@ -15,7 +15,7 @@ import { createElectronTray } from './services/electronTray';
 import { getElectronUpdater } from './services/electronUpdater';
 import { findPartialFiles, removeFiles } from './services/partialFiles';
 import { HistoryStore } from './services/historyStore';
-import { buildRelaunchOptions } from './services/relaunch';
+import { restartApplication } from './services/relaunch';
 import { salvageRecording } from './services/recordingSalvage';
 import { QueueManager } from './services/queueManager';
 import { SettingsStore } from './services/settingsStore';
@@ -238,7 +238,14 @@ function bootstrap(): void {
             return confirmPending(RESTART_PROMPT, pending);
         },
         quit: () => {
-            app.relaunch(buildRelaunchOptions(process.env, process.argv));
+            restartApplication({
+                relaunch: (options) => {
+                    app.relaunch(options);
+                },
+                env: process.env,
+                argv: process.argv,
+                pid: process.pid
+            });
             app.quit();
         }
     });
