@@ -1,0 +1,67 @@
+name: Verify Windows installer
+
+# Throwaway: runs the published Windows installer the way a double click would and reports what it really did (where it
+# installed, shortcuts, the uninstall entry, where the app runs from). Prints facts; it does not fail on them.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release to check (without the v)'
+        default: '0.9.0'
+  push:
+    branches: [feature/anime-windows]
+    paths: ['.github/workflows/verify-installer.yml']
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ inputs.version || '0.9.0' }}
+    steps:
+      - name: Download the installer
+        shell: pwsh
+        run: |
+          $url = "https://github.com/monothread/pullwave/releases/download/v$env:VERSION/pullwave-$env:VERSION-setup.exe"
+          Invoke-WebRequest -Uri $url -OutFile setup.exe
+          Get-Item setup.exe | Format-List Name, Length
+          "sha512 (base64) = " + [Convert]::ToBase64String((Get-FileHash setup.exe -Algorithm SHA512).Hash -split '(?<=\G..)' | Where-Object { $_ } | ForEach-Object { [Convert]::ToByte($_, 16) })
+          Get-AuthenticodeSignature setup.exe | Format-List Status, StatusMessage
+          "Mark of the web (Zone.Identifier) present: " + (Test-Path 'setup.exe:Zone.Identifier')
+
+      - name: Before
+        shell: pwsh
+        run: |
+          "install folders under LocalAppData\Programs:"
+          Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+          "uninstall entries mentioning pullwave:"
+          Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -match 'pullwave' } | Select-Object DisplayName, DisplayVersion, InstallLocation
+
+      - name: Run it like a double click (no arguments) and wait
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath (Resolve-Path setup.exe) -PassThru
+          "installer process id $($p.Id)"
+          foreach ($second in 5, 10, 20, 30, 45, 60, 90) {
+            Start-Sleep -Seconds 5
+            $running = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'pullwave|setup' } | ForEach-Object { "{0} (pid {1}) {2}" -f $_.Name, $_.Id, $_.Path }
+            "t+~$second s: installer exited = $($p.HasExited); processes: " + ($running -join ' | ')
+            if ($p.HasExited -and $second -ge 30) { break }
+          }
+          if ($p.HasExited) { "installer exit code: $($p.ExitCode)" }
+
+      - name: After
+        if: always()
+        shell: pwsh
+        run: |
+          "== install folders under LocalAppData\Programs"
+          Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName; Get-ChildItem $_.FullName | Select-Object -First 12 | ForEach-Object { '   ' + $_.Name } }
+          "== uninstall entries"
+          Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -match 'pullwave' } | Format-List DisplayName, DisplayVersion, InstallLocation, UninstallString
+          "== shortcuts"
+          Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'pullwave' } | ForEach-Object { $_.FullName }
+          Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'pullwave' } | ForEach-Object { $_.FullName }
+          "== processes"
+          Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'pullwave' } | Select-Object -First 3 Name, Id, Path | Format-Table -AutoSize
+          "== app data"
+          Get-ChildItem "$env:APPDATA" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'pullwave' } | ForEach-Object { $_.FullName }
