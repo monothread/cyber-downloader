@@ -4,6 +4,9 @@ name: Anime Windows spike
 # It mimics the isolated environment the app gives ani-cli: only the bundled folders on Path plus a few system variables.
 on:
   workflow_dispatch:
+  push:
+    branches: [feature/anime-windows]
+    paths: ['.github/workflows/anime-windows-spike.yml', 'scripts/spike/**', 'resources/ani-scripts/**']
 
 jobs:
   spike:
