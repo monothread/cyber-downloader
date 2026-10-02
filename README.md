@@ -91,10 +91,11 @@ A section for anime on top of [ani-cli](https://github.com/pystardust/ani-cli), 
 
 - **Search** an anime (subtitled or dubbed), open it and see its episodes.
 - **Download** episodes or a whole season. The number of downloads running or waiting is a button at the top of the section; it opens the list on a screen of its own, with BACK to return.
-- **Library:** what was downloaded (kept in a local SQLite database), with sizes, where you stopped watching and what failed. Removing an episode or an anime also deletes its files, and an anime's folder.
-- **Player** inside the app: seek, subtitles, resume where you stopped and next episode.
+- **Library:** what was downloaded (kept in a local SQLite database), with sizes, where you stopped watching and what failed. Each episode is saved in a folder of its own (`<anime>/Episode N/`) with its video and all its subtitles. Search the library by title, mark an episode as watched (or not; it counts as watched from 75% too), open the folder of an anime, jump between the library and the search for the same anime (GET MORE EPISODES / VIEW IN LIBRARY). Removing an episode or an anime also deletes its files, and its folder.
+- **Player** inside the app, with its own controls in the theme: play/pause, seek, volume, fullscreen (click to pause, double click for fullscreen), previous and next episode, resume where you stopped, the size of the subtitles (A- / A+) and, for downloaded episodes, a choice of subtitle.
 - **Watch without downloading:** pick one episode and press WATCH.
-- **Subtitles** in the language of the app (or one chosen in Settings > ANIME), when the source offers it.
+- **Subtitles** in the language of the app (or one chosen in Settings > ANIME), when the source offers it. Every language the source offers is saved with a new download and can be chosen in the player; you can also load your own `.vtt` or `.srt` file for one episode (LOAD SUBTITLE).
+- **IMPORT LIBRARY** rebuilds the library from a folder (after a new computer or a reinstall, or when you renamed or moved a folder): episodes downloaded from now on keep a small `pullwave.json` next to the video and come back exactly, as they were, with where you stopped watching; older ones are recognized by their names. An episode whose file is gone is marked in the library.
 - ani-cli's version is shown at the top; **UPDATE ANI-CLI** in Settings fetches the latest one (checked before it is installed).
 
 The episodes come from an external source that ani-cli reads; it can change or block requests at any time, and updating ani-cli is often what fixes it. Some antivirus programs distrust small unsigned tools such as BusyBox or curl; they are the official builds, pinned by checksum (see `resources/THIRD_PARTY_NOTICES.md`). The same disclaimer applies: see [DISCLAIMER.md](DISCLAIMER.md). Some codecs may not play inside the app.

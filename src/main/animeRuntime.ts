@@ -11,11 +11,15 @@ import { AniCliService } from './services/aniCliService';
 import { subtitleLabels } from './services/aniSubtitles';
 import { AnimeDb } from './services/animeDb';
 import { AnimeDownloadQueue } from './services/animeDownloadQueue';
-import { animeBaseDirectory, removeDirectories, subtitlePathFor } from './services/animeFiles';
+import { animeBaseDirectory, removeDirectories, removeEmptyDirectories } from './services/animeFiles';
 import type { BinaryResolver } from './services/binaryResolver';
 import type { MediaSource } from './services/mediaProtocol';
 import { createStreamHandler, StreamSessions } from './services/streamProxy';
 import { removeFiles } from './services/partialFiles';
+import { refreshEpisodeMetadata } from './services/episodeMetadata';
+import { importLibrary } from './services/libraryImport';
+import { scanLibraryFolder, type ScanFileSystem } from './services/libraryScan';
+import { defaultSubtitleFileSystem, importSubtitle, listSubtitleTracks, resolveSubtitlePath, type SubtitleFileSystem } from './services/subtitleFiles';
 
 // A file the player has just let go of can still be held for a moment (Windows will not delete it then): what is left is
 // removed again after this long.
@@ -36,11 +40,22 @@ export interface AnimeRuntimeOptions {
     // A different ani-cli to run instead of the one that ships with the app (used by the end-to-end tests).
     customScriptPath?: () => string;
     // How files and folders are deleted (the tests replace it).
-    remover?: { files: (paths: string[]) => void; folders: (paths: string[]) => void };
+    remover?: { files: (paths: string[]) => void; folders: (paths: string[]) => void; emptyFolders?: (paths: string[]) => void };
     // How long to wait before removing again what could not be removed at first (the tests make it short).
     removeRetryMs?: number;
     // How the update of ani-cli reaches the network and checks what it got (the end-to-end tests replace it).
     updaterDependencies?: AniCliUpdaterDependencies;
+    // Asks the user for a folder of anime to put into the library, starting at the given folder; null when they gave up (the
+    // tests replace it).
+    chooseLibraryFolder?: (startAt: string) => Promise<string | null>;
+    // How the folders of anime are read (the tests replace it).
+    scanFiles?: ScanFileSystem;
+    // Opens a folder in the file manager of the system (the tests replace it).
+    openFolder?: (path: string) => void;
+    // Asks the user for a subtitle file to load; null when they gave up (the tests replace it).
+    chooseSubtitleFile?: () => Promise<string | null>;
+    // How the files next to a video are read and written (the tests replace it).
+    subtitleFiles?: SubtitleFileSystem;
     send: (channel: string, payload?: unknown) => void;
 }
 
@@ -119,6 +134,12 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
             mkdirSync(path, { recursive: true });
         },
         fileSize,
+        directoryExists: (path) => {
+            return existsSync(path);
+        },
+        onEpisodeDownloaded: (episodeId) => {
+            refreshEpisodeMetadata(db, episodeId, options.subtitleFiles ?? defaultSubtitleFileSystem, options.platform);
+        },
         onJobUpdate: (job) => {
             options.send(IPC.eventAnimeJob, job);
         },
@@ -126,13 +147,18 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
             options.send(IPC.eventAnimeLibrary);
         }
     });
+    // The video of a downloaded episode, or null when it has none.
+    const downloadedFile = (episodeId: number): string | null => {
+        const episode = db.getEpisode(episodeId);
+        return episode && episode.status === 'done' ? episode.filePath : null;
+    };
     const media: MediaSource = {
-        resolve: (kind, episodeId) => {
-            const episode = db.getEpisode(episodeId);
-            if (!episode || episode.status !== 'done' || episode.filePath === null) {
+        resolve: (kind, episodeId, trackId) => {
+            const filePath = downloadedFile(episodeId);
+            if (filePath === null) {
                 return null;
             }
-            return kind === 'episode' ? episode.filePath : subtitlePathFor(episode.filePath);
+            return kind === 'episode' ? filePath : resolveSubtitlePath(filePath, trackId, options.subtitleFiles);
         }
     };
     const streams = new StreamSessions();
@@ -162,12 +188,60 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
                 remove(paths);
                 removeAgainLater(paths, remove, options.removeRetryMs ?? REMOVE_RETRY_MS);
             },
+            removeEmptyFolders: (paths) => {
+                const remove = options.remover?.emptyFolders ?? removeEmptyDirectories;
+                remove(paths);
+                removeAgainLater(paths, remove, options.removeRetryMs ?? REMOVE_RETRY_MS);
+            },
+            fileExists: (path) => {
+                return fileSize(path) !== null;
+            },
+            refreshMetadata: (episodeId) => {
+                refreshEpisodeMetadata(db, episodeId, options.subtitleFiles ?? defaultSubtitleFileSystem, options.platform);
+            },
+            importLibrary: async () => {
+                const settings = options.getSettings();
+                const startAt = animeBaseDirectory(settings, options.defaultDownloadDir, options.platform);
+                const chosen = await (options.chooseLibraryFolder?.(startAt) ?? Promise.resolve(null));
+                if (chosen === null) {
+                    return { ok: false, reason: 'cancelled' };
+                }
+                const summary = importLibrary(db, scanLibraryFolder(chosen, options.scanFiles), {
+                    defaultAudio: settings.animeAudio,
+                    fileSize,
+                    onEpisodeSaved: (episodeId) => {
+                        refreshEpisodeMetadata(db, episodeId, options.subtitleFiles ?? defaultSubtitleFileSystem, options.platform);
+                    }
+                });
+                return { ok: true, ...summary };
+            },
+            openFolder: (path) => {
+                options.openFolder?.(path);
+            },
             platform: options.platform,
             baseDirectory: () => {
                 return animeBaseDirectory(options.getSettings(), options.defaultDownloadDir, options.platform);
             },
             onLibraryChanged: () => {
                 options.send(IPC.eventAnimeLibrary);
+            },
+            subtitles: {
+                list: (episodeId) => {
+                    const filePath = downloadedFile(episodeId);
+                    return filePath === null ? [] : listSubtitleTracks(filePath, options.subtitleFiles);
+                },
+                import: async (episodeId) => {
+                    const filePath = downloadedFile(episodeId);
+                    if (filePath === null) {
+                        return { ok: false, reason: 'missing' };
+                    }
+                    return importSubtitle(filePath, {
+                        chooseFile: options.chooseSubtitleFile ?? ((): Promise<string | null> => {
+                            return Promise.resolve(null);
+                        }),
+                        files: options.subtitleFiles
+                    });
+                }
             }
         }
     };

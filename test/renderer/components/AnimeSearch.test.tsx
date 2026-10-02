@@ -91,6 +91,26 @@ describe('AnimeSearch results', () => {
         expect(screen.getByRole('button', { name: 'OPEN: Cyberpunk: Edgerunners 2' })).toBeInTheDocument();
     });
 
+    it('has a button to the library on the results that are already downloaded, and only on them', async () => {
+        const user = userEvent.setup();
+        const showInLibrary = vi.fn();
+        useAnimeStore.setState({
+            search: { ...INITIAL_SEARCH, status: 'done', results: RESULTS, searchedQuery: 'cyberpunk', searchedAudio: 'sub' },
+            library: [
+                makeAnime([makeEpisode({ id: 1 })], { id: 4, title: 'Cyberpunk: Edgerunners', audio: 'sub' }),
+                makeAnime([makeEpisode({ id: 2 })], { id: 5, title: 'Cyberpunk: Edgerunners 2', audio: 'dub' })
+            ],
+            showInLibrary
+        });
+        render(<AnimeSearch />);
+
+        expect(screen.getAllByRole('button', { name: /^VIEW IN LIBRARY/ })).toHaveLength(1);
+        expect(screen.queryByRole('button', { name: 'VIEW IN LIBRARY: Cyberpunk: Edgerunners 2' })).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'VIEW IN LIBRARY: Cyberpunk: Edgerunners' }));
+        expect(showInLibrary).toHaveBeenCalledTimes(1);
+        expect(showInLibrary).toHaveBeenCalledWith(4);
+    });
+
     it('says when nothing was found', () => {
         useAnimeStore.setState({ search: { ...INITIAL_SEARCH, status: 'done', results: [] } });
         render(<AnimeSearch />);
@@ -184,14 +204,22 @@ describe('AnimeDetail', () => {
         expect(screen.getByRole('button', { name: 'EP 3' })).toHaveAttribute('aria-pressed', 'false');
     });
 
-    it('downloads the whole season', async () => {
+    it('downloads the whole season by selecting all and downloading the selection', async () => {
         const user = userEvent.setup();
         mock.api.downloadAnime.mockResolvedValue({ ok: true, anime: makeAnime([]) });
         open(['1', '2', '3']);
         render(<AnimeSearch />);
 
-        await user.click(screen.getByRole('button', { name: 'DOWNLOAD WHOLE SEASON (3)' }));
+        await user.click(screen.getByRole('button', { name: 'SELECT ALL' }));
+        await user.click(screen.getByRole('button', { name: 'DOWNLOAD SELECTED (3)' }));
+        expect(mock.api.downloadAnime).toHaveBeenCalledTimes(1);
         expect(mock.api.downloadAnime).toHaveBeenCalledWith({ title: 'Cyberpunk: Edgerunners', query: 'cyberpunk', index: 1, audio: 'sub', episodes: ['1', '2', '3'] });
+    });
+
+    it('has no separate button for the whole season', () => {
+        open(['1', '2', '3']);
+        render(<AnimeSearch />);
+        expect(screen.queryByRole('button', { name: /WHOLE SEASON/ })).not.toBeInTheDocument();
     });
 
     describe('watching without downloading', () => {
@@ -267,6 +295,39 @@ describe('AnimeDetail', () => {
         expect(screen.getByRole('button', { name: 'EP 2' })).not.toHaveClass('episode-chip--done');
         expect(screen.getByRole('button', { name: 'EP 2' })).not.toHaveAttribute('title');
         expect(screen.getByRole('button', { name: 'EP 3' })).not.toHaveClass('episode-chip--done');
+    });
+
+    it('has a button to the library when the anime has an episode downloaded', async () => {
+        const user = userEvent.setup();
+        const showInLibrary = vi.fn();
+        open(['1', '2']);
+        useAnimeStore.setState({ library: [makeAnime([makeEpisode({ id: 1, number: '1' })], { id: 4, title: 'Cyberpunk: Edgerunners', audio: 'sub' })], showInLibrary });
+        render(<AnimeSearch />);
+
+        await user.click(screen.getByRole('button', { name: 'VIEW IN LIBRARY' }));
+        expect(showInLibrary).toHaveBeenCalledTimes(1);
+        expect(showInLibrary).toHaveBeenCalledWith(4);
+    });
+
+    it('has no button to the library when nothing of the anime is downloaded for this audio', () => {
+        open(['1']);
+        useAnimeStore.setState({
+            library: [
+                makeAnime([makeEpisode({ id: 1, status: 'error' })], { id: 4, title: 'Cyberpunk: Edgerunners', audio: 'sub' }),
+                makeAnime([makeEpisode({ id: 2 })], { id: 5, title: 'Cyberpunk: Edgerunners', audio: 'dub' })
+            ]
+        });
+        render(<AnimeSearch />);
+        expect(screen.queryByRole('button', { name: 'VIEW IN LIBRARY' })).not.toBeInTheDocument();
+    });
+
+    it('goes to the library with that anime open when the button is used', async () => {
+        const user = userEvent.setup();
+        open(['1']);
+        useAnimeStore.setState({ library: [makeAnime([makeEpisode({ id: 1, number: '1' })], { id: 4, title: 'Cyberpunk: Edgerunners', audio: 'sub' })] });
+        render(<AnimeSearch />);
+        await user.click(screen.getByRole('button', { name: 'VIEW IN LIBRARY' }));
+        expect(useAnimeStore.getState()).toMatchObject({ view: 'library', selection: null, libraryFocus: 4 });
     });
 
     it('does not mark anything when the anime is not in the library', () => {

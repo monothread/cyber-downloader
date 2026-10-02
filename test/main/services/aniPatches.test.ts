@@ -6,6 +6,10 @@ const SUBTITLES = [
     `    sub_link="$(printf "%s" "$_json" | sed 's|.*"subtitles":\\[||; s|}\\].*||; s|},{|}\\n{|g' | grep -m 1 '"default":true' | sed -nE 's|.*"src":"([^"]*)".*|\\1|p')"`,
     '}'
 ].join('\n');
+const ALL_SUBTITLES = [
+    '    # quality variants are relative to the master playlist',
+    '    command -v "yt-dlp" >/dev/null && yt-dlp --referer "$refr" "$1" -o x'
+].join('\n');
 const DEBUG = '        debug) printf "All links:\\n%s\\nSelected link:\\n%s\\nSubtitles:\\n%s\\n" "$links" "$video_link" "$sub_link" ;;';
 
 describe('patchAniCli', () => {
@@ -20,6 +24,15 @@ describe('patchAniCli', () => {
         expect(patchAniCli(SUBTITLES)).not.toContain('Referer:');
         expect(patchAniCli(DEBUG)).toContain('Referer:\\n%s\\n');
         expect(patchAniCli(DEBUG)).not.toContain('pullwave_pick_subtitle');
+    });
+
+    it('saves all the subtitles when that part of the script fits', () => {
+        const script = `${SUBTITLES}\n${ALL_SUBTITLES}`;
+        const patched = patchAniCli(script) as string;
+        expect(patched).toContain('pullwave_save_subtitles "$download_dir/$_name"');
+        expect(patched).toContain('pullwave_all_subs=');
+        expect(patched).toContain('pullwave_pick_subtitle "$_json"');
+        expect(patchAniCli(ALL_SUBTITLES)).toBeNull();
     });
 
     it('gives null when nothing fits', () => {

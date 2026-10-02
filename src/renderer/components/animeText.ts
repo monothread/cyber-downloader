@@ -1,11 +1,11 @@
-import type { AniErrorCode, AnimeEpisodeRecord, AnimeEpisodeStatus, AnimeJob, LibraryAnime } from '@shared/anime';
+import type { AniErrorCode, AnimeAudio, AnimeEpisodeRecord, AnimeEpisodeStatus, AnimeJob, LibraryAnime } from '@shared/anime';
 import type { MessageKey } from '@shared/i18n';
 
 // An episode is only offered to resume when a bit was watched and it is not about to end.
 export const MIN_RESUME_SECONDS = 5;
 export const END_MARGIN_SECONDS = 30;
 // Past this share of the episode it counts as watched.
-export const WATCHED_RATIO = 0.9;
+export const WATCHED_RATIO = 0.75;
 
 const ERROR_KEYS: Record<AniErrorCode, MessageKey> = {
     NO_RESULTS: 'anime.error.NO_RESULTS',
@@ -47,13 +47,23 @@ export function resumePosition(episode: AnimeEpisodeRecord): number | null {
     return positionSeconds;
 }
 
-// The episode that follows in the library, if it is already downloaded.
-export function nextDownloadedEpisode(anime: LibraryAnime, current: AnimeEpisodeRecord): AnimeEpisodeRecord | null {
+// The episode next to this one in the library (after it for 1, before it for -1), if it is already downloaded.
+function adjacentDownloadedEpisode(anime: LibraryAnime, current: AnimeEpisodeRecord, direction: 1 | -1): AnimeEpisodeRecord | null {
     const position = anime.episodes.findIndex((episode) => {
         return episode.id === current.id;
     });
-    const next = position === -1 ? undefined : anime.episodes[position + 1];
-    return next?.status === 'done' ? next : null;
+    const adjacent = position === -1 ? undefined : anime.episodes[position + direction];
+    return adjacent?.status === 'done' ? adjacent : null;
+}
+
+// The episode that follows in the library, if it is already downloaded.
+export function nextDownloadedEpisode(anime: LibraryAnime, current: AnimeEpisodeRecord): AnimeEpisodeRecord | null {
+    return adjacentDownloadedEpisode(anime, current, 1);
+}
+
+// The episode that comes before in the library, if it is already downloaded.
+export function previousDownloadedEpisode(anime: LibraryAnime, current: AnimeEpisodeRecord): AnimeEpisodeRecord | null {
+    return adjacentDownloadedEpisode(anime, current, -1);
 }
 
 export function isWatched(positionSeconds: number, durationSeconds: number): boolean {
@@ -64,6 +74,25 @@ export function downloadedCount(anime: LibraryAnime): number {
     return anime.episodes.filter((episode) => {
         return episode.status === 'done';
     }).length;
+}
+
+// The anime of the library that has this title and audio, when at least one of its episodes is downloaded.
+export function downloadedAnime(library: readonly LibraryAnime[], title: string, audio: AnimeAudio): LibraryAnime | null {
+    const found = library.find((candidate) => {
+        return candidate.title === title && candidate.audio === audio;
+    });
+    return found && downloadedCount(found) > 0 ? found : null;
+}
+
+function foldText(text: string): string {
+    return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+// Whether a title matches what was typed in the search of the library: no matter the case or the accents, and an empty search
+// matches everything.
+export function matchesSearch(title: string, search: string): boolean {
+    const wanted = foldText(search.trim());
+    return wanted.length === 0 || foldText(title).includes(wanted);
 }
 
 // The downloads that are happening or waiting: what the button of the downloads screen counts.

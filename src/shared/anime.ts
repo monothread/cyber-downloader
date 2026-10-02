@@ -71,6 +71,8 @@ export interface AnimeEpisodeRecord {
     durationSeconds: number;
     watched: boolean;
     downloadedAt: number | null;
+    // The episode is in the library as downloaded but its file is not on the disk any more (filled in when the library is listed).
+    fileMissing: boolean;
 }
 
 export interface LibraryAnime extends AnimeRecord {
@@ -131,9 +133,37 @@ export const ANIME_MEDIA_SCHEME = 'pullwave-media';
 export type AnimeMediaKind = 'episode' | 'subtitle';
 
 // Where the player gets a video (or its subtitles) from: the main process serves the file of that episode.
-export function animeMediaUrl(kind: AnimeMediaKind, episodeId: number): string {
-    return `${ANIME_MEDIA_SCHEME}://${kind}/${episodeId}`;
+export function animeMediaUrl(kind: AnimeMediaKind, episodeId: number, trackId = ''): string {
+    const base = `${ANIME_MEDIA_SCHEME}://${kind}/${episodeId}`;
+    return trackId.length > 0 ? `${base}/${encodeURIComponent(trackId)}` : base;
 }
+
+// A subtitle file of a downloaded episode: the one ani-cli picked, the others the source offered, or one the user loaded.
+export type AnimeSubtitleKind = 'default' | 'source' | 'imported';
+
+export interface AnimeSubtitleTrack {
+    // What identifies it among the subtitles of the episode (empty for the one ani-cli picked).
+    id: string;
+    label: string;
+    kind: AnimeSubtitleKind;
+}
+
+// What importing a folder of anime did: the episodes it added to the library, the ones whose file it pointed to a new place, the
+// ones that were already there, and the videos it could not tell the episode of.
+export interface AnimeImportSummary {
+    added: number;
+    relinked: number;
+    skipped: number;
+    ignored: number;
+}
+
+export type AnimeImportResponse = ({ ok: true } & AnimeImportSummary) | { ok: false; reason: 'cancelled' };
+
+export const MAX_SUBTITLE_BYTES = 5 * 1024 * 1024;
+
+export type AnimeSubtitleImportResponse =
+    | { ok: true; tracks: AnimeSubtitleTrack[]; imported: AnimeSubtitleTrack }
+    | { ok: false; reason: 'cancelled' | 'unsupported' | 'too-large' | 'unreadable' | 'missing' };
 
 export const ANIME_STREAM_SCHEME = 'pullwave-stream';
 

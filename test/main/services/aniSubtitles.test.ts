@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import { join } from 'node:path';
 import { ANIME_SUBTITLE_LANGUAGES, ANIME_SUBTITLE_SETTINGS } from '@shared/anime';
 import { executableName } from '@main/services/binaryResolver';
-import { patchSubtitleSelection, SUBTITLE_LABELS_VARIABLE, SUBTITLE_PICK_FUNCTION, subtitleLabels } from '@main/services/aniSubtitles';
+import { patchAllSubtitles, patchSubtitleSelection, SAVE_SUBTITLES_FUNCTION, SUBTITLE_LABELS_VARIABLE, SUBTITLE_PICK_FUNCTION, subtitleLabels } from '@main/services/aniSubtitles';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
 
 const ROOT = join(__dirname, '../../..');
@@ -141,6 +141,96 @@ describe('patchSubtitleSelection', () => {
 
         it('gives nothing for a source without subtitles', () => {
             expect(pick(JSON.stringify({ src: 'https://x/master.m3u8', poster: '' }), 'English')).toBe('');
+        });
+    });
+});
+
+describe('patchAllSubtitles', () => {
+    const original = [
+        'something before',
+        '',
+        'hianime_m3u8() {',
+        '    _json="x"',
+        '    sub_link="whatever"',
+        '    # quality variants are relative to the master playlist',
+        '    links=2',
+        '}',
+        '',
+        'download() {',
+        '    _name="n"',
+        '    command -v "yt-dlp" >/dev/null && yt-dlp --referer "$refr" "$1" -o "$download_dir/$_name.mp4" $3 && return 0',
+        '}'
+    ].join('\n');
+
+    it('keeps the list of subtitles, saves them all before the video and defines the function before its use', () => {
+        const patched = patchAllSubtitles(original) as string;
+        expect(patched).toContain(`    pullwave_all_subs="$(printf "%s" "$_json" | sed 's|.*"subtitles":\\[||; s|}\\].*||; s|},{|}\\n{|g')"\n    # quality variants`);
+        expect(patched).toContain('    pullwave_save_subtitles "$download_dir/$_name"\n    command -v "yt-dlp"');
+        expect(patched.indexOf('pullwave_save_subtitles() {')).toBeLessThan(patched.indexOf('hianime_m3u8() {'));
+        expect(patched).toContain(SAVE_SUBTITLES_FUNCTION);
+        expect(patched.startsWith('something before\n')).toBe(true);
+        expect(patched.endsWith('&& return 0\n}')).toBe(true);
+    });
+
+    it('gives null when a place it changes is not the one it knows', () => {
+        expect(patchAllSubtitles(original.replace('# quality variants are relative to the master playlist', '# other'))).toBeNull();
+        expect(patchAllSubtitles(original.replace('command -v "yt-dlp"', 'command -v "other"'))).toBeNull();
+        expect(patchAllSubtitles(original.replace('hianime_m3u8() {', 'other_name() {'))).toBeNull();
+        expect(patchAllSubtitles('nothing here')).toBeNull();
+    });
+
+    describe.skipIf(!HAS_TOOLS)('with the ani-cli that ships with the app', () => {
+        it('patches it and the result is still valid shell', () => {
+            const patched = patchAllSubtitles(readFileSync(REAL_SCRIPT, 'utf-8')) as string;
+            expect(patched).not.toBeNull();
+            const file = join(makeTempDir(), 'ani-cli');
+            writeFileSync(file, patched);
+            execFileSync(BUSYBOX, ['sh', '-n', file]);
+        });
+    });
+
+    describe.skipIf(!HAS_TOOLS)('the function, run by the shell that ships with the app', () => {
+        const json = JSON.stringify({
+            src: 'https://x/master.m3u8',
+            subtitles: [
+                { lang: 'en', label: 'English', default: true, src: 'https://s/en.vtt' },
+                { lang: 'en', label: 'Japanese', default: false, src: 'https://s/ja.vtt' },
+                { lang: 'en', label: 'Portuguese (- Portuguese(Brazil))', default: false, src: 'https://s/pt.vtt' },
+                { lang: 'en', label: 'No source', default: false }
+            ],
+            poster: ''
+        });
+
+        function save(source: string): string[] {
+            const directory = makeTempDir();
+            const tools = join(directory, 'tools');
+            mkdirSync(tools);
+            if (process.platform !== 'win32') {
+                ['sed'].forEach((name) => {
+                    symlinkSync(BUSYBOX, join(tools, name));
+                });
+            }
+            const file = join(directory, 'save.sh');
+            const list = `printf "%s" "$JSON" | sed 's|.*"subtitles":\\[||; s|}\\].*||; s|},{|}\\n{|g'`;
+            writeFileSync(
+                file,
+                `${SAVE_SUBTITLES_FUNCTION}\ncurl_exe=echo\nagent=ua\nrefr=ref\ncipher_flag=\npullwave_all_subs="$(${list})"\npullwave_save_subtitles "/dl/Naruto Episode 1"\necho "rc=$?"\n`
+            );
+            const output = execFileSync(BUSYBOX, ['sh', file], { env: { JSON: source, PATH: tools, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) }, encoding: 'utf-8' });
+            return output.trim().split('\n');
+        }
+
+        it('saves every subtitle that has a source, named after the video and its language, and succeeds', () => {
+            expect(save(json)).toEqual([
+                '-sL -A ua -e ref --max-time 10 https://s/en.vtt -o /dl/Naruto Episode 1.subtitle-English.vtt',
+                '-sL -A ua -e ref --max-time 10 https://s/ja.vtt -o /dl/Naruto Episode 1.subtitle-Japanese.vtt',
+                '-sL -A ua -e ref --max-time 10 https://s/pt.vtt -o /dl/Naruto Episode 1.subtitle-Portuguese (- Portuguese(Brazil)).vtt',
+                'rc=0'
+            ]);
+        });
+
+        it('saves nothing for a source without subtitles', () => {
+            expect(save(JSON.stringify({ src: 'https://x/master.m3u8', poster: '' }))).toEqual(['rc=0']);
         });
     });
 });

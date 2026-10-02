@@ -2,11 +2,14 @@ import {
     activeJobCount,
     animeErrorKey,
     animeStatusKey,
+    downloadedAnime,
     downloadedCount,
     END_MARGIN_SECONDS,
     isWatched,
+    matchesSearch,
     MIN_RESUME_SECONDS,
     nextDownloadedEpisode,
+    previousDownloadedEpisode,
     resumePosition,
     WATCHED_RATIO
 } from '@renderer/components/animeText';
@@ -16,7 +19,7 @@ describe('constants', () => {
     it('has the thresholds the player relies on', () => {
         expect(MIN_RESUME_SECONDS).toBe(5);
         expect(END_MARGIN_SECONDS).toBe(30);
-        expect(WATCHED_RATIO).toBe(0.9);
+        expect(WATCHED_RATIO).toBe(0.75);
     });
 });
 
@@ -73,10 +76,12 @@ describe('resumePosition', () => {
 });
 
 describe('isWatched', () => {
-    it('is true from 90 percent on', () => {
+    it('is true from 75 percent on', () => {
+        expect(isWatched(1080, 1440)).toBe(true);
         expect(isWatched(1296, 1440)).toBe(true);
         expect(isWatched(1440, 1440)).toBe(true);
-        expect(isWatched(1295, 1440)).toBe(false);
+        expect(isWatched(1079, 1440)).toBe(false);
+        expect(isWatched(0, 1440)).toBe(false);
     });
 
     it('is false when the duration is unknown', () => {
@@ -104,11 +109,83 @@ describe('nextDownloadedEpisode', () => {
     });
 });
 
+describe('previousDownloadedEpisode', () => {
+    const first = makeEpisode({ id: 1, number: '1', status: 'error' });
+    const second = makeEpisode({ id: 2, number: '2' });
+    const third = makeEpisode({ id: 3, number: '3' });
+    const anime = makeAnime([first, second, third]);
+
+    it('gives the episode that comes before when it is downloaded', () => {
+        expect(previousDownloadedEpisode(anime, third)).toBe(second);
+    });
+
+    it('gives null when the previous one is not downloaded', () => {
+        expect(previousDownloadedEpisode(anime, second)).toBeNull();
+    });
+
+    it('gives null before the first episode and for an episode that is not in the anime', () => {
+        expect(previousDownloadedEpisode(anime, first)).toBeNull();
+        expect(previousDownloadedEpisode(anime, makeEpisode({ id: 99 }))).toBeNull();
+    });
+});
+
 describe('downloadedCount', () => {
     it('counts only the downloaded episodes', () => {
         const anime = makeAnime([makeEpisode({ id: 1 }), makeEpisode({ id: 2, status: 'error' }), makeEpisode({ id: 3 }), makeEpisode({ id: 4, status: 'queued' })]);
         expect(downloadedCount(anime)).toBe(2);
         expect(downloadedCount(makeAnime([]))).toBe(0);
+    });
+});
+
+describe('downloadedAnime', () => {
+    const SUB = makeAnime([makeEpisode({ id: 1 })], { id: 1, title: 'Naruto', audio: 'sub' });
+    const DUB = makeAnime([makeEpisode({ id: 2, status: 'error' })], { id: 2, title: 'Naruto', audio: 'dub' });
+    const EMPTY = makeAnime([], { id: 3, title: 'Bleach', audio: 'sub' });
+
+    it('finds the anime with that title and audio when it has a downloaded episode', () => {
+        expect(downloadedAnime([SUB, DUB, EMPTY], 'Naruto', 'sub')).toBe(SUB);
+    });
+
+    it('gives null when it has nothing downloaded, is in another audio or is not there', () => {
+        expect(downloadedAnime([SUB, DUB, EMPTY], 'Naruto', 'dub')).toBeNull();
+        expect(downloadedAnime([SUB, DUB, EMPTY], 'Bleach', 'sub')).toBeNull();
+        expect(downloadedAnime([SUB], 'Naruto', 'dub')).toBeNull();
+        expect(downloadedAnime([SUB], 'One Piece', 'sub')).toBeNull();
+        expect(downloadedAnime([], 'Naruto', 'sub')).toBeNull();
+    });
+});
+
+describe('matchesSearch', () => {
+    it('matches everything when nothing is typed', () => {
+        expect(matchesSearch('Naruto', '')).toBe(true);
+        expect(matchesSearch('Naruto', '   ')).toBe(true);
+        expect(matchesSearch('', '')).toBe(true);
+    });
+
+    it('finds a part of the title, wherever it is', () => {
+        expect(matchesSearch('Cyberpunk: Edgerunners', 'cyber')).toBe(true);
+        expect(matchesSearch('Cyberpunk: Edgerunners', 'runners')).toBe(true);
+        expect(matchesSearch('Cyberpunk: Edgerunners', 'punk: edge')).toBe(true);
+        expect(matchesSearch('Cyberpunk: Edgerunners', 'Cyberpunk: Edgerunners')).toBe(true);
+    });
+
+    it('does not mind the case, the accents or the spaces around', () => {
+        expect(matchesSearch('NARUTO', 'naruto')).toBe(true);
+        expect(matchesSearch('naruto', 'NARUTO')).toBe(true);
+        expect(matchesSearch('Pokémon', 'pokemon')).toBe(true);
+        expect(matchesSearch('Pokemon', 'POKÉMON')).toBe(true);
+        expect(matchesSearch('Naruto', '  naruto  ')).toBe(true);
+    });
+
+    it('does not match what is not in the title', () => {
+        expect(matchesSearch('Naruto', 'bleach')).toBe(false);
+        expect(matchesSearch('Naruto', 'narutos')).toBe(false);
+        expect(matchesSearch('', 'a')).toBe(false);
+    });
+
+    it('works with other alphabets', () => {
+        expect(matchesSearch('進撃の巨人', '巨人')).toBe(true);
+        expect(matchesSearch('進撃の巨人', '鬼滅')).toBe(false);
     });
 });
 

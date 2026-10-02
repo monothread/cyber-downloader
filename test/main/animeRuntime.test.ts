@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AnimeJob } from '@shared/anime';
 import { DEFAULT_SETTINGS, IPC } from '@shared/constants';
@@ -88,10 +88,90 @@ describe('createAnimeRuntime', () => {
         const waiting = db.ensureEpisode(anime.id, '2');
         db.markDone(done.id, '/lib/Naruto/Naruto Episode 1.mp4', 10);
 
-        expect(runtime?.media.resolve('episode', done.id)).toBe('/lib/Naruto/Naruto Episode 1.mp4');
-        expect(runtime?.media.resolve('subtitle', done.id)).toBe('/lib/Naruto/Naruto Episode 1.vtt');
-        expect(runtime?.media.resolve('episode', waiting.id)).toBeNull();
-        expect(runtime?.media.resolve('episode', 99)).toBeNull();
+        expect(runtime?.media.resolve('episode', done.id, '')).toBe('/lib/Naruto/Naruto Episode 1.mp4');
+        expect(runtime?.media.resolve('subtitle', done.id, '')).toBe('/lib/Naruto/Naruto Episode 1.vtt');
+        expect(runtime?.media.resolve('episode', waiting.id, '')).toBeNull();
+        expect(runtime?.media.resolve('episode', 99, '')).toBeNull();
+    });
+
+    describe('subtitles', () => {
+        function downloaded(extraFiles: Record<string, string> = {}) {
+            const { root, options: given } = options();
+            const folder = join(root, 'lib', 'Naruto');
+            mkdirSync(folder, { recursive: true });
+            const video = join(folder, 'Naruto Episode 1.mp4');
+            writeFileSync(video, 'v');
+            Object.entries(extraFiles).forEach(([name, text]) => {
+                writeFileSync(join(folder, name), text);
+            });
+            return { root, folder, video, given };
+        }
+
+        function addEpisode(runtime: AnimeRuntime | null, video: string, number = '1') {
+            const db = runtime?.db as AnimeDb;
+            const anime = db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
+            const episode = db.ensureEpisode(anime.id, number);
+            db.markDone(episode.id, video, 1);
+            return episode;
+        }
+
+        it('serves the subtitle of the episode that was asked for, and no file outside of them', () => {
+            const { folder, video, given } = downloaded({ 'Naruto Episode 1.vtt': 'a', 'Naruto Episode 1.subtitle-Japanese.vtt': 'ja' });
+            const runtime = open(given);
+            const episode = addEpisode(runtime, video);
+            expect(runtime?.media.resolve('subtitle', episode.id, '')).toBe(join(folder, 'Naruto Episode 1.vtt'));
+            expect(runtime?.media.resolve('subtitle', episode.id, 'subtitle-Japanese')).toBe(join(folder, 'Naruto Episode 1.subtitle-Japanese.vtt'));
+            expect(runtime?.media.resolve('subtitle', episode.id, 'subtitle-Korean')).toBeNull();
+            expect(runtime?.media.resolve('subtitle', episode.id, '../Naruto Episode 1')).toBeNull();
+            expect(runtime?.media.resolve('episode', episode.id, 'subtitle-Japanese')).toBe(video);
+        });
+
+        it('lists the subtitles of a downloaded episode', () => {
+            const { video, given } = downloaded({ 'Naruto Episode 1.vtt': 'a', 'Naruto Episode 1.subtitle-Japanese.vtt': 'ja' });
+            const runtime = open(given);
+            const episode = addEpisode(runtime, video);
+            expect(runtime?.handlers.subtitles.list(episode.id)).toEqual([
+                { id: '', label: 'Default', kind: 'default' },
+                { id: 'subtitle-Japanese', label: 'Japanese', kind: 'source' }
+            ]);
+        });
+
+        it('lists nothing for an episode that is not downloaded or does not exist', () => {
+            const { given } = downloaded();
+            const runtime = open(given);
+            const db = runtime?.db as AnimeDb;
+            const waiting = db.ensureEpisode(db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' }).id, '2');
+            expect(runtime?.handlers.subtitles.list(waiting.id)).toEqual([]);
+            expect(runtime?.handlers.subtitles.list(99)).toEqual([]);
+        });
+
+        it('loads the file the user chooses next to the video', async () => {
+            const { root, folder, video, given } = downloaded();
+            const source = join(root, 'ja.srt');
+            writeFileSync(source, '1\n00:00:01,000 --> 00:00:02,000\nHi\n');
+            const chooseSubtitleFile = vi.fn(async () => {
+                return source;
+            });
+            const runtime = open({ ...given, chooseSubtitleFile });
+            const episode = addEpisode(runtime, video);
+
+            expect(await runtime?.handlers.subtitles.import(episode.id)).toEqual({
+                ok: true,
+                tracks: [{ id: 'import-ja', label: 'ja', kind: 'imported' }],
+                imported: { id: 'import-ja', label: 'ja', kind: 'imported' }
+            });
+            expect(chooseSubtitleFile).toHaveBeenCalledTimes(1);
+            expect(readFileSync(join(folder, 'Naruto Episode 1.import-ja.vtt'), 'utf-8')).toBe('WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nHi\n');
+        });
+
+        it('does not load anything when no file picker is given, and for an episode that is not downloaded', async () => {
+            const { folder, video, given } = downloaded();
+            const runtime = open(given);
+            const episode = addEpisode(runtime, video);
+            expect(await runtime?.handlers.subtitles.import(episode.id)).toEqual({ ok: false, reason: 'cancelled' });
+            expect(await runtime?.handlers.subtitles.import(99)).toEqual({ ok: false, reason: 'missing' });
+            expect(existsSync(join(folder, 'Naruto Episode 1.import-ja.vtt'))).toBe(false);
+        });
     });
 
     it('does not serve a downloaded episode that has no file recorded', () => {
@@ -99,7 +179,7 @@ describe('createAnimeRuntime', () => {
         const db = runtime?.db as AnimeDb;
         const episode = db.ensureEpisode(db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' }).id, '1');
         db.markFailed(episode.id, 'error', null);
-        expect(runtime?.media.resolve('episode', episode.id)).toBeNull();
+        expect(runtime?.media.resolve('episode', episode.id, '')).toBeNull();
     });
 
     it('tells the screen when the library changes', () => {
@@ -184,6 +264,125 @@ describe('createAnimeRuntime', () => {
         expect(runtime?.handlers.baseDirectory()).toBe(join(root, 'Downloads', 'Pullwave Anime'));
     });
 
+    it('removes the folder of an episode for the handlers only when it is empty', () => {
+        const { root, options: given } = options();
+        const runtime = open(given);
+        const empty = join(root, 'Naruto', 'Episode 1');
+        const full = join(root, 'Naruto', 'Episode 2');
+        mkdirSync(empty, { recursive: true });
+        mkdirSync(full, { recursive: true });
+        writeFileSync(join(full, 'a.vtt'), 'x');
+
+        runtime?.handlers.removeEmptyFolders([empty, full, join(root, 'Naruto', 'Episode 3')]);
+
+        expect(existsSync(empty)).toBe(false);
+        expect(existsSync(join(full, 'a.vtt'))).toBe(true);
+    });
+
+    it('opens folders through the function it was given, and does nothing without one', () => {
+        const openFolder = vi.fn();
+        open({ ...options().options, openFolder })?.handlers.openFolder('/lib/Naruto');
+        expect(openFolder).toHaveBeenCalledTimes(1);
+        expect(openFolder).toHaveBeenCalledWith('/lib/Naruto');
+        expect(() => {
+            open(options().options)?.handlers.openFolder('/lib/Naruto');
+        }).not.toThrow();
+    });
+
+    describe('importing a folder of anime', () => {
+        function folderOfAnime(root: string): string {
+            const folder = join(root, 'backup');
+            mkdirSync(join(folder, 'Naruto', 'Episode 1'), { recursive: true });
+            mkdirSync(join(folder, 'Naruto', 'Episode 2'), { recursive: true });
+            writeFileSync(join(folder, 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 'abc');
+            writeFileSync(join(folder, 'Naruto', 'Episode 2', 'Naruto Episode 2.mp4'), 'abcdef');
+            writeFileSync(
+                join(folder, 'Naruto', 'Episode 2', 'pullwave.json'),
+                JSON.stringify({ version: 1, title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'dub', number: '2', positionSeconds: 50, durationSeconds: 100, watched: true })
+            );
+            return folder;
+        }
+
+        it('adds what is in the folder the user chose, starting at the folder of the anime', async () => {
+            const { root, options: given } = options();
+            const folder = folderOfAnime(root);
+            const chooseLibraryFolder = vi.fn(async () => {
+                return folder;
+            });
+            const runtime = open({ ...given, chooseLibraryFolder });
+
+            expect(await runtime?.handlers.importLibrary()).toEqual({ ok: true, added: 2, relinked: 0, skipped: 0, ignored: 0 });
+            expect(chooseLibraryFolder).toHaveBeenCalledTimes(1);
+            expect(chooseLibraryFolder).toHaveBeenCalledWith(join(root, 'Downloads', 'Pullwave Anime'));
+            const list = runtime?.db.list() ?? [];
+            expect(
+                list.map((anime) => {
+                    return [anime.title, anime.audio, anime.searchIndex];
+                })
+            ).toEqual([
+                ['Naruto', 'dub', 2],
+                ['Naruto', 'sub', 0]
+            ]);
+            expect(list[0]?.episodes[0]).toMatchObject({ number: '2', status: 'done', sizeBytes: 6, positionSeconds: 50, watched: true });
+        });
+
+        it('uses the audio of the settings for what does not say it', async () => {
+            const { root, options: given } = options({ getSettings: () => { return { ...DEFAULT_SETTINGS, animeAudio: 'dub' }; } });
+            const folder = folderOfAnime(root);
+            const runtime = open({ ...given, chooseLibraryFolder: async () => { return folder; } });
+            await runtime?.handlers.importLibrary();
+            expect(
+                runtime?.db.list().map((anime) => {
+                    return [anime.title, anime.audio];
+                })
+            ).toEqual([['Naruto', 'dub']]);
+        });
+
+        it('writes the metadata of what it added, so the next time they are known exactly', async () => {
+            const { root, options: given } = options();
+            const folder = folderOfAnime(root);
+            const runtime = open({ ...given, chooseLibraryFolder: async () => { return folder; } });
+            await runtime?.handlers.importLibrary();
+            expect(JSON.parse(readFileSync(join(folder, 'Naruto', 'Episode 1', 'pullwave.json'), 'utf-8'))).toEqual({
+                version: 1,
+                title: 'Naruto',
+                query: 'Naruto',
+                searchIndex: 0,
+                audio: 'sub',
+                number: '1',
+                positionSeconds: 0,
+                durationSeconds: 0,
+                watched: false
+            });
+        });
+
+        it('does nothing when the user gives up or there is no way to ask', async () => {
+            const { root, options: given } = options();
+            folderOfAnime(root);
+            const cancelled = open({ ...given, chooseLibraryFolder: async () => { return null; } });
+            expect(await cancelled?.handlers.importLibrary()).toEqual({ ok: false, reason: 'cancelled' });
+            expect(cancelled?.db.list()).toEqual([]);
+            expect(await open(options().options)?.handlers.importLibrary()).toEqual({ ok: false, reason: 'cancelled' });
+        });
+
+        it('says which episodes have lost their file and refreshes the metadata when the progress is saved', () => {
+            const { root, options: given } = options();
+            const runtime = open(given);
+            const folder = join(root, 'Naruto', 'Episode 1');
+            mkdirSync(folder, { recursive: true });
+            const video = join(folder, 'Naruto Episode 1.mp4');
+            writeFileSync(video, 'x');
+            const anime = (runtime?.db as AnimeDb).upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
+            const episode = (runtime?.db as AnimeDb).ensureEpisode(anime.id, '1');
+            (runtime?.db as AnimeDb).markDone(episode.id, video, 1);
+
+            expect(runtime?.handlers.fileExists(video)).toBe(true);
+            expect(runtime?.handlers.fileExists(join(folder, 'gone.mp4'))).toBe(false);
+            runtime?.handlers.refreshMetadata(episode.id);
+            expect(JSON.parse(readFileSync(join(folder, 'pullwave.json'), 'utf-8'))).toMatchObject({ title: 'Naruto', searchIndex: 1, number: '1' });
+        });
+    });
+
     it('uses the anime folder of the settings', () => {
         const { options: given } = options({ getSettings: () => { return { ...DEFAULT_SETTINGS, animeDownloadDir: '/media/anime' }; } });
         expect(open(given)?.handlers.baseDirectory()).toBe('/media/anime');
@@ -228,6 +427,17 @@ describe('createAnimeRuntime', () => {
             open({ ...given, remover: { files: vi.fn(), folders } })?.handlers.removeFolders([folder]);
             vi.advanceTimersByTime(100);
             expect(folders.mock.calls).toEqual([[[folder]], [[folder]]]);
+        });
+
+        it('does the same for the folders of the episodes', () => {
+            vi.useFakeTimers();
+            const { root, options: given } = options({ removeRetryMs: 100 });
+            const folder = join(root, 'Naruto', 'Episode 1');
+            mkdirSync(folder, { recursive: true });
+            const emptyFolders = vi.fn();
+            open({ ...given, remover: { files: vi.fn(), folders: vi.fn(), emptyFolders } })?.handlers.removeEmptyFolders([folder]);
+            vi.advanceTimersByTime(100);
+            expect(emptyFolders.mock.calls).toEqual([[[folder]], [[folder]]]);
         });
 
         it('waits 500 ms by default', () => {

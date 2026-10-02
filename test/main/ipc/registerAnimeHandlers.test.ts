@@ -1,9 +1,16 @@
-import type { AniRunResult, AnimeSearchResult, LibraryAnime } from '@shared/anime';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { AniRunResult, AnimeImportResponse, AnimeSearchResult, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { ResolvedStream } from '@main/services/aniStream';
 import { IPC } from '@shared/constants';
 import { MAX_EPISODES_PER_REQUEST, MAX_TEXT_LENGTH, parseDownloadRequest, parseProgress, registerAnimeHandlers, type AnimeHandlerDependencies } from '@main/ipc/registerAnimeHandlers';
 import type { IpcMainLike } from '@main/ipc/registerHandlers';
 import { AnimeDb } from '@main/services/animeDb';
+import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
+
+afterEach(() => {
+    cleanTempDirs();
+});
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
 
@@ -33,8 +40,10 @@ const ANIME_CHANNELS = [
     IPC.animeClearFinished,
     IPC.animeDownload,
     IPC.animeEpisodes,
+    IPC.animeImportLibrary,
     IPC.animeJobs,
     IPC.animeLibrary,
+    IPC.animeOpenFolder,
     IPC.animeProgress,
     IPC.animeRemoveAnime,
     IPC.animeRemoveEpisode,
@@ -43,6 +52,8 @@ const ANIME_CHANNELS = [
     IPC.animeStatus,
     IPC.animeStreamClose,
     IPC.animeStreamOpen,
+    IPC.animeSubtitleImport,
+    IPC.animeSubtitles,
     IPC.animeUpdateCli
 ].sort();
 
@@ -85,7 +96,22 @@ function setup(available = true) {
     };
     const removeFiles = vi.fn();
     const removeFolders = vi.fn();
+    const removeEmptyFolders = vi.fn();
+    const openFolder = vi.fn();
+    const refreshMetadata = vi.fn();
+    const importLibrary = vi.fn(async (): Promise<AnimeImportResponse> => {
+        return { ok: false, reason: 'cancelled' };
+    });
+    const missing = new Set<string>();
     const onLibraryChanged = vi.fn();
+    const subtitles = {
+        list: vi.fn((): AnimeSubtitleTrack[] => {
+            return [{ id: 'subtitle-Japanese', label: 'Japanese', kind: 'source' }];
+        }),
+        import: vi.fn(async (): Promise<AnimeSubtitleImportResponse> => {
+            return { ok: false, reason: 'cancelled' };
+        })
+    };
     const deps = {
         service: { isAvailable: vi.fn(() => { return available; }), info: vi.fn(() => { return aniCliInfo; }), search, episodes, resolveStream },
         updateAniCli,
@@ -97,14 +123,22 @@ function setup(available = true) {
         db,
         removeFiles,
         removeFolders,
+        removeEmptyFolders,
+        openFolder,
+        refreshMetadata,
+        importLibrary,
+        fileExists: (path: string) => {
+            return !missing.has(path);
+        },
         baseDirectory: () => {
             return '/lib';
         },
         platform: 'linux',
-        onLibraryChanged
+        onLibraryChanged,
+        subtitles
     } as unknown as AnimeHandlerDependencies;
     registerAnimeHandlers(ipc.ipcMain, deps);
-    return { ...ipc, db, search, episodes, resolveStream, updateAniCli, aniCliInfo, streams, queue, removeFiles, removeFolders, onLibraryChanged, deps };
+    return { ...ipc, db, search, episodes, resolveStream, updateAniCli, aniCliInfo, streams, queue, removeFiles, removeFolders, removeEmptyFolders, openFolder, refreshMetadata, importLibrary, missing, onLibraryChanged, subtitles, deps };
 }
 
 describe('registerAnimeHandlers', () => {
@@ -246,6 +280,81 @@ describe('registerAnimeHandlers', () => {
         expect(db.list()).toEqual([]);
     });
 
+    describe('subtitles', () => {
+        it('lists the subtitles of an episode', () => {
+            const { call, subtitles } = setup();
+            expect(call(IPC.animeSubtitles, 4)).toEqual([{ id: 'subtitle-Japanese', label: 'Japanese', kind: 'source' }]);
+            expect(subtitles.list).toHaveBeenCalledWith(4);
+        });
+
+        it.each([['4'], [0], [-1], [1.5], [null], [undefined]])('lists nothing for the invalid episode %s', (episodeId) => {
+            const { call, subtitles } = setup();
+            expect(call(IPC.animeSubtitles, episodeId)).toEqual([]);
+            expect(subtitles.list).not.toHaveBeenCalled();
+        });
+
+        it('loads a subtitle for an episode and gives the answer as it is', async () => {
+            const { call, subtitles } = setup();
+            const loaded: AnimeSubtitleImportResponse = {
+                ok: true,
+                tracks: [{ id: 'import-ja', label: 'ja', kind: 'imported' }],
+                imported: { id: 'import-ja', label: 'ja', kind: 'imported' }
+            };
+            subtitles.import.mockResolvedValueOnce(loaded);
+            expect(await call(IPC.animeSubtitleImport, 4)).toEqual(loaded);
+            expect(subtitles.import).toHaveBeenCalledWith(4);
+            expect(await call(IPC.animeSubtitleImport, 4)).toEqual({ ok: false, reason: 'cancelled' });
+        });
+
+        it.each([['4'], [0], [-1], [1.5], [null], [undefined]])('does not load a subtitle for the invalid episode %s', async (episodeId) => {
+            const { call, subtitles } = setup();
+            expect(await call(IPC.animeSubtitleImport, episodeId)).toEqual({ ok: false, reason: 'missing' });
+            expect(subtitles.import).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('openFolder', () => {
+        function withAnime(files: Array<[string, string]>) {
+            const context = setup();
+            const anime = context.db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
+            files.forEach(([number, path]) => {
+                context.db.markDone(context.db.ensureEpisode(anime.id, number).id, path, 10);
+            });
+            return { ...context, anime };
+        }
+
+        it('opens the folder that holds the folders of the episodes', () => {
+            const { call, anime, openFolder } = withAnime([['1', '/lib/Naruto/Episode 1/Naruto Episode 1.mp4'], ['2', '/lib/Naruto/Episode 2/Naruto Episode 2.mp4']]);
+            call(IPC.animeOpenFolder, anime.id);
+            expect(openFolder).toHaveBeenCalledTimes(1);
+            expect(openFolder).toHaveBeenCalledWith('/lib/Naruto');
+        });
+
+        it('opens the folder of the videos downloaded before each episode had its own', () => {
+            const { call, anime, openFolder } = withAnime([['1', '/lib/Naruto/Naruto Episode 1.mp4']]);
+            call(IPC.animeOpenFolder, anime.id);
+            expect(openFolder).toHaveBeenCalledWith('/lib/Naruto');
+        });
+
+        it('skips an episode that is not downloaded to find a video', () => {
+            const { call, db, anime, openFolder } = withAnime([['2', '/lib/Naruto/Episode 2/Naruto Episode 2.mp4']]);
+            db.ensureEpisode(anime.id, '1');
+            call(IPC.animeOpenFolder, anime.id);
+            expect(openFolder).toHaveBeenCalledWith('/lib/Naruto');
+        });
+
+        it('opens nothing for an anime with nothing downloaded, one that is not in the library or an invalid id', () => {
+            const { call, db, anime, openFolder } = withAnime([]);
+            db.ensureEpisode(anime.id, '1');
+            call(IPC.animeOpenFolder, anime.id);
+            call(IPC.animeOpenFolder, 999);
+            ['1', 0, -1, 1.5, null, undefined].forEach((id) => {
+                call(IPC.animeOpenFolder, id);
+            });
+            expect(openFolder).not.toHaveBeenCalled();
+        });
+    });
+
     describe('removeEpisode', () => {
         function withEpisode() {
             const context = setup();
@@ -261,17 +370,54 @@ describe('registerAnimeHandlers', () => {
 
             expect(queue.forget).toHaveBeenCalledWith([episode.id]);
             expect(db.getEpisode(episode.id)).toBeNull();
-            expect(removeFiles).toHaveBeenCalledWith(['/lib/Naruto/Naruto Episode 1.mp4', '/lib/Naruto/Naruto Episode 1.vtt']);
+            expect(removeFiles).toHaveBeenCalledWith(['/lib/Naruto/Naruto Episode 1.mp4', '/lib/Naruto/Naruto Episode 1.vtt', '/lib/Naruto/pullwave.json']);
             expect(removeFolders).not.toHaveBeenCalled();
             expect(onLibraryChanged).toHaveBeenCalledTimes(1);
         });
 
-        it('has no file to delete for an episode that was never downloaded', () => {
+        it('deletes every subtitle of the episode that is on the disk', () => {
+            const folder = makeTempDir();
+            ['a.mp4', 'a.vtt', 'a.subtitle-Japanese.vtt', 'a.import-mine.vtt', 'b.vtt'].forEach((name) => {
+                writeFileSync(join(folder, name), 'x');
+            });
             const { call, db, removeFiles } = setup();
+            const episode = db.ensureEpisode(db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' }).id, '1');
+            db.markDone(episode.id, join(folder, 'a.mp4'), 10);
+            call(IPC.animeRemoveEpisode, episode.id);
+            const removed = (removeFiles.mock.calls[0]?.[0] as string[]).sort();
+            expect(removed).toEqual([join(folder, 'a.mp4'), join(folder, 'a.vtt'), join(folder, 'a.subtitle-Japanese.vtt'), join(folder, 'a.import-mine.vtt'), join(folder, 'pullwave.json')].sort());
+        });
+
+        it('also removes the folder of the episode, once it is empty, when the video is in one', () => {
+            const { call, db, removeFiles, removeFolders, removeEmptyFolders } = setup();
+            const anime = db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
+            const episode = db.ensureEpisode(anime.id, '1');
+            db.markDone(episode.id, '/lib/Naruto/Episode 1/Naruto Episode 1.mp4', 10);
+            call(IPC.animeRemoveEpisode, episode.id);
+
+            expect(removeFiles).toHaveBeenCalledWith([
+                '/lib/Naruto/Episode 1/Naruto Episode 1.mp4',
+                '/lib/Naruto/Episode 1/Naruto Episode 1.vtt',
+                '/lib/Naruto/Episode 1/pullwave.json'
+            ]);
+            expect(removeEmptyFolders).toHaveBeenCalledTimes(1);
+            expect(removeEmptyFolders).toHaveBeenCalledWith(['/lib/Naruto/Episode 1']);
+            expect(removeFolders).not.toHaveBeenCalled();
+        });
+
+        it('leaves the folder alone when the video is not in a folder of its episode', () => {
+            const { call, episode, removeEmptyFolders } = withEpisode();
+            call(IPC.animeRemoveEpisode, episode.id);
+            expect(removeEmptyFolders).not.toHaveBeenCalled();
+        });
+
+        it('has no file to delete for an episode that was never downloaded', () => {
+            const { call, db, removeFiles, removeEmptyFolders } = setup();
             const episode = db.ensureEpisode(db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' }).id, '1');
             call(IPC.animeRemoveEpisode, episode.id);
             expect(db.getEpisode(episode.id)).toBeNull();
             expect(removeFiles).not.toHaveBeenCalled();
+            expect(removeEmptyFolders).not.toHaveBeenCalled();
         });
     });
 
@@ -289,9 +435,28 @@ describe('registerAnimeHandlers', () => {
 
             expect(queue.forget).toHaveBeenCalledWith([first.id, second.id, 3]);
             expect(db.getAnime(anime.id)).toBeNull();
-            expect(removeFiles).toHaveBeenCalledWith(['/lib/Naruto/1.mp4', '/lib/Naruto/1.vtt', '/lib/Naruto/2.mkv', '/lib/Naruto/2.vtt']);
+            expect(removeFiles).toHaveBeenCalledWith(['/lib/Naruto/1.mp4', '/lib/Naruto/1.vtt', '/lib/Naruto/pullwave.json', '/lib/Naruto/2.mkv', '/lib/Naruto/2.vtt', '/lib/Naruto/pullwave.json']);
             expect(removeFolders).toHaveBeenCalledWith(['/lib/Naruto']);
             expect(onLibraryChanged).toHaveBeenCalledTimes(1);
+        });
+
+        it('removes the empty folders that are left, also when the folder of the anime was renamed', () => {
+            const { call, db, removeEmptyFolders } = setup();
+            const anime = db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
+            db.markDone(db.ensureEpisode(anime.id, '1').id, '/media/My Naruto/Episode 1/Naruto Episode 1.mp4', 1);
+            db.markDone(db.ensureEpisode(anime.id, '2').id, '/media/My Naruto/Episode 2/Naruto Episode 2.mp4', 1);
+            db.markDone(db.ensureEpisode(anime.id, '3').id, '/media/Old/Naruto Episode 3.mp4', 1);
+            call(IPC.animeRemoveAnime, anime.id);
+            expect(removeEmptyFolders).toHaveBeenCalledTimes(1);
+            expect(removeEmptyFolders).toHaveBeenCalledWith(['/media/My Naruto/Episode 1', '/media/My Naruto/Episode 2', '/media/My Naruto']);
+        });
+
+        it('has no empty folder to remove for an anime that has nothing downloaded', () => {
+            const { call, db, removeEmptyFolders } = setup();
+            const anime = db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
+            db.ensureEpisode(anime.id, '1');
+            call(IPC.animeRemoveAnime, anime.id);
+            expect(removeEmptyFolders).toHaveBeenCalledWith([]);
         });
 
         it('also removes the folder of an anime that has nothing downloaded', () => {
@@ -367,14 +532,59 @@ describe('registerAnimeHandlers', () => {
         });
     });
 
+    describe('the library', () => {
+        it('says which downloaded episodes have lost their file', () => {
+            const { call, db, missing } = setup();
+            const anime = db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
+            db.markDone(db.ensureEpisode(anime.id, '1').id, '/lib/Naruto/a.mp4', 1);
+            db.markDone(db.ensureEpisode(anime.id, '2').id, '/lib/Naruto/b.mp4', 1);
+            db.ensureEpisode(anime.id, '3');
+            db.markFailed(db.ensureEpisode(anime.id, '4').id, 'error', null);
+            missing.add('/lib/Naruto/b.mp4');
+            missing.add('/lib/Naruto/never-recorded.mp4');
+
+            const [listed] = call(IPC.animeLibrary) as Array<{ episodes: Array<{ number: string; fileMissing: boolean }> }>;
+            expect(
+                listed?.episodes.map((episode) => {
+                    return [episode.number, episode.fileMissing];
+                })
+            ).toEqual([
+                ['1', false],
+                ['2', true],
+                ['3', false],
+                ['4', false]
+            ]);
+        });
+    });
+
+    describe('importLibrary', () => {
+        it('puts the folder into the library and tells the screen the library changed', async () => {
+            const { call, importLibrary, onLibraryChanged } = setup();
+            const result: AnimeImportResponse = { ok: true, added: 3, relinked: 1, skipped: 2, ignored: 4 };
+            importLibrary.mockResolvedValueOnce(result);
+            expect(await call(IPC.animeImportLibrary)).toEqual(result);
+            expect(importLibrary).toHaveBeenCalledTimes(1);
+            expect(onLibraryChanged).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not tell the screen when the user gave up', async () => {
+            const { call, onLibraryChanged } = setup();
+            expect(await call(IPC.animeImportLibrary)).toEqual({ ok: false, reason: 'cancelled' });
+            expect(onLibraryChanged).not.toHaveBeenCalled();
+        });
+    });
+
     it('saves the progress of an episode and ignores an invalid update', () => {
-        const { call, db } = setup();
+        const { call, db, refreshMetadata } = setup();
         const episode = db.ensureEpisode(db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' }).id, '1');
         call(IPC.animeProgress, { episodeId: episode.id, positionSeconds: 30, durationSeconds: 1400, watched: false });
         expect(db.getEpisode(episode.id)).toMatchObject({ positionSeconds: 30, durationSeconds: 1400, watched: false });
+        expect(refreshMetadata).toHaveBeenCalledTimes(1);
+        expect(refreshMetadata).toHaveBeenCalledWith(episode.id);
 
         call(IPC.animeProgress, { episodeId: episode.id, positionSeconds: -1, durationSeconds: 1400, watched: true });
         expect(db.getEpisode(episode.id)).toMatchObject({ positionSeconds: 30, watched: false });
+        expect(refreshMetadata).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -393,7 +603,10 @@ describe('registerAnimeHandlers where the section does not exist', () => {
         expect(ipc.call(IPC.animeLibrary)).toEqual([]);
         expect(ipc.call(IPC.animeJobs)).toEqual([]);
         expect(ipc.call(IPC.animeStreamOpen, {})).toEqual({ ok: false, error: unsupported });
-        [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeProgress, IPC.animeStreamClose].forEach((channel) => {
+        expect(ipc.call(IPC.animeImportLibrary)).toEqual({ ok: false, reason: 'cancelled' });
+        expect(ipc.call(IPC.animeSubtitles, 1)).toEqual([]);
+        expect(ipc.call(IPC.animeSubtitleImport, 1)).toEqual({ ok: false, reason: 'missing' });
+        [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose].forEach((channel) => {
             expect(ipc.call(channel, 1)).toBeUndefined();
         });
     });

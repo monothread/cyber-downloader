@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslator } from '../i18n/useTranslator';
 import { useAnimeStore } from '../store/animeStore';
-import { animeErrorKey } from './animeText';
+import { animeErrorKey, downloadedAnime } from './animeText';
 
 // The episodes of the anime that was opened: pick some, or take the whole season.
 export function AnimeDetail() {
@@ -21,6 +21,9 @@ export function AnimeDetail() {
     const watchEpisode = useAnimeStore((state) => {
         return state.watchEpisode;
     });
+    const showInLibrary = useAnimeStore((state) => {
+        return state.showInLibrary;
+    });
     const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
 
     const anime = library.find((candidate) => {
@@ -39,6 +42,7 @@ export function AnimeDetail() {
     if (!selection) {
         return null;
     }
+    const saved = downloadedAnime(library, selection.result.title, selection.audio);
 
     function toggle(number: string): void {
         setPicked((current) => {
@@ -64,6 +68,17 @@ export function AnimeDetail() {
                     {t('anime.back')}
                 </button>
                 <span className="section-label">{selection.result.title}</span>
+                {saved && (
+                    <button
+                        type="button"
+                        className="btn btn--small btn--primary"
+                        onClick={() => {
+                            showInLibrary(saved.id);
+                        }}
+                    >
+                        {t('anime.library.view')}
+                    </button>
+                )}
             </div>
             {selection.status === 'loading' && <p className="empty">{t('anime.episodes.loading')}</p>}
             {selection.status === 'error' && selection.error && (
@@ -120,15 +135,6 @@ export function AnimeDetail() {
                                 }}
                             >
                                 {t('anime.download.selected', { count: picked.size })}
-                            </button>
-                            <button
-                                type="button"
-                                className="btn btn--small btn--primary"
-                                onClick={() => {
-                                    download(selection.episodes);
-                                }}
-                            >
-                                {t('anime.download.all', { count: selection.episodes.length })}
                             </button>
                         </span>
                     </div>

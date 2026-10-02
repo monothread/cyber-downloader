@@ -2,16 +2,20 @@ import {
     ANIME_AUDIOS,
     type AniError,
     type AnimeAudio,
+    type AnimeEpisodeRecord,
     type AnimeDownloadRequest,
     type AnimeDownloadResponse,
+    type AnimeImportResponse,
     type AnimeProgressUpdate,
-    type AnimeStreamResponse
+    type AnimeStreamResponse,
+    type AnimeSubtitleImportResponse,
+    type AnimeSubtitleTrack
 } from '@shared/anime';
 import { IPC } from '@shared/constants';
 import type { AnimeStatus } from '@shared/anime';
 import type { UpdateResult } from '@shared/types';
 import type { AnimeDb } from '../services/animeDb';
-import { animeFoldersToRemove, filesOfEpisode } from '../services/animeFiles';
+import { animeFolderOf, animeFoldersToRemove, episodeFolderOf, filesOfEpisode } from '../services/animeFiles';
 import type { AnimeDownloadQueue } from '../services/animeDownloadQueue';
 import { isValidEpisode, isValidIndex, sanitizeQuery } from '../services/aniArgsBuilder';
 import type { AniCliService } from '../services/aniCliService';
@@ -31,11 +35,26 @@ export interface AnimeHandlerDependencies {
     db: AnimeDb;
     removeFiles: (paths: string[]) => void;
     removeFolders: (paths: string[]) => void;
+    // Removes the folders that have nothing left in them.
+    removeEmptyFolders: (paths: string[]) => void;
+    // Whether a file is on the disk.
+    fileExists: (path: string) => boolean;
+    // What is kept beside the video of a downloaded episode (see episodeMetadata.ts) is written again.
+    refreshMetadata: (episodeId: number) => void;
+    // Asks for a folder of anime and puts what is in it into the library.
+    importLibrary: () => Promise<AnimeImportResponse>;
+    // Opens a folder in the file manager of the system.
+    openFolder: (path: string) => void;
     // The folder all the anime go into, as the settings say now.
     baseDirectory: () => string;
     // The system the files are on (decides the rules of folder names); this one by default.
     platform?: NodeJS.Platform;
     onLibraryChanged: () => void;
+    // The subtitle files of a downloaded episode: the ones it has and loading one the user chooses.
+    subtitles: {
+        list: (episodeId: number) => AnimeSubtitleTrack[];
+        import: (episodeId: number) => Promise<AnimeSubtitleImportResponse>;
+    };
 }
 
 const UNSUPPORTED: AniError = { code: 'UNKNOWN', raw: 'The anime section is only available on Linux.' };
@@ -106,6 +125,21 @@ export function parseProgress(input: unknown): AnimeProgressUpdate | null {
     return { episodeId, positionSeconds, durationSeconds, watched };
 }
 
+// The folders of the episodes of an anime and the folder of the anime they are in, from the innermost out, for the episodes that
+// were in a folder of their own.
+function emptiedFolders(episodes: readonly AnimeEpisodeRecord[], platform: NodeJS.Platform | undefined): string[] {
+    const inFolders = episodes.filter((episode) => {
+        return episode.filePath !== null && episodeFolderOf(episode.filePath, episode.number, platform) !== null;
+    });
+    const episodeFolders = inFolders.map((episode) => {
+        return episodeFolderOf(episode.filePath as string, episode.number, platform) as string;
+    });
+    const animeFolders = inFolders.map((episode) => {
+        return animeFolderOf(episode.filePath as string, episode.number, platform);
+    });
+    return [...new Set([...episodeFolders, ...animeFolders])];
+}
+
 // On systems where the section does not exist it still answers, so the screen can tell and hide it.
 function registerUnsupported(ipcMain: IpcMainLike): void {
     const status: AnimeStatus = { supported: false, available: false, aniCli: null };
@@ -133,7 +167,16 @@ function registerUnsupported(ipcMain: IpcMainLike): void {
     ipcMain.handle(IPC.animeUpdateCli, (): UpdateResult => {
         return { ok: false, output: UNSUPPORTED.raw };
     });
-    [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeProgress, IPC.animeStreamClose].forEach((channel) => {
+    ipcMain.handle(IPC.animeImportLibrary, (): AnimeImportResponse => {
+        return { ok: false, reason: 'cancelled' };
+    });
+    ipcMain.handle(IPC.animeSubtitles, (): AnimeSubtitleTrack[] => {
+        return [];
+    });
+    ipcMain.handle(IPC.animeSubtitleImport, (): AnimeSubtitleImportResponse => {
+        return { ok: false, reason: 'missing' };
+    });
+    [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose].forEach((channel) => {
         ipcMain.handle(channel, (): void => {
             return undefined;
         });
@@ -186,7 +229,21 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
         return anime ? { ok: true, anime } : { ok: false, message: 'The anime could not be saved.' };
     });
     ipcMain.handle(IPC.animeLibrary, () => {
-        return db.list();
+        return db.list().map((anime) => {
+            return {
+                ...anime,
+                episodes: anime.episodes.map((episode) => {
+                    return { ...episode, fileMissing: episode.status === 'done' && (episode.filePath === null || !deps.fileExists(episode.filePath)) };
+                })
+            };
+        });
+    });
+    ipcMain.handle(IPC.animeImportLibrary, async (): Promise<AnimeImportResponse> => {
+        const result = await deps.importLibrary();
+        if (result.ok) {
+            deps.onLibraryChanged();
+        }
+        return result;
     });
     ipcMain.handle(IPC.animeJobs, () => {
         return queue.list();
@@ -213,9 +270,15 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
             return;
         }
         queue.forget([id]);
+        const number = db.getEpisode(id)?.number ?? '';
         const filePath = db.removeEpisode(id);
         if (filePath !== null) {
             deps.removeFiles(filesOfEpisode(filePath));
+            // The folder of the episode goes with it once it is empty.
+            const folder = episodeFolderOf(filePath, number, deps.platform);
+            if (folder !== null) {
+                deps.removeEmptyFolders([folder]);
+            }
         }
         deps.onLibraryChanged();
     });
@@ -231,9 +294,26 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
             })
         );
         const files = db.removeAnime(id);
-        deps.removeFiles(files.flatMap(filesOfEpisode));
+        deps.removeFiles(
+            files.flatMap((file) => {
+                return filesOfEpisode(file);
+            })
+        );
         deps.removeFolders(animeFoldersToRemove(anime.title, files, deps.baseDirectory(), deps.platform));
+        // A folder that was renamed is not one the app may remove whole, but what is left of it once its files are gone is empty.
+        deps.removeEmptyFolders(emptiedFolders(anime.episodes, deps.platform));
         deps.onLibraryChanged();
+    });
+    // The address comes from the library, never from the screen: only the folder of an anime that is in it can be opened.
+    ipcMain.handle(IPC.animeOpenFolder, (_event, animeId): void => {
+        const id = asId(animeId);
+        const anime = id === null ? null : db.getLibraryAnime(id);
+        const downloaded = anime?.episodes.find((episode) => {
+            return episode.status === 'done' && episode.filePath !== null;
+        });
+        if (downloaded?.filePath) {
+            deps.openFolder(animeFolderOf(downloaded.filePath, downloaded.number, deps.platform));
+        }
     });
     ipcMain.handle(IPC.animeStreamOpen, async (_event, input): Promise<AnimeStreamResponse> => {
         const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
@@ -256,10 +336,19 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
             deps.streams.close(id);
         }
     });
+    ipcMain.handle(IPC.animeSubtitles, (_event, episodeId): AnimeSubtitleTrack[] => {
+        const id = asId(episodeId);
+        return id === null ? [] : deps.subtitles.list(id);
+    });
+    ipcMain.handle(IPC.animeSubtitleImport, async (_event, episodeId): Promise<AnimeSubtitleImportResponse> => {
+        const id = asId(episodeId);
+        return id === null ? { ok: false, reason: 'missing' } : deps.subtitles.import(id);
+    });
     ipcMain.handle(IPC.animeProgress, (_event, input): void => {
         const update = parseProgress(input);
         if (update !== null) {
             db.saveProgress(update);
+            deps.refreshMetadata(update.episodeId);
         }
     });
 }

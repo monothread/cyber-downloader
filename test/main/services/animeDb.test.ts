@@ -52,7 +52,8 @@ describe('AnimeDb schema', () => {
                         positionSeconds: 0,
                         durationSeconds: 0,
                         watched: false,
-                        downloadedAt: null
+                        downloadedAt: null,
+                        fileMissing: false
                     }
                 ]
             }
@@ -312,5 +313,55 @@ describe('AnimeDb removal', () => {
         const anime = db.upsertAnime(NARUTO);
         db.removeAnime(anime.id);
         expect(db.getLibraryAnime(other.id)?.episodes).toHaveLength(1);
+    });
+});
+
+describe('AnimeDb importing what was found on the disk', () => {
+    it('adds an anime, and keeps it as it is when it is already there', () => {
+        const db = makeDb();
+        const added = db.importAnime({ title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'sub' });
+        expect(added).toEqual({ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'sub', createdAt: NOW });
+        expect(db.importAnime({ title: 'Naruto', query: 'other', searchIndex: 9, audio: 'sub' })).toEqual(added);
+        expect(db.list()).toHaveLength(1);
+    });
+
+    it('fills in the search data that was not known', () => {
+        const db = makeDb();
+        db.importAnime({ title: 'Naruto', query: 'Naruto', searchIndex: 0, audio: 'sub' });
+        expect(db.importAnime({ title: 'Naruto', query: 'naruto', searchIndex: 4, audio: 'sub' })).toMatchObject({ query: 'naruto', searchIndex: 4 });
+        expect(db.importAnime({ title: 'Naruto', query: 'again', searchIndex: 7, audio: 'sub' })).toMatchObject({ query: 'naruto', searchIndex: 4 });
+    });
+
+    it('does not mix the audios of a title', () => {
+        const db = makeDb();
+        db.importAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
+        db.importAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'dub' });
+        expect(db.list()).toHaveLength(2);
+    });
+
+    it('finds an episode by its number', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const episode = db.ensureEpisode(anime.id, '1.5');
+        expect(db.getEpisodeByNumber(anime.id, '1.5')).toEqual(episode);
+        expect(db.getEpisodeByNumber(anime.id, '2')).toBeNull();
+        expect(db.getEpisodeByNumber(99, '1.5')).toBeNull();
+    });
+
+    it('points an episode to another file, keeping the rest', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const episode = db.ensureEpisode(anime.id, '1');
+        db.markDone(episode.id, '/old/a.mp4', 10);
+        db.saveProgress({ episodeId: episode.id, positionSeconds: 5, durationSeconds: 100, watched: true });
+        db.relinkEpisode(episode.id, '/new/a.mp4', 20);
+        expect(db.getEpisode(episode.id)).toMatchObject({ status: 'done', filePath: '/new/a.mp4', sizeBytes: 20, positionSeconds: 5, watched: true, downloadedAt: NOW });
+    });
+
+    it('never says on its own that a file is missing', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        db.markDone(db.ensureEpisode(anime.id, '1').id, '/a.mp4', 1);
+        expect(db.getEpisode(1)?.fileMissing).toBe(false);
     });
 });

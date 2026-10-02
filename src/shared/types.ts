@@ -2,10 +2,13 @@ import type {
     AnimeDownloadRequest,
     AnimeDownloadResponse,
     AnimeEpisodesResponse,
+    AnimeImportResponse,
     AnimeJob,
     AnimeProgressUpdate,
     AnimeSearchResponse,
     AnimeStatus,
+    AnimeSubtitleImportResponse,
+    AnimeSubtitleTrack,
     AnimeStreamRequest,
     AnimeStreamResponse,
     AnimeAudio,
@@ -292,7 +295,13 @@ export interface CyberApi {
     clearFinishedAnimeJobs: () => Promise<void>;
     removeAnimeEpisode: (episodeId: number) => Promise<void>;
     removeAnime: (animeId: number) => Promise<void>;
+    // Opens the folder the videos of an anime of the library are in.
+    openAnimeFolder: (animeId: number) => Promise<void>;
+    // Asks for a folder of anime and puts what is in it into the library.
+    importAnimeLibrary: () => Promise<AnimeImportResponse>;
     saveAnimeProgress: (update: AnimeProgressUpdate) => Promise<void>;
+    listAnimeSubtitles: (episodeId: number) => Promise<AnimeSubtitleTrack[]>;
+    importAnimeSubtitle: (episodeId: number) => Promise<AnimeSubtitleImportResponse>;
     updateAniCli: () => Promise<UpdateResult>;
     openAnimeStream: (request: AnimeStreamRequest) => Promise<AnimeStreamResponse>;
     closeAnimeStream: (sessionId: string) => Promise<void>;

@@ -57,3 +57,39 @@ export function patchSubtitleSelection(source: string): string | null {
     }
     return source.replace(ORIGINAL_SELECTION, PATCHED_SELECTION).replace(`\n${FUNCTION_ANCHOR}`, `\n${SUBTITLE_PICK_FUNCTION}${FUNCTION_ANCHOR}`);
 }
+
+// ani-cli saves one subtitle, but the source lists all the languages it has for the episode. These two changes keep that list
+// (where ani-cli reads it) and save every subtitle next to the video (where ani-cli saves the one it picked), so the player can
+// offer them all. Each one is "<video name>.subtitle-<language>.vtt" (see subtitleFiles.ts).
+const LIST_ANCHOR = '    # quality variants are relative to the master playlist';
+const KEEP_LIST_LINE = `    pullwave_all_subs="$(printf "%s" "$_json" | sed 's|.*"subtitles":\\[||; s|}\\].*||; s|},{|}\\n{|g')"`;
+const SAVE_ANCHOR = '    command -v "yt-dlp" >/dev/null && yt-dlp --referer "$refr" "$1"';
+const SAVE_CALL = '    pullwave_save_subtitles "$download_dir/$_name"\n';
+export const SAVE_SUBTITLES_FUNCTION = `# Added by Pullwave: saves every subtitle the source offered for the episode ($1 = path of the video without its extension).
+pullwave_save_subtitles() {
+    printf "%s\\n" "$pullwave_all_subs" | while IFS= read -r _line; do
+        _src="$(printf "%s" "$_line" | sed -nE 's|.*"src":"([^"]*)".*|\\1|p')"
+        _label="$(printf "%s" "$_line" | sed -nE 's|.*"label":"([^"]*)".*|\\1|p' | sed 's|[^A-Za-z0-9 ._()-]|_|g; s| *$||')"
+        [ -n "$_src" ] && [ -n "$_label" ] && $curl_exe -sL -A "$agent" -e "$refr" --max-time 10 $cipher_flag "$_src" -o "$1.subtitle-$_label.vtt"
+    done
+    return 0
+}
+
+`;
+
+// The script that also saves every subtitle, or null when this is not a version it knows how to change.
+export function patchAllSubtitles(source: string): string | null {
+    if (!source.includes(`\n${LIST_ANCHOR}`) || !source.includes(SAVE_ANCHOR) || !source.includes(`\n${FUNCTION_ANCHOR}`)) {
+        return null;
+    }
+    return source
+        .replace(`\n${LIST_ANCHOR}`, () => {
+            return `\n${KEEP_LIST_LINE}\n${LIST_ANCHOR}`;
+        })
+        .replace(SAVE_ANCHOR, () => {
+            return `${SAVE_CALL}${SAVE_ANCHOR}`;
+        })
+        .replace(`\n${FUNCTION_ANCHOR}`, () => {
+            return `\n${SAVE_SUBTITLES_FUNCTION}${FUNCTION_ANCHOR}`;
+        });
+}

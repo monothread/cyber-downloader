@@ -111,11 +111,19 @@ describe('AnimeStreamPlayer', () => {
             render(<AnimeStreamPlayer />);
 
             const video = document.querySelector('video') as HTMLVideoElement;
-            expect(video.controls).toBe(true);
+            expect(video.controls).toBe(false);
             expect(video.autoplay).toBe(true);
+            expect(video.parentElement).toHaveClass('player__stage');
+            expect(video.nextElementSibling).toHaveClass('player__controls');
+            expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+            expect(screen.getByRole('slider', { name: 'Seek' })).toBeInTheDocument();
+            expect(screen.getByRole('slider', { name: 'Volume' })).toBeInTheDocument();
+            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('stream');
+            expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeInTheDocument();
             expect(video).toHaveAttribute('crossorigin', 'anonymous');
             expect(hls.state.instances).toHaveLength(1);
-            expect(hls.state.instances[0]).toMatchObject({ options: { enableWorker: false }, source: STREAM.url, media: video, destroyed: false });
+            expect(hls.state.instances[0]).toMatchObject({ options: { enableWorker: false }, source: STREAM.url, destroyed: false });
+            expect(hls.state.instances[0]?.media).toBe(video);
         });
 
         it('shows the subtitles when there are some', () => {
@@ -126,12 +134,25 @@ describe('AnimeStreamPlayer', () => {
             expect(track).toHaveAttribute('kind', 'subtitles');
             expect(track).toHaveAttribute('label', 'Subtitles');
             expect(track?.hasAttribute('default')).toBe(true);
+            expect(track).toHaveAttribute('id', 'stream');
+        });
+
+        it('lets the viewer turn the subtitles off and on', async () => {
+            stream();
+            const user = userEvent.setup();
+            render(<AnimeStreamPlayer />);
+            const select = screen.getByRole('combobox', { name: 'Subtitles' });
+            await user.selectOptions(select, 'off');
+            expect(select).toHaveValue('off');
+            await user.selectOptions(select, 'stream');
+            expect(select).toHaveValue('stream');
         });
 
         it('has no subtitle track without subtitles', () => {
             stream({ stream: { ...STREAM, subtitleUrl: null } });
             render(<AnimeStreamPlayer />);
             expect(document.querySelector('track')).toBeNull();
+            expect(screen.queryByRole('combobox', { name: 'Subtitles' })).not.toBeInTheDocument();
         });
 
         it('says so when hls.js reports a failure it cannot recover from', () => {

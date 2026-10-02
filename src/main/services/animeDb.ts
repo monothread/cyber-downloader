@@ -120,7 +120,8 @@ function toEpisode(row: Row): AnimeEpisodeRecord {
         positionSeconds: numeric(row, 'position_seconds'),
         durationSeconds: numeric(row, 'duration_seconds'),
         watched: numeric(row, 'watched') === 1,
-        downloadedAt: nullableNumeric(row, 'downloaded_at')
+        downloadedAt: nullableNumeric(row, 'downloaded_at'),
+        fileMissing: false
     };
 }
 
@@ -198,6 +199,34 @@ export class AnimeDb {
             this.now()
         );
         return toAnime(row ?? {});
+    }
+
+    // An anime found on the disk: it is added, or kept as it is when it is already there, except that search data that is not
+    // known (position 0) is filled in when it is learnt.
+    importAnime(input: NewAnime): AnimeRecord {
+        const row = this.one(
+            `INSERT INTO anime (title, query, search_index, audio, created_at) VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT (title, audio) DO UPDATE SET
+                query = CASE WHEN anime.search_index < 1 THEN excluded.query ELSE anime.query END,
+                search_index = CASE WHEN anime.search_index < 1 THEN excluded.search_index ELSE anime.search_index END
+             RETURNING *`,
+            input.title,
+            input.query,
+            input.searchIndex,
+            input.audio,
+            this.now()
+        );
+        return toAnime(row ?? {});
+    }
+
+    getEpisodeByNumber(animeId: number, number: string): AnimeEpisodeRecord | null {
+        const row = this.one('SELECT * FROM episode WHERE anime_id = ? AND number = ?', animeId, number);
+        return row ? toEpisode(row) : null;
+    }
+
+    // A video that is somewhere else now: only where it is changes.
+    relinkEpisode(episodeId: number, filePath: string, sizeBytes: number | null): void {
+        this.run('UPDATE episode SET file_path = ?, size_bytes = ? WHERE id = ?', filePath, sizeBytes, episodeId);
     }
 
     // A new episode is queued. One that is already downloaded stays as it is; any other one is queued again.

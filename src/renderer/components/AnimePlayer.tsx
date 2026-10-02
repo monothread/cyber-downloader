@@ -1,8 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { animeMediaUrl, type AnimeEpisodeRecord, type LibraryAnime } from '@shared/anime';
+import { animeMediaUrl, type AnimeEpisodeRecord, type AnimeSubtitleTrack, type LibraryAnime } from '@shared/anime';
 import { useTranslator } from '../i18n/useTranslator';
 import { useAnimeStore } from '../store/animeStore';
-import { isWatched, nextDownloadedEpisode, resumePosition } from './animeText';
+import {
+    DEFAULT_OPTION_ID,
+    importFailureKey,
+    initialSubtitle,
+    optionIdOf,
+    optionsOf,
+    readSubtitleChoice,
+    saveSubtitleChoice,
+    type SubtitleImportFailure
+} from './subtitleChoice';
+import { VideoControls } from './VideoControls';
+import { isWatched, nextDownloadedEpisode, previousDownloadedEpisode, resumePosition } from './animeText';
 
 // How often the position is saved while watching.
 export const SAVE_INTERVAL_SECONDS = 5;
@@ -30,6 +41,39 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
     const video = useRef<HTMLVideoElement | null>(null);
     const lastSaved = useRef(0);
     const [failed, setFailed] = useState(false);
+    // Until the list arrives only the subtitle ani-cli picked is known.
+    const [tracks, setTracks] = useState<AnimeSubtitleTrack[]>([{ id: '', label: 'Subtitles', kind: 'default' }]);
+    const [subtitle, setSubtitle] = useState<string | null>(DEFAULT_OPTION_ID);
+    const [importFailure, setImportFailure] = useState<SubtitleImportFailure | null>(null);
+
+    useEffect(() => {
+        let current = true;
+        void window.api.listAnimeSubtitles(episode.id).then((found) => {
+            if (current) {
+                setTracks(found);
+                setSubtitle(initialSubtitle(optionsOf(found), readSubtitleChoice(episode.id)));
+            }
+        });
+        return () => {
+            current = false;
+        };
+    }, [episode.id]);
+
+    function chooseSubtitle(choice: string | null): void {
+        setSubtitle(choice);
+        saveSubtitleChoice(episode.id, choice);
+    }
+
+    async function loadSubtitle(): Promise<void> {
+        const result = await window.api.importAnimeSubtitle(episode.id);
+        if (result.ok) {
+            setImportFailure(null);
+            setTracks(result.tracks);
+            chooseSubtitle(optionIdOf(result.imported));
+        } else if (result.reason !== 'cancelled') {
+            setImportFailure(result.reason);
+        }
+    }
 
     function save(): void {
         const element = video.current;
@@ -41,7 +85,8 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
             episodeId: episode.id,
             positionSeconds: element.currentTime,
             durationSeconds: element.duration,
-            watched: isWatched(element.currentTime, element.duration)
+            // Once an episode counts as watched it stays so, however far into it the viewer goes when they watch it again.
+            watched: episode.watched || isWatched(element.currentTime, element.duration)
         });
     }
 
@@ -63,6 +108,7 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
         };
     });
 
+    const previous = previousDownloadedEpisode(anime, episode);
     const next = nextDownloadedEpisode(anime, episode);
     const title = t('anime.job.title', { title: anime.title, episode: episode.number });
 
@@ -72,6 +118,18 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
                 <header className="job__head">
                     <h2 className="player__title">{title}</h2>
                     <span className="anime__actions">
+                        {previous && (
+                            <button
+                                type="button"
+                                className="btn btn--small"
+                                onClick={() => {
+                                    save();
+                                    play(anime.id, previous.id);
+                                }}
+                            >
+                                {t('anime.player.previous')}
+                            </button>
+                        )}
                         {next && (
                             <button
                                 type="button"
@@ -84,6 +142,15 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
                                 {t('anime.player.next')}
                             </button>
                         )}
+                        <button
+                            type="button"
+                            className="btn btn--small"
+                            onClick={() => {
+                                void loadSubtitle();
+                            }}
+                        >
+                            {t('anime.player.loadSubtitle')}
+                        </button>
                         <button type="button" className="btn btn--small btn--hot" autoFocus onClick={close}>
                             {t('anime.player.close')}
                         </button>
@@ -94,32 +161,50 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
                         {t('anime.player.error')}
                     </p>
                 )}
-                <video
-                    ref={video}
-                    className="player__video"
-                    src={animeMediaUrl('episode', episode.id)}
-                    crossOrigin="anonymous"
-                    controls
-                    autoPlay
-                    onLoadedMetadata={(event) => {
-                        const position = resumePosition(episode);
-                        if (position !== null) {
-                            event.currentTarget.currentTime = position;
-                        }
-                    }}
-                    onTimeUpdate={(event) => {
-                        if (Math.abs(event.currentTarget.currentTime - lastSaved.current) >= SAVE_INTERVAL_SECONDS) {
-                            save();
-                        }
-                    }}
-                    onPause={save}
-                    onEnded={save}
-                    onError={() => {
-                        setFailed(true);
-                    }}
-                >
-                    <track kind="subtitles" src={animeMediaUrl('subtitle', episode.id)} label="Subtitles" default />
-                </video>
+                {importFailure !== null && (
+                    <p className="field__warning" role="alert">
+                        {t(importFailureKey(importFailure))}
+                    </p>
+                )}
+                <div className="player__stage">
+                    <video
+                        ref={video}
+                        className="player__video"
+                        src={animeMediaUrl('episode', episode.id)}
+                        crossOrigin="anonymous"
+                        autoPlay
+                        onLoadedMetadata={(event) => {
+                            const position = resumePosition(episode);
+                            if (position !== null) {
+                                event.currentTarget.currentTime = position;
+                            }
+                        }}
+                        onTimeUpdate={(event) => {
+                            if (Math.abs(event.currentTarget.currentTime - lastSaved.current) >= SAVE_INTERVAL_SECONDS) {
+                                save();
+                            }
+                        }}
+                        onPause={save}
+                        onEnded={save}
+                        onError={() => {
+                            setFailed(true);
+                        }}
+                    >
+                        {tracks.map((track) => {
+                        return (
+                            <track
+                                key={optionIdOf(track)}
+                                id={optionIdOf(track)}
+                                kind="subtitles"
+                                src={animeMediaUrl('subtitle', episode.id, track.id)}
+                                label={track.label}
+                                default={optionIdOf(track) === subtitle}
+                            />
+                        );
+                    })}
+                    </video>
+                    <VideoControls video={video} subtitles={optionsOf(tracks)} selectedSubtitle={subtitle} onSelectSubtitle={chooseSubtitle} />
+                </div>
             </div>
         </div>
     );

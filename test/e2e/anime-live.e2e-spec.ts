@@ -59,7 +59,7 @@ test('downloads an episode at the lowest quality, with its subtitles, and plays 
     await page.getByRole('button', { name: /^DOWNLOADS \(\d+\)$/ }).click();
     await expect(page.locator('.job .badge--done')).toHaveText('DOWNLOADED', { timeout: 240000 });
 
-    const folder = join(workDir, 'anime', 'Cyberpunk_ Edgerunners');
+    const folder = join(workDir, 'anime', 'Cyberpunk_ Edgerunners', 'Episode 1');
     expect(readdirSync(folder).sort()).toEqual(['Cyberpunk_ Edgerunners Episode 1.mp4', 'Cyberpunk_ Edgerunners Episode 1.vtt']);
     expect(statSync(join(folder, 'Cyberpunk_ Edgerunners Episode 1.mp4')).size).toBeGreaterThan(10_000_000);
 
@@ -101,6 +101,6 @@ test('watches an episode without downloading it', async () => {
             return element.currentTime;
         });
     }, { timeout: 15000 }).toBeGreaterThan(1);
-    expect(existsSync(join(workDir, 'anime', 'Cyberpunk_ Edgerunners', 'Cyberpunk_ Edgerunners Episode 2.mp4'))).toBe(false);
+    expect(existsSync(join(workDir, 'anime', 'Cyberpunk_ Edgerunners', 'Episode 2', 'Cyberpunk_ Edgerunners Episode 2.mp4'))).toBe(false);
     await page.keyboard.press('Escape');
 });

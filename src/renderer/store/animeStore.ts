@@ -56,6 +56,8 @@ export interface AnimeState {
     selection: AnimeSelection | null;
     playing: PlayingEpisode | null;
     streaming: StreamingEpisode | null;
+    // The anime of the library the screen goes to when it is opened from the search (its episodes are shown).
+    libraryFocus: number | null;
     init: () => Promise<() => void>;
     updateCli: () => Promise<void>;
     setView: (view: AnimeBrowseView) => void;
@@ -65,6 +67,12 @@ export interface AnimeState {
     setAudio: (audio: AnimeAudio) => void;
     runSearch: () => Promise<void>;
     openResult: (result: AnimeSearchResult) => Promise<void>;
+    // Opens an anime of the library in the search, as if it had been found there, so more episodes can be downloaded.
+    openLibraryAnime: (anime: LibraryAnime) => Promise<void>;
+    // Asks for a folder of anime and puts what is in it into the library, then says what it did.
+    importLibrary: () => Promise<void>;
+    // Goes to the library, to the anime that was being looked at in the search.
+    showInLibrary: (animeId: number) => void;
     closeResult: () => void;
     downloadEpisodes: (episodes: string[]) => Promise<void>;
     cancelJob: (episodeId: number) => Promise<void>;
@@ -77,6 +85,8 @@ export interface AnimeState {
     watchEpisode: (episode: string) => Promise<void>;
     closeStream: () => void;
     saveProgress: (update: AnimeProgressUpdate) => Promise<void>;
+    // Marks an episode of the library as watched (or not), keeping the position it was left at.
+    setWatched: (episodeId: number, watched: boolean) => Promise<void>;
     refreshLibrary: () => Promise<void>;
 }
 
@@ -129,6 +139,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
         selection: null,
         playing: null,
         streaming: null,
+        libraryFocus: null,
 
         init: async () => {
             const api = window.api;
@@ -166,7 +177,11 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
         },
 
         setView: (view) => {
-            set({ view, returnView: view });
+            set({ view, returnView: view, libraryFocus: null });
+            // Files can be moved or deleted while the app is open: the library says which ones are gone when it is shown.
+            if (view === 'library') {
+                void get().refreshLibrary();
+            }
         },
 
         openDownloads: () => {
@@ -234,6 +249,54 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
                 }
                 return { selection: { ...selection, status: 'error', error: response.error } };
             });
+        },
+
+        importLibrary: async () => {
+            const response = await window.api.importAnimeLibrary();
+            if (!response.ok) {
+                return;
+            }
+            set({ library: await window.api.listAnimeLibrary() });
+            notify('info', translateNow('anime.import.done', { added: response.added, relinked: response.relinked, skipped: response.skipped, ignored: response.ignored }));
+        },
+
+        openLibraryAnime: async (anime) => {
+            // An anime that was found on the disk does not know its place in the search: it is searched by its title instead.
+            if (anime.searchIndex < 1) {
+                set((state) => {
+                    return {
+                        view: 'search',
+                        returnView: 'search',
+                        selection: null,
+                        search: { ...state.search, query: anime.query, audio: anime.audio, status: 'idle', error: null, results: [] }
+                    };
+                });
+                await get().runSearch();
+                return;
+            }
+            const result: AnimeSearchResult = { index: anime.searchIndex, title: anime.title };
+            set((state) => {
+                return {
+                    view: 'search',
+                    returnView: 'search',
+                    search: {
+                        ...state.search,
+                        query: anime.query,
+                        audio: anime.audio,
+                        status: 'done',
+                        error: null,
+                        results: [result],
+                        searchedQuery: anime.query,
+                        searchedAudio: anime.audio
+                    }
+                };
+            });
+            await get().openResult(result);
+        },
+
+        showInLibrary: (animeId) => {
+            set({ view: 'library', returnView: 'library', selection: null, libraryFocus: animeId });
+            void get().refreshLibrary();
         },
 
         closeResult: () => {
@@ -330,6 +393,21 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
 
         saveProgress: async (update) => {
             await window.api.saveAnimeProgress(update);
+        },
+
+        setWatched: async (episodeId, watched) => {
+            const episode = get()
+                .library.flatMap((anime) => {
+                    return anime.episodes;
+                })
+                .find((candidate) => {
+                    return candidate.id === episodeId;
+                });
+            if (!episode) {
+                return;
+            }
+            await window.api.saveAnimeProgress({ episodeId, positionSeconds: episode.positionSeconds, durationSeconds: episode.durationSeconds, watched });
+            set({ library: await window.api.listAnimeLibrary() });
         },
 
         refreshLibrary: async () => {

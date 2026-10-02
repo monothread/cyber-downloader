@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { AnimeJob, LibraryAnime } from '@shared/anime';
+import type { AnimeImportResponse, AnimeJob, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 export interface MockApiHandle {
@@ -145,8 +145,20 @@ export function createMockApi(): MockApiHandle {
         removeAnime: vi.fn(async () => {
             return undefined;
         }),
+        openAnimeFolder: vi.fn(async () => {
+            return undefined;
+        }),
+        importAnimeLibrary: vi.fn(async (): Promise<AnimeImportResponse> => {
+            return { ok: false, reason: 'cancelled' };
+        }),
         saveAnimeProgress: vi.fn(async () => {
             return undefined;
+        }),
+        listAnimeSubtitles: vi.fn(async (): Promise<AnimeSubtitleTrack[]> => {
+            return [];
+        }),
+        importAnimeSubtitle: vi.fn(async (): Promise<AnimeSubtitleImportResponse> => {
+            return { ok: false, reason: 'cancelled' };
         }),
         updateAniCli: vi.fn(async () => {
             return { ok: true, output: 'Updated ani-cli' };

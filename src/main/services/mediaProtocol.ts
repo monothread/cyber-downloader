@@ -28,7 +28,7 @@ export interface MediaFileSystem {
 
 export interface MediaSource {
     // The file of an episode (its video or its subtitles), or null when there is none to serve.
-    resolve: (kind: AnimeMediaKind, episodeId: number) => string | null;
+    resolve: (kind: AnimeMediaKind, episodeId: number, trackId: string) => string | null;
 }
 
 // A single "bytes=start-end" range. null: no range was asked. 'invalid': it cannot be satisfied (HTTP 416).
@@ -54,22 +54,36 @@ export function contentTypeOf(path: string): string {
     return CONTENT_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream';
 }
 
-// The player asks for `pullwave-media://episode/<id>` (the video) and `pullwave-media://subtitle/<id>` (its .vtt).
-export function parseMediaUrl(url: string): { kind: AnimeMediaKind; episodeId: number } | null {
+// The id of a subtitle as it came in the address (none means the one ani-cli picked); null when it is not valid text.
+function decodeTrackId(encoded: string | undefined): string | null {
+    try {
+        return encoded === undefined ? '' : decodeURIComponent(encoded);
+    } catch {
+        return null;
+    }
+}
+
+// The player asks for `pullwave-media://episode/<id>` (the video), `pullwave-media://subtitle/<id>` (the subtitles ani-cli
+// picked) and `pullwave-media://subtitle/<id>/<track>` (another subtitle of the episode).
+export function parseMediaUrl(url: string): { kind: AnimeMediaKind; episodeId: number; trackId: string } | null {
     let parsed: URL;
     try {
         parsed = new URL(url);
     } catch {
         return null;
     }
-    const episodeId = /^\/(\d+)$/.exec(parsed.pathname)?.[1];
-    if (parsed.protocol !== `${ANIME_MEDIA_SCHEME}:` || episodeId === undefined) {
+    const match = /^\/(\d+)(?:\/([^/]+))?$/.exec(parsed.pathname);
+    if (parsed.protocol !== `${ANIME_MEDIA_SCHEME}:` || match === null) {
         return null;
     }
     if (parsed.hostname !== 'episode' && parsed.hostname !== 'subtitle') {
         return null;
     }
-    return { kind: parsed.hostname, episodeId: Number(episodeId) };
+    if (match[2] !== undefined && parsed.hostname !== 'subtitle') {
+        return null;
+    }
+    const trackId = decodeTrackId(match[2]);
+    return trackId === null ? null : { kind: parsed.hostname, episodeId: Number(match[1]), trackId };
 }
 
 function plain(status: number, headers: Record<string, string> = {}): Response {
@@ -81,7 +95,7 @@ function plain(status: number, headers: Record<string, string> = {}): Response {
 export function createMediaHandler(source: MediaSource, files: MediaFileSystem): (request: Request) => Response {
     return (request) => {
         const media = parseMediaUrl(request.url);
-        const path = media ? source.resolve(media.kind, media.episodeId) : null;
+        const path = media ? source.resolve(media.kind, media.episodeId, media.trackId) : null;
         const size = path === null ? null : files.size(path);
         if (path === null || size === null) {
             return plain(404);

@@ -81,8 +81,18 @@ describe('contentTypeOf', () => {
 describe('parseMediaUrl', () => {
     it('reads the kind and the episode id', () => {
         expect(ANIME_MEDIA_SCHEME).toBe('pullwave-media');
-        expect(parseMediaUrl('pullwave-media://episode/12')).toEqual({ kind: 'episode', episodeId: 12 });
-        expect(parseMediaUrl('pullwave-media://subtitle/7')).toEqual({ kind: 'subtitle', episodeId: 7 });
+        expect(parseMediaUrl('pullwave-media://episode/12')).toEqual({ kind: 'episode', episodeId: 12, trackId: '' });
+        expect(parseMediaUrl('pullwave-media://subtitle/7')).toEqual({ kind: 'subtitle', episodeId: 7, trackId: '' });
+    });
+
+    it('reads the subtitle of an episode that is not the default one, decoded', () => {
+        expect(parseMediaUrl('pullwave-media://subtitle/7/subtitle-Japanese')).toEqual({ kind: 'subtitle', episodeId: 7, trackId: 'subtitle-Japanese' });
+        expect(parseMediaUrl(`pullwave-media://subtitle/7/${encodeURIComponent('subtitle-Portuguese (- Portuguese(Brazil))')}`)).toEqual({
+            kind: 'subtitle',
+            episodeId: 7,
+            trackId: 'subtitle-Portuguese (- Portuguese(Brazil))'
+        });
+        expect(parseMediaUrl(`pullwave-media://subtitle/7/${encodeURIComponent('import-Aula 日本語')}`)).toEqual({ kind: 'subtitle', episodeId: 7, trackId: 'import-Aula 日本語' });
     });
 
     it('rejects anything else', () => {
@@ -92,6 +102,8 @@ describe('parseMediaUrl', () => {
         expect(parseMediaUrl('pullwave-media://episode/')).toBeNull();
         expect(parseMediaUrl('pullwave-media://episode/abc')).toBeNull();
         expect(parseMediaUrl('pullwave-media://episode/12/extra')).toBeNull();
+        expect(parseMediaUrl('pullwave-media://subtitle/12/a/b')).toBeNull();
+        expect(parseMediaUrl('pullwave-media://subtitle/12/%E0%A4%A')).toBeNull();
         expect(parseMediaUrl('pullwave-media://episode/../etc/passwd')).toBeNull();
         expect(parseMediaUrl('pullwave-media://episode/-1')).toBeNull();
     });
@@ -132,7 +144,7 @@ describe('createMediaHandler', () => {
             'content-type': 'video/mp4'
         });
         expect(await response.text()).toBe(CONTENT);
-        expect(resolve).toHaveBeenCalledWith('episode', 3);
+        expect(resolve).toHaveBeenCalledWith('episode', 3, '');
         expect(read).toHaveBeenCalledWith('/lib/Naruto Episode 1.mp4', { start: 0, end: 9 });
     });
 
@@ -182,7 +194,7 @@ describe('createMediaHandler', () => {
     it('serves subtitles with their own type', async () => {
         const { handler, resolve } = setup({ path: '/lib/Naruto Episode 1.vtt' });
         const response = handler(request('pullwave-media://subtitle/3'));
-        expect(resolve).toHaveBeenCalledWith('subtitle', 3);
+        expect(resolve).toHaveBeenCalledWith('subtitle', 3, '');
         expect(response.status).toBe(200);
         expect(response.headers.get('content-type')).toBe('text/vtt; charset=utf-8');
     });

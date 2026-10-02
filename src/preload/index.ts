@@ -122,8 +122,20 @@ const api: CyberApi = {
     removeAnime: (animeId) => {
         return ipcRenderer.invoke(IPC.animeRemoveAnime, animeId);
     },
+    openAnimeFolder: (animeId) => {
+        return ipcRenderer.invoke(IPC.animeOpenFolder, animeId);
+    },
+    importAnimeLibrary: () => {
+        return ipcRenderer.invoke(IPC.animeImportLibrary);
+    },
     saveAnimeProgress: (update) => {
         return ipcRenderer.invoke(IPC.animeProgress, update);
+    },
+    listAnimeSubtitles: (episodeId) => {
+        return ipcRenderer.invoke(IPC.animeSubtitles, episodeId);
+    },
+    importAnimeSubtitle: (episodeId) => {
+        return ipcRenderer.invoke(IPC.animeSubtitleImport, episodeId);
     },
     updateAniCli: () => {
         return ipcRenderer.invoke(IPC.animeUpdateCli);

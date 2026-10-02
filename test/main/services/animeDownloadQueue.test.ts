@@ -18,13 +18,17 @@ interface Download {
 const DOWNLOADS = '/home/me/Downloads';
 const REQUEST: AnimeDownloadRequest = { title: 'Naruto', query: 'naruto', index: 2, audio: 'sub', episodes: ['1', '2', '3'] };
 
-function setup(settings: Partial<Settings> = {}, files: Record<string, number> = {}, system: { platform?: NodeJS.Platform; downloads?: string } = {}) {
+function setup(
+    settings: Partial<Settings> = {},
+    files: Record<string, number> = {},
+    system: { platform?: NodeJS.Platform; downloads?: string; directories?: string[] } = {}
+) {
     const db = new AnimeDb(':memory:', () => {
         return 1000;
     });
     const downloads: Download[] = [];
     const updates: AnimeJob[] = [];
-    const state = { settings: { ...DEFAULT_SETTINGS, ...settings }, libraryChanges: 0, directories: [] as string[], files: { ...files } };
+    const state = { settings: { ...DEFAULT_SETTINGS, ...settings }, libraryChanges: 0, directories: [] as string[], files: { ...files }, downloaded: [] as number[] };
     const ensureDirectory = vi.fn((path: string) => {
         state.directories.push(path);
     });
@@ -49,6 +53,12 @@ function setup(settings: Partial<Settings> = {}, files: Record<string, number> =
         ensureDirectory,
         fileSize: (path) => {
             return state.files[path] ?? null;
+        },
+        directoryExists: (path) => {
+            return (system.directories ?? []).includes(path);
+        },
+        onEpisodeDownloaded: (episodeId) => {
+            state.downloaded.push(episodeId);
         },
         onJobUpdate: (job) => {
             updates.push(job);
@@ -110,10 +120,13 @@ describe('AnimeDownloadQueue.enqueue', () => {
             episode: '1',
             quality: 'best',
             audio: 'sub',
-            downloadDir: join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Naruto')
+            downloadDir: join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Naruto', 'Episode 1')
         });
         expect(downloads[1]?.options.episode).toBe('2');
-        expect(ensureDirectory).toHaveBeenCalledWith(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Naruto'));
+        expect(downloads[1]?.options.downloadDir).toBe(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Naruto', 'Episode 2'));
+        expect(ensureDirectory).toHaveBeenCalledTimes(2);
+        expect(ensureDirectory).toHaveBeenNthCalledWith(1, join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Naruto', 'Episode 1'));
+        expect(ensureDirectory).toHaveBeenNthCalledWith(2, join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Naruto', 'Episode 2'));
         expect(
             queue.list().map((job) => {
                 return job.status;
@@ -125,13 +138,13 @@ describe('AnimeDownloadQueue.enqueue', () => {
     it('uses the folder, the quality and the audio chosen', () => {
         const { queue, downloads } = setup({ animeDownloadDir: '/media/anime', animeQuality: '720p' });
         queue.enqueue({ ...REQUEST, audio: 'dub', episodes: ['1'] });
-        expect(downloads[0]?.options).toMatchObject({ quality: '720p', audio: 'dub', downloadDir: join('/media/anime', 'Naruto') });
+        expect(downloads[0]?.options).toMatchObject({ quality: '720p', audio: 'dub', downloadDir: join('/media/anime', 'Naruto', 'Episode 1') });
     });
 
     it('names the folder after the anime without forbidden characters', () => {
         const { queue, downloads } = setup();
         queue.enqueue({ ...REQUEST, title: 'Re:Zero / Season 2', episodes: ['1'] });
-        expect(downloads[0]?.options.downloadDir).toBe(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Re_Zero _ Season 2'));
+        expect(downloads[0]?.options.downloadDir).toBe(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Re_Zero _ Season 2', 'Episode 1'));
     });
 
     it('leaves downloaded episodes and episodes already waiting alone', async () => {
@@ -168,7 +181,7 @@ describe('AnimeDownloadQueue on Windows', () => {
     it('saves in a folder named after the anime with Windows rules, inside Downloads', () => {
         const { queue, downloads, ensureDirectory } = setup({}, {}, { platform: 'win32', downloads: WINDOWS_DOWNLOADS });
         queue.enqueue({ ...REQUEST, title: 'NUL', episodes: ['1'] });
-        const folder = 'C:\\Users\\me\\Downloads\\Pullwave Anime\\_NUL';
+        const folder = 'C:\\Users\\me\\Downloads\\Pullwave Anime\\_NUL\\Episode 1';
         expect(downloads[0]?.options.downloadDir).toBe(folder);
         expect(ensureDirectory).toHaveBeenCalledWith(folder);
     });
@@ -176,11 +189,11 @@ describe('AnimeDownloadQueue on Windows', () => {
     it('uses the folder of the settings', () => {
         const { queue, downloads } = setup({ animeDownloadDir: 'D:\\Anime' }, {}, { platform: 'win32', downloads: WINDOWS_DOWNLOADS });
         queue.enqueue({ ...REQUEST, title: 'Re:Zero', episodes: ['1'] });
-        expect(downloads[0]?.options.downloadDir).toBe('D:\\Anime\\Re_Zero');
+        expect(downloads[0]?.options.downloadDir).toBe('D:\\Anime\\Re_Zero\\Episode 1');
     });
 
     it('looks for the file in that folder when yt-dlp did not say where it wrote', async () => {
-        const path = 'D:\\Anime\\Re_Zero\\Re_Zero Episode 1.mp4';
+        const path = 'D:\\Anime\\Re_Zero\\Episode 1\\Re_Zero Episode 1.mp4';
         const { queue, db, downloads } = setup({ animeDownloadDir: 'D:\\Anime' }, { [path]: 10 }, { platform: 'win32', downloads: WINDOWS_DOWNLOADS });
         queue.enqueue({ ...REQUEST, title: 'Re:Zero', episodes: ['1'] });
         downloads[0]?.finish(doneAt(null));
@@ -194,7 +207,8 @@ describe('AnimeDownloadQueue on Windows', () => {
         const title = 'T'.repeat(60);
         queue.enqueue({ ...REQUEST, title, episodes: ['1'] });
         const folder = downloads[0]?.options.downloadDir ?? '';
-        expect(`${folder}\\${title} Episode 999.mp4`.length).toBeLessThanOrEqual(240);
+        expect(folder.endsWith('\\Episode 1')).toBe(true);
+        expect(`${folder.replace('Episode 1', 'Episode 999')}\\${title} Episode 999.mp4`.length).toBeLessThanOrEqual(240);
     });
 });
 
@@ -255,7 +269,7 @@ describe('AnimeDownloadQueue results', () => {
     });
 
     it('looks for the file where ani-cli names it when yt-dlp did not say where it wrote', async () => {
-        const path = join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Re_Zero', 'Re_Zero Episode 1.mp4');
+        const path = join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Re_Zero', 'Episode 1', 'Re_Zero Episode 1.mp4');
         const { queue, db, downloads } = setup({}, { [path]: 10 });
         queue.enqueue({ ...REQUEST, title: 'Re:Zero', episodes: ['1'] });
         downloads[0]?.finish(doneAt(null));
@@ -480,5 +494,60 @@ describe('AnimeDownloadQueue.shutdown', () => {
             queue.shutdown();
         }).not.toThrow();
         expect(queue.pendingCount()).toBe(0);
+    });
+});
+
+describe('AnimeDownloadQueue folders and metadata', () => {
+    const ANIME_FOLDER = join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Naruto');
+
+    function withDownloaded(videoPath: string, directories: string[]) {
+        const context = setup({}, {}, { directories });
+        const anime = context.db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'sub' });
+        context.db.markDone(context.db.ensureEpisode(anime.id, '1').id, videoPath, 10);
+        return { ...context, anime };
+    }
+
+    it('tells that an episode was downloaded once it is in the library, and not before', async () => {
+        const { queue, downloads, state } = setup({ maxConcurrent: 1 }, { '/a/Naruto Episode 1.mp4': 4096 });
+        queue.enqueue({ ...REQUEST, episodes: ['1'] });
+        expect(state.downloaded).toEqual([]);
+        downloads[0]?.finish(doneAt('/a/Naruto Episode 1.mp4'));
+        await settleResults();
+        expect(state.downloaded).toEqual([1]);
+    });
+
+    it('does not tell it for an episode that failed because its file is not there', async () => {
+        const { queue, downloads, state } = setup({ maxConcurrent: 1 });
+        queue.enqueue({ ...REQUEST, episodes: ['1'] });
+        downloads[0]?.finish(doneAt('/a/missing.mp4'));
+        await settleResults();
+        expect(state.downloaded).toEqual([]);
+    });
+
+    it('puts a new episode with the others when the folder of the anime was renamed or moved', () => {
+        const renamed = join('/media', 'My Naruto');
+        const { queue, downloads, ensureDirectory } = withDownloaded(join(renamed, 'Episode 1', 'Naruto Episode 1.mp4'), [renamed]);
+        queue.enqueue({ ...REQUEST, episodes: ['2'] });
+        expect(downloads[0]?.options.downloadDir).toBe(join(renamed, 'Episode 2'));
+        expect(ensureDirectory).toHaveBeenCalledWith(join(renamed, 'Episode 2'));
+    });
+
+    it('goes back to the folder named after the anime when the one it had is gone', () => {
+        const { queue, downloads } = withDownloaded(join('/media', 'My Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), []);
+        queue.enqueue({ ...REQUEST, episodes: ['2'] });
+        expect(downloads[0]?.options.downloadDir).toBe(join(ANIME_FOLDER, 'Episode 2'));
+    });
+
+    it('does not take the folder of a video that is not in the folder of an episode for the folder of the anime', () => {
+        const { queue, downloads } = withDownloaded(join('/media', 'Videos', 'Naruto Episode 1.mp4'), [join('/media', 'Videos')]);
+        queue.enqueue({ ...REQUEST, episodes: ['2'] });
+        expect(downloads[0]?.options.downloadDir).toBe(join(ANIME_FOLDER, 'Episode 2'));
+    });
+
+    it('ignores episodes that are not downloaded when it looks for the folder of the anime', () => {
+        const { queue, downloads, db, anime } = withDownloaded(join('/media', 'My Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), [join('/media', 'My Naruto')]);
+        db.markFailed(db.ensureEpisode(anime.id, '1').id, 'error', { code: 'UNKNOWN', raw: 'x' });
+        queue.enqueue({ ...REQUEST, episodes: ['2'] });
+        expect(downloads[0]?.options.downloadDir).toBe(join(ANIME_FOLDER, 'Episode 2'));
     });
 });

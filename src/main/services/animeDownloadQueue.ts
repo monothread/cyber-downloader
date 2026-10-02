@@ -2,7 +2,7 @@ import { posix, win32 } from 'node:path';
 import type { AniDownloadProgress, AniError, AnimeDownloadRequest, AnimeEpisodeRecord, AnimeJob, AnimeRecord, LibraryAnime } from '@shared/anime';
 import type { Settings } from '@shared/types';
 import type { AnimeDb } from './animeDb';
-import { animeBaseDirectory, animeDownloadDirectory, animeFileName } from './animeFiles';
+import { animeBaseDirectory, animeDownloadDirectory, animeFileName, animeFolderOf, episodeDownloadDirectory, episodeFolderOf } from './animeFiles';
 import type { AniDownloadHandle, AniDownloadOptions } from './aniCliService';
 
 // Progress lines come many times a second; the screen only needs to hear about a visible change.
@@ -16,6 +16,10 @@ export interface AnimeQueueDependencies {
     ensureDirectory: (path: string) => void;
     // The size of a file, or null when it is not there.
     fileSize: (path: string) => number | null;
+    // Whether a folder is there.
+    directoryExists: (path: string) => boolean;
+    // An episode was downloaded and is in the library: what is kept beside the video can be written.
+    onEpisodeDownloaded?: (episodeId: number) => void;
     onJobUpdate: (job: AnimeJob) => void;
     onLibraryChanged: () => void;
     // The system the files are on (decides the rules of file names); this one by default.
@@ -157,7 +161,10 @@ export class AnimeDownloadQueue {
         }
         const settings = this.deps.getSettings();
         const platform = this.deps.platform ?? process.platform;
-        const downloadDir = animeDownloadDirectory(animeBaseDirectory(settings, this.deps.defaultDownloadDir, platform), anime.title, platform);
+        const animeDirectory =
+            this.existingAnimeDirectory(anime.id, platform) ??
+            animeDownloadDirectory(animeBaseDirectory(settings, this.deps.defaultDownloadDir, platform), anime.title, platform);
+        const downloadDir = episodeDownloadDirectory(animeDirectory, job.episode, platform);
         try {
             this.deps.ensureDirectory(downloadDir);
         } catch (error) {
@@ -200,6 +207,20 @@ export class AnimeDownloadQueue {
         return true;
     }
 
+    // The folder the anime already has, when the folder was renamed or moved the new episodes still go with the old ones. Only a
+    // folder that holds the folders of the episodes counts: the videos downloaded before that sit in the folder of the anime,
+    // but a video put anywhere else says nothing about where an anime goes.
+    private existingAnimeDirectory(animeId: number, platform: NodeJS.Platform): string | null {
+        const downloaded = this.deps.db.getLibraryAnime(animeId)?.episodes.find((episode) => {
+            return episode.status === 'done' && episode.filePath !== null && episodeFolderOf(episode.filePath, episode.number, platform) !== null;
+        });
+        if (!downloaded?.filePath) {
+            return null;
+        }
+        const folder = animeFolderOf(downloaded.filePath, downloaded.number, platform);
+        return this.deps.directoryExists(folder) ? folder : null;
+    }
+
     private reportProgress(job: AnimeJob, progress: AniDownloadProgress): void {
         const last = this.lastReported.get(job.episodeId) ?? 0;
         if (progress.percent < 100 && Math.abs(progress.percent - last) < MIN_PERCENT_STEP) {
@@ -217,6 +238,7 @@ export class AnimeDownloadQueue {
             return;
         }
         this.deps.db.markDone(job.episodeId, path, size);
+        this.deps.onEpisodeDownloaded?.(job.episodeId);
         this.update(job, { status: 'done', percent: 100, speed: '', eta: '' });
     }
 

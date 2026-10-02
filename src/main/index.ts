@@ -240,6 +240,26 @@ function bootstrap(): void {
         customScriptPath: () => {
             return process.env.PULLWAVE_ANI_CLI ?? '';
         },
+        // PULLWAVE_IMPORT_DIR answers the question of which folder to import (used by the end-to-end tests).
+        chooseLibraryFolder: async (startAt) => {
+            if (process.env.PULLWAVE_IMPORT_DIR) {
+                return process.env.PULLWAVE_IMPORT_DIR;
+            }
+            const options = { defaultPath: startAt, properties: ['openDirectory'] as Array<'openDirectory'> };
+            const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+            return result.canceled ? null : (result.filePaths[0] ?? null);
+        },
+        openFolder: (path) => {
+            void shell.openPath(path);
+        },
+        chooseSubtitleFile: async () => {
+            const options = {
+                properties: ['openFile'] as Array<'openFile'>,
+                filters: [{ name: 'Subtitles', extensions: ['vtt', 'srt'] }]
+            };
+            const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+            return result.canceled ? null : (result.filePaths[0] ?? null);
+        },
         send: sendToRenderer
     });
     if (anime) {

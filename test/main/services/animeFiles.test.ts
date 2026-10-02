@@ -10,6 +10,14 @@ import {
     animeFolderName,
     animeFoldersToRemove,
     DEFAULT_ANIME_FOLDER,
+    animeFolderOf,
+    episodeDownloadDirectory,
+    METADATA_FILE_NAME,
+    metadataPathFor,
+    episodeFolderName,
+    episodeFolderOf,
+    EPISODE_FOLDER_PREFIX,
+    removeEmptyDirectories,
     filesOfEpisode,
     removeDirectories,
     subtitlePathFor
@@ -38,8 +46,26 @@ describe('subtitlePathFor', () => {
 });
 
 describe('filesOfEpisode', () => {
+    const files = (names: string[]) => {
+        return { list: () => { return names; }, read: () => { return null; }, size: () => { return null; }, write: () => { return undefined; } };
+    };
+
     it('lists the video and its subtitles', () => {
-        expect(filesOfEpisode('/lib/a.mp4')).toEqual(['/lib/a.mp4', '/lib/a.vtt']);
+        expect(filesOfEpisode('/lib/a.mp4', files([]))).toEqual(['/lib/a.mp4', '/lib/a.vtt', '/lib/pullwave.json']);
+    });
+
+    it('also lists the subtitles of the source and the ones the user loaded, and nothing from other episodes', () => {
+        expect(
+            filesOfEpisode('/lib/a.mp4', files(['a.mp4', 'a.vtt', 'a.subtitle-English.vtt', 'a.subtitle-Japanese.vtt', 'a.import-mine.vtt', 'a.5.vtt', 'a2.vtt', 'b.subtitle-English.vtt']))
+        ).toEqual(['/lib/a.mp4', '/lib/a.vtt', '/lib/a.subtitle-English.vtt', '/lib/a.subtitle-Japanese.vtt', '/lib/a.import-mine.vtt', '/lib/pullwave.json']);
+    });
+
+    it('lists what is really on the disk by default', () => {
+        const dir = makeTempDir();
+        ['a.mp4', 'a.vtt', 'a.subtitle-Japanese.vtt'].forEach((name) => {
+            writeFileSync(join(dir, name), 'x');
+        });
+        expect(filesOfEpisode(join(dir, 'a.mp4'))).toEqual([join(dir, 'a.mp4'), join(dir, 'a.vtt'), join(dir, 'a.subtitle-Japanese.vtt'), join(dir, 'pullwave.json')]);
     });
 });
 
@@ -172,6 +198,75 @@ describe('animeFolderName on Windows', () => {
     });
 });
 
+describe('the folder of an episode', () => {
+    it('is named after the episode', () => {
+        expect(EPISODE_FOLDER_PREFIX).toBe('Episode ');
+        expect(episodeFolderName('1')).toBe('Episode 1');
+        expect(episodeFolderName('12.5')).toBe('Episode 12.5');
+    });
+
+    it('is inside the folder of the anime, with the rules of the system the files are on', () => {
+        expect(episodeDownloadDirectory('/lib/Naruto', '3', 'linux')).toBe('/lib/Naruto/Episode 3');
+        expect(episodeDownloadDirectory('D:\\Anime\\Naruto', '3', 'win32')).toBe('D:\\Anime\\Naruto\\Episode 3');
+        expect(episodeDownloadDirectory(join('/lib', 'Naruto'), '3')).toBe(join('/lib', 'Naruto', 'Episode 3'));
+    });
+
+    it('is found from a video that is in it, and not from one that is not', () => {
+        expect(episodeFolderOf('/lib/Naruto/Episode 3/Naruto Episode 3.mp4', '3', 'linux')).toBe('/lib/Naruto/Episode 3');
+        expect(episodeFolderOf('D:\\Anime\\Naruto\\Episode 3\\Naruto Episode 3.mp4', '3', 'win32')).toBe('D:\\Anime\\Naruto\\Episode 3');
+        expect(episodeFolderOf('/lib/Naruto/Naruto Episode 3.mp4', '3', 'linux')).toBeNull();
+        expect(episodeFolderOf('/lib/Naruto/Episode 4/Naruto Episode 3.mp4', '3', 'linux')).toBeNull();
+        expect(episodeFolderOf('/lib/Naruto/Episode 3/Naruto Episode 3.mp4', '')).toBeNull();
+    });
+});
+
+describe('animeFolderOf', () => {
+    it('is the folder that holds the folders of the episodes', () => {
+        expect(animeFolderOf('/lib/Naruto/Episode 3/Naruto Episode 3.mp4', '3', 'linux')).toBe('/lib/Naruto');
+        expect(animeFolderOf('D:\\Anime\\Naruto\\Episode 3\\Naruto Episode 3.mp4', '3', 'win32')).toBe('D:\\Anime\\Naruto');
+    });
+
+    it('is the folder of the video when it is not in the folder of an episode', () => {
+        expect(animeFolderOf('/lib/Naruto/Naruto Episode 3.mp4', '3', 'linux')).toBe('/lib/Naruto');
+        expect(animeFolderOf('/lib/Naruto/Episode 4/Naruto Episode 3.mp4', '3', 'linux')).toBe('/lib/Naruto/Episode 4');
+    });
+
+    it('uses this system by default', () => {
+        expect(animeFolderOf(join('/lib', 'Naruto', 'Episode 3', 'a.mp4'), '3')).toBe(join('/lib', 'Naruto'));
+    });
+});
+
+describe('the metadata of an episode', () => {
+    it('is a file with a fixed name in the folder of the video', () => {
+        expect(METADATA_FILE_NAME).toBe('pullwave.json');
+        expect(metadataPathFor(join('/lib', 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'))).toBe(join('/lib', 'Naruto', 'Episode 1', 'pullwave.json'));
+    });
+});
+
+describe('removeEmptyDirectories', () => {
+    it('removes a folder with nothing in it and leaves one that has files', () => {
+        const root = makeTempDir();
+        const empty = join(root, 'empty');
+        const full = join(root, 'full');
+        mkdirSync(empty);
+        mkdirSync(full);
+        writeFileSync(join(full, 'a.mp4'), 'x');
+        removeEmptyDirectories([empty, full, join(root, 'missing')]);
+        expect(existsSync(empty)).toBe(false);
+        expect(existsSync(join(full, 'a.mp4'))).toBe(true);
+    });
+
+    it('goes on after one that cannot be removed', () => {
+        const remove = vi.fn((path: string) => {
+            if (path === 'a') {
+                throw new Error('EBUSY');
+            }
+        });
+        removeEmptyDirectories(['a', 'b'], remove);
+        expect(remove.mock.calls).toEqual([['a'], ['b']]);
+    });
+});
+
 describe('folderNameBudget', () => {
     it('is the usual length outside Windows, whatever the rest of the path is', () => {
         expect(folderNameBudget('/' + 'x'.repeat(300), 'Naruto', 'linux')).toBe(MAX_FOLDER_NAME_LENGTH);
@@ -186,7 +281,7 @@ describe('folderNameBudget', () => {
         const title = 'Naruto';
         const budget = folderNameBudget(base, title, 'win32');
         expect(budget).toBeLessThan(MAX_FOLDER_NAME_LENGTH);
-        const file = `${base}\\${'f'.repeat(budget)}\\Naruto Episode 999.mp4`;
+        const file = `${base}\\${'f'.repeat(budget)}\\Episode 999\\Naruto Episode 999.mp4`;
         expect(file.length).toBeLessThanOrEqual(WINDOWS_PATH_BUDGET);
     });
 

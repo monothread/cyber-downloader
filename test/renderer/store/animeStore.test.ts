@@ -39,6 +39,7 @@ describe('useAnimeStore initial state', () => {
         expect(initialAnime.selection).toBeNull();
         expect(initialAnime.playing).toBeNull();
         expect(initialAnime.streaming).toBeNull();
+        expect(initialAnime.libraryFocus).toBeNull();
     });
 });
 
@@ -128,6 +129,39 @@ describe('simple setters', () => {
         useAnimeStore.getState().setAudio('dub');
         expect(useAnimeStore.getState().view).toBe('library');
         expect(useAnimeStore.getState().search).toMatchObject({ query: 'bleach', audio: 'dub' });
+    });
+
+    it('reads the library again when it is shown, so files that are gone are noticed, and not for the search', async () => {
+        const anime = makeAnime([makeEpisode({ id: 1, fileMissing: true })]);
+        mock.api.listAnimeLibrary.mockResolvedValue([anime]);
+
+        useAnimeStore.getState().setView('search');
+        expect(mock.api.listAnimeLibrary).not.toHaveBeenCalled();
+
+        useAnimeStore.getState().setView('library');
+        expect(mock.api.listAnimeLibrary).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => {
+            expect(useAnimeStore.getState().library).toEqual([anime]);
+        });
+
+        useAnimeStore.getState().setView('search');
+        useAnimeStore.getState().showInLibrary(1);
+        expect(mock.api.listAnimeLibrary).toHaveBeenCalledTimes(2);
+    });
+
+    it('goes to the library, to the anime that was being looked at in the search', () => {
+        useAnimeStore.setState({ view: 'search', selection: { result: RESULT, query: 'naruto', audio: 'sub', status: 'ready', episodes: ['1'], error: null } });
+        useAnimeStore.getState().showInLibrary(7);
+        expect(useAnimeStore.getState()).toMatchObject({ view: 'library', returnView: 'library', selection: null, libraryFocus: 7 });
+    });
+
+    it('stops pointing at an anime of the library when the view is chosen again', () => {
+        useAnimeStore.getState().showInLibrary(7);
+        useAnimeStore.getState().setView('search');
+        expect(useAnimeStore.getState().libraryFocus).toBeNull();
+        useAnimeStore.getState().showInLibrary(7);
+        useAnimeStore.getState().setView('library');
+        expect(useAnimeStore.getState().libraryFocus).toBeNull();
     });
 
     it('remembers the view the downloads screen goes back to', () => {
@@ -251,6 +285,108 @@ describe('openResult and closeResult', () => {
         useAnimeStore.setState({ selection: { result: RESULT, query: 'naruto', audio: 'sub', status: 'ready', episodes: [], error: null } });
         useAnimeStore.getState().closeResult();
         expect(useAnimeStore.getState().selection).toBeNull();
+    });
+});
+
+describe('openLibraryAnime', () => {
+    const ANIME = makeAnime([], { id: 7, title: 'Naruto Shippuden', query: 'naruto shippuden', searchIndex: 3, audio: 'dub' });
+    const OPENED: AnimeSearchResult = { index: 3, title: 'Naruto Shippuden' };
+
+    it('goes to the search and opens the anime as if it had been found there', async () => {
+        mock.api.listAnimeEpisodes.mockResolvedValue({ ok: true, episodes: ['1', '2', '3'] });
+        useAnimeStore.setState({ view: 'library', returnView: 'library', search: { ...INITIAL_SEARCH, query: 'bleach', audio: 'sub', status: 'error', error: { code: 'BLOCKED', raw: 'x' } } });
+
+        const opening = useAnimeStore.getState().openLibraryAnime(ANIME);
+        expect(useAnimeStore.getState().view).toBe('search');
+        expect(useAnimeStore.getState().returnView).toBe('search');
+        expect(useAnimeStore.getState().search).toEqual({
+            query: 'naruto shippuden',
+            audio: 'dub',
+            status: 'done',
+            results: [OPENED],
+            error: null,
+            searchedQuery: 'naruto shippuden',
+            searchedAudio: 'dub'
+        });
+        expect(useAnimeStore.getState().selection).toEqual({ result: OPENED, query: 'naruto shippuden', audio: 'dub', status: 'loading', episodes: [], error: null });
+        await opening;
+
+        expect(mock.api.listAnimeEpisodes).toHaveBeenCalledTimes(1);
+        expect(mock.api.listAnimeEpisodes).toHaveBeenCalledWith('naruto shippuden', 3, 'dub');
+        expect(mock.api.searchAnime).not.toHaveBeenCalled();
+        expect(useAnimeStore.getState().selection).toEqual({ result: OPENED, query: 'naruto shippuden', audio: 'dub', status: 'ready', episodes: ['1', '2', '3'], error: null });
+    });
+
+    it('keeps the anime as the only result, so going back from it lists it', async () => {
+        mock.api.listAnimeEpisodes.mockResolvedValue({ ok: true, episodes: ['1'] });
+        await useAnimeStore.getState().openLibraryAnime(ANIME);
+        useAnimeStore.getState().closeResult();
+        expect(useAnimeStore.getState().selection).toBeNull();
+        expect(useAnimeStore.getState().search.results).toEqual([OPENED]);
+    });
+
+    it('keeps the error when the episodes cannot be loaded', async () => {
+        const error = { code: 'BLOCKED' as const, raw: 'Blocked by cloudflare.' };
+        mock.api.listAnimeEpisodes.mockResolvedValue({ ok: false, error });
+        await useAnimeStore.getState().openLibraryAnime(ANIME);
+        expect(useAnimeStore.getState().view).toBe('search');
+        expect(useAnimeStore.getState().selection).toMatchObject({ status: 'error', error, episodes: [] });
+    });
+});
+
+describe('openLibraryAnime for an anime whose place in the search is not known', () => {
+    const FOUND = makeAnime([], { id: 8, title: 'Re_Zero', query: 'Re_Zero', searchIndex: 0, audio: 'dub' });
+
+    it('searches it by its title instead of opening an episode list with a position that means nothing', async () => {
+        mock.api.searchAnime.mockResolvedValue({ ok: true, results: [{ index: 1, title: 'Re:Zero' }] });
+        useAnimeStore.setState({ view: 'library', returnView: 'library', selection: { result: RESULT, query: 'x', audio: 'sub', status: 'ready', episodes: [], error: null } });
+
+        await useAnimeStore.getState().openLibraryAnime(FOUND);
+
+        expect(mock.api.searchAnime).toHaveBeenCalledTimes(1);
+        expect(mock.api.searchAnime).toHaveBeenCalledWith('Re_Zero', 'dub');
+        expect(mock.api.listAnimeEpisodes).not.toHaveBeenCalled();
+        expect(useAnimeStore.getState()).toMatchObject({ view: 'search', returnView: 'search', selection: null });
+        expect(useAnimeStore.getState().search).toMatchObject({
+            query: 'Re_Zero',
+            audio: 'dub',
+            status: 'done',
+            results: [{ index: 1, title: 'Re:Zero' }],
+            searchedQuery: 'Re_Zero',
+            searchedAudio: 'dub'
+        });
+    });
+
+    it('shows the error of the search when it fails', async () => {
+        const error = { code: 'BLOCKED' as const, raw: 'Blocked by cloudflare.' };
+        mock.api.searchAnime.mockResolvedValue({ ok: false, error });
+        await useAnimeStore.getState().openLibraryAnime(FOUND);
+        expect(useAnimeStore.getState().search).toMatchObject({ status: 'error', error });
+    });
+});
+
+describe('importLibrary', () => {
+    it('asks the app to import a folder, refreshes the library and says what happened', async () => {
+        const anime = makeAnime([makeEpisode({ id: 1 })]);
+        mock.api.importAnimeLibrary.mockResolvedValue({ ok: true, added: 3, relinked: 1, skipped: 2, ignored: 4 });
+        mock.api.listAnimeLibrary.mockResolvedValue([anime]);
+
+        await useAnimeStore.getState().importLibrary();
+
+        expect(mock.api.importAnimeLibrary).toHaveBeenCalledTimes(1);
+        expect(useAnimeStore.getState().library).toEqual([anime]);
+        expect(useAppStore.getState().notice).toEqual({
+            kind: 'info',
+            message: 'IMPORT DONE: 3 ADDED · 1 POINTED TO A NEW PLACE · 2 ALREADY IN THE LIBRARY · 4 NOT RECOGNIZED'
+        });
+    });
+
+    it('says nothing and changes nothing when the user gives up', async () => {
+        useAppStore.setState({ notice: null });
+        mock.api.importAnimeLibrary.mockResolvedValue({ ok: false, reason: 'cancelled' });
+        await useAnimeStore.getState().importLibrary();
+        expect(mock.api.listAnimeLibrary).not.toHaveBeenCalled();
+        expect(useAppStore.getState().notice).toBeNull();
     });
 });
 
@@ -401,6 +537,34 @@ describe('jobs and library actions', () => {
         await useAnimeStore.getState().removeAnime(1);
         expect(mock.api.removeAnime).toHaveBeenCalledWith(1);
         expect(useAnimeStore.getState().jobs).toEqual([makeAnimeJob({ episodeId: 2, animeId: 2 })]);
+    });
+
+    describe('setWatched', () => {
+        const EPISODE = makeEpisode({ id: 3, number: '3', positionSeconds: 12, durationSeconds: 1400 });
+
+        beforeEach(() => {
+            useAnimeStore.setState({ library: [makeAnime([makeEpisode({ id: 1 }), EPISODE], { id: 9 })] });
+        });
+
+        it('marks an episode as watched, keeps the position and takes the library the main process kept', async () => {
+            const updated = makeAnime([makeEpisode({ id: 1 }), { ...EPISODE, watched: true }], { id: 9 });
+            mock.api.listAnimeLibrary.mockResolvedValue([updated]);
+            await useAnimeStore.getState().setWatched(3, true);
+            expect(mock.api.saveAnimeProgress).toHaveBeenCalledTimes(1);
+            expect(mock.api.saveAnimeProgress).toHaveBeenCalledWith({ episodeId: 3, positionSeconds: 12, durationSeconds: 1400, watched: true });
+            expect(useAnimeStore.getState().library).toEqual([updated]);
+        });
+
+        it('marks an episode as not watched', async () => {
+            await useAnimeStore.getState().setWatched(3, false);
+            expect(mock.api.saveAnimeProgress).toHaveBeenCalledWith({ episodeId: 3, positionSeconds: 12, durationSeconds: 1400, watched: false });
+        });
+
+        it('does nothing for an episode that is not in the library', async () => {
+            await useAnimeStore.getState().setWatched(99, true);
+            expect(mock.api.saveAnimeProgress).not.toHaveBeenCalled();
+            expect(mock.api.listAnimeLibrary).not.toHaveBeenCalled();
+        });
     });
 
     it('saves the progress and refreshes the library', async () => {

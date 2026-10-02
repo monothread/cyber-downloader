@@ -1,6 +1,7 @@
-import { rmSync } from 'node:fs';
-import { posix, win32 } from 'node:path';
+import { rmdirSync, rmSync } from 'node:fs';
+import { dirname, join, posix, win32 } from 'node:path';
 import type { Settings } from '@shared/types';
+import { subtitleFilesOf, type SubtitleFileSystem } from './subtitleFiles';
 
 export const DEFAULT_ANIME_FOLDER = 'Pullwave Anime';
 export const MAX_FOLDER_NAME_LENGTH = 100;
@@ -29,9 +30,10 @@ export function subtitlePathFor(videoPath: string): string {
     return `${extension.length > 0 ? videoPath.slice(0, -extension.length) : videoPath}.vtt`;
 }
 
-// What goes away with a video: the video itself and its subtitles.
-export function filesOfEpisode(videoPath: string): string[] {
-    return [videoPath, subtitlePathFor(videoPath)];
+// What goes away with a video: the video itself, its subtitles (the one ani-cli picked, the others the source offered and the
+// ones the user loaded) and the metadata the app keeps beside it.
+export function filesOfEpisode(videoPath: string, files?: SubtitleFileSystem): string[] {
+    return [...new Set([videoPath, subtitlePathFor(videoPath), ...subtitleFilesOf(videoPath, files), metadataPathFor(videoPath)])];
 }
 
 // The folder of an anime is named after it, without what a file system does not accept. Windows also refuses a name that ends in
@@ -51,13 +53,48 @@ export function animeFileName(title: string, episode: string): string {
     return `${title.replace(FORBIDDEN_FILE_CHARACTERS, '_')} Episode ${episode}.mp4`;
 }
 
-// How long the folder of an anime may be so that its files (named after the whole title, which ani-cli decides) stay inside
-// the path limit of Windows. Elsewhere the limit is the usual one.
+// Next to the video of each episode the app keeps what it needs to recognize it again (see episodeMetadata.ts).
+export const METADATA_FILE_NAME = 'pullwave.json';
+
+export function metadataPathFor(videoPath: string): string {
+    return join(dirname(videoPath), METADATA_FILE_NAME);
+}
+
+// Each episode is downloaded into a folder of its own inside the folder of the anime, so its subtitles stay with it.
+export const EPISODE_FOLDER_PREFIX = 'Episode ';
+
+export function episodeFolderName(episode: string): string {
+    return `${EPISODE_FOLDER_PREFIX}${episode}`;
+}
+
+// The folder an episode is downloaded into, inside the folder of its anime.
+export function episodeDownloadDirectory(animeDirectory: string, episode: string, platform: NodeJS.Platform = process.platform): string {
+    return pathFor(platform).join(animeDirectory, episodeFolderName(episode));
+}
+
+// The folder of an episode a video is in, or null when the video is not in one (what was downloaded before each episode had
+// its own folder sits in the folder of the anime, which is never the one to remove).
+export function episodeFolderOf(videoPath: string, episode: string, platform: NodeJS.Platform = process.platform): string | null {
+    const path = pathFor(platform);
+    const folder = path.dirname(videoPath);
+    return path.basename(folder) === episodeFolderName(episode) ? folder : null;
+}
+
+// The folder of the anime a video is in: the one that holds the folders of its episodes or, for what was downloaded before each
+// episode had one, the one the video is in.
+export function animeFolderOf(videoPath: string, episode: string, platform: NodeJS.Platform = process.platform): string {
+    const path = pathFor(platform);
+    const episodeFolder = episodeFolderOf(videoPath, episode, platform);
+    return path.dirname(episodeFolder ?? videoPath);
+}
+
+// How long the folder of an anime may be so that its files (named after the whole title, which ani-cli decides, inside the
+// folder of the episode) stay inside the path limit of Windows. Elsewhere the limit is the usual one.
 export function folderNameBudget(baseDir: string, title: string, platform: NodeJS.Platform = process.platform): number {
     if (platform !== 'win32') {
         return MAX_FOLDER_NAME_LENGTH;
     }
-    const used = baseDir.length + 1 + 1 + animeFileName(title, '999').length;
+    const used = baseDir.length + 1 + 1 + episodeFolderName('999').length + 1 + animeFileName(title, '999').length;
     return Math.min(MAX_FOLDER_NAME_LENGTH, Math.max(MIN_FOLDER_NAME_LENGTH, WINDOWS_PATH_BUDGET - used));
 }
 
@@ -93,6 +130,21 @@ export function animeFoldersToRemove(title: string, filePaths: readonly string[]
 
 function defaultRemove(path: string): void {
     rmSync(path, { recursive: true, force: true });
+}
+
+function defaultRemoveEmpty(path: string): void {
+    rmdirSync(path);
+}
+
+// Only folders with nothing in them go: one that still has a file (or cannot be removed) is left alone.
+export function removeEmptyDirectories(paths: readonly string[], remove: (path: string) => void = defaultRemoveEmpty): void {
+    paths.forEach((path) => {
+        try {
+            remove(path);
+        } catch {
+            return;
+        }
+    });
 }
 
 // A folder that cannot be removed (still open, no permission) is left alone; the others are still removed.

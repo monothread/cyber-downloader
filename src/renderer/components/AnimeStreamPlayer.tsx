@@ -4,6 +4,10 @@ import type { AnimeStream } from '@shared/anime';
 import { useTranslator } from '../i18n/useTranslator';
 import { useAnimeStore, type StreamingEpisode } from '../store/animeStore';
 import { animeErrorKey } from './animeText';
+import { VideoControls, type SubtitleOption } from './VideoControls';
+
+// The only subtitle a stream has (the one ani-cli picked).
+const STREAM_SUBTITLE_ID = 'stream';
 
 interface StreamVideoProps {
     stream: AnimeStream;
@@ -16,6 +20,8 @@ function StreamVideo({ stream }: StreamVideoProps) {
     const video = useRef<HTMLVideoElement | null>(null);
     const [failed, setFailed] = useState(false);
     const supported = Hls.isSupported();
+    const [subtitle, setSubtitle] = useState<string | null>(STREAM_SUBTITLE_ID);
+    const subtitles: SubtitleOption[] = stream.subtitleUrl === null ? [] : [{ id: STREAM_SUBTITLE_ID, label: 'Subtitles' }];
 
     useEffect(() => {
         const element = video.current;
@@ -42,9 +48,14 @@ function StreamVideo({ stream }: StreamVideoProps) {
                     {t('anime.player.error')}
                 </p>
             )}
-            <video ref={video} className="player__video" crossOrigin="anonymous" controls autoPlay>
-                {stream.subtitleUrl !== null && <track kind="subtitles" src={stream.subtitleUrl} label="Subtitles" default />}
-            </video>
+            <div className="player__stage">
+                <video ref={video} className="player__video" crossOrigin="anonymous" autoPlay>
+                    {stream.subtitleUrl !== null && (
+                        <track id={STREAM_SUBTITLE_ID} kind="subtitles" src={stream.subtitleUrl} label="Subtitles" default />
+                    )}
+                </video>
+                <VideoControls video={video} subtitles={subtitles} selectedSubtitle={subtitle} onSelectSubtitle={setSubtitle} />
+            </div>
         </>
     );
 }

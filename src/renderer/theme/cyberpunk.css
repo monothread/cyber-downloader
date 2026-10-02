@@ -415,6 +415,40 @@ body::after {
 }
 
 .history__item--error { border-left-color: var(--red); }
+.history__item--watched { background: var(--tint-green); }
+.missing-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    color: var(--bg);
+    box-shadow: var(--glow-red);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.watched-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    color: var(--bg);
+    box-shadow: var(--glow-green);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: middle;
+}
 .history__main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 /* What is beside the title keeps its size, however long the title is. */
 .history__item > .btn, .history__item > .anime__actions { flex: none; white-space: nowrap; }
@@ -683,8 +717,8 @@ body::after {
 }
 
 .player__box {
-    width: min(1100px, 100%);
-    max-height: 100%;
+    width: 100%;
+    height: 100%;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -695,7 +729,104 @@ body::after {
 }
 
 .player__title { margin: 0; font-size: 14px; letter-spacing: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.player__video { width: 100%; max-height: 70vh; background: #000; }
+.player__video { width: 100%; flex: 1; min-height: 0; background: #000; display: block; object-fit: contain; cursor: pointer; }
+.player__video::cue { color: var(--text); background: rgba(0, 0, 0, 0.72); font-family: var(--font); font-size: calc(var(--subtitle-scale, 1) * 100%); }
+
+.player__stage { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #000; border: 1px solid var(--line); }
+.player__stage:fullscreen { justify-content: center; }
+
+.player__controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--panel-2);
+    border-top: 1px solid var(--line);
+    color: var(--text);
+    font-family: var(--font);
+}
+
+.player__button {
+    min-width: 34px;
+    height: 30px;
+    padding: 0 8px;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+}
+
+.player__button:hover { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow); }
+.player__button:focus-visible, .player__range:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
+.player__select {
+    height: 30px;
+    max-width: 150px;
+    padding: 0 6px;
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--line);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.player__select:hover { border-color: var(--cyan); color: var(--cyan); }
+.player__select option { background: var(--panel); color: var(--text); }
+
+.player__size { display: flex; align-items: center; gap: 4px; }
+
+.player__button:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+
+.player__time { min-width: 44px; font-size: 12px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+
+.player__range {
+    --progress: 0%;
+    appearance: none;
+    height: 6px;
+    margin: 0;
+    background: linear-gradient(to right, var(--cyan) var(--progress), var(--input-bg) var(--progress));
+    border: 1px solid var(--line);
+    cursor: pointer;
+}
+
+.player__seek { flex: 1; min-width: 80px; }
+
+/* Cyberpunk only: while the video plays, the part already watched flows like a neon wave. */
+@keyframes player-wave {
+    from { background-position: 0 0, 0 0; }
+    to { background-position: 0 0, 160px 0; }
+}
+
+@keyframes player-wave-glow {
+    0%, 100% { box-shadow: 0 0 6px rgba(0, 240, 255, 0.45); }
+    50% { box-shadow: 0 0 14px rgba(255, 43, 214, 0.65); }
+}
+
+html[data-theme='cyberpunk'] .player__controls[data-playing='true'] .player__seek {
+    background:
+        linear-gradient(to right, transparent var(--progress), var(--input-bg) var(--progress)),
+        repeating-linear-gradient(90deg, var(--cyan) 0, var(--magenta) 40px, var(--cyan) 80px, #ffffff 100px, var(--cyan) 120px, var(--magenta) 160px);
+    background-size: 100% 100%, 160px 100%;
+    animation: player-wave 1.6s linear infinite, player-wave-glow 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-theme='cyberpunk'] .player__controls[data-playing='true'] .player__seek { animation: none; }
+}
+.player__volume { width: 80px; }
+
+.player__range::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 16px;
+    background: var(--cyan);
+    border: 1px solid var(--bg);
+    box-shadow: var(--glow);
+}
 
 /* Buttons that sit beside a text field are as tall as the field, so the row lines up. */
 .field-row .btn, .link-row__line > .btn, .anime__bar > .btn { min-height: var(--control-height); }

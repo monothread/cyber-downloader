@@ -3,7 +3,7 @@ import type { Translator } from '@shared/i18n';
 import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 import { effectiveAudio, useAnimeStore } from '../store/animeStore';
-import { animeErrorKey } from './animeText';
+import { animeErrorKey, downloadedAnime } from './animeText';
 import { AnimeDetail } from './AnimeDetail';
 import { SelectField, TextField } from './fields';
 
@@ -30,6 +30,12 @@ export function AnimeSearch() {
     });
     const openResult = useAnimeStore((state) => {
         return state.openResult;
+    });
+    const library = useAnimeStore((state) => {
+        return state.library;
+    });
+    const showInLibrary = useAnimeStore((state) => {
+        return state.showInLibrary;
     });
     const settingsAudio = useAppStore((state) => {
         return state.settings.animeAudio;
@@ -74,6 +80,7 @@ export function AnimeSearch() {
                     <span className="section-label">{t('anime.results.label', { count: search.results.length })}</span>
                     <ul className="history__list">
                         {search.results.map((result) => {
+                            const saved = downloadedAnime(library, result.title, search.searchedAudio);
                             return (
                                 <li key={result.index} className="history__item">
                                     <div className="history__main">
@@ -81,6 +88,18 @@ export function AnimeSearch() {
                                             {result.title}
                                         </span>
                                     </div>
+                                    {saved && (
+                                        <button
+                                            type="button"
+                                            className="btn btn--small btn--ghost"
+                                            aria-label={`${t('anime.library.view')}: ${result.title}`}
+                                            onClick={() => {
+                                                showInLibrary(saved.id);
+                                            }}
+                                        >
+                                            {t('anime.library.view')}
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         className="btn btn--small"
