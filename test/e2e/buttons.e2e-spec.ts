@@ -103,23 +103,34 @@ for (const theme of ['cyberpunk', 'light']) {
             expect(form?.y).toBe(field?.y);
         });
 
-        test('the fields of the anime settings line up in rows', async () => {
+        test('the fields of the anime settings are stacked, with the same width, and the buttons keep the height of the fields', async () => {
             test.skip(!HAS_ANI_TOOLS, 'the anime section needs `npm run fetch-binaries`');
             await page.setViewportSize({ width: 1100, height: 900 });
             await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
-            const top = async (label: string): Promise<number> => {
-                return Math.round((await page.getByLabel(label, { exact: true }).boundingBox())?.y ?? -1);
+            const box = async (label: string): Promise<{ x: number; y: number; width: number; height: number }> => {
+                const found = await page.getByLabel(label, { exact: true }).boundingBox();
+                return { x: Math.round(found?.x ?? -1), y: Math.round(found?.y ?? -1), width: Math.round(found?.width ?? -1), height: Math.round(found?.height ?? -1) };
             };
-            const labelTop = async (name: string): Promise<number> => {
-                return Math.round((await page.locator('.settings .field__label', { hasText: name }).first().boundingBox())?.y ?? -1);
-            };
-            // The first row: the folder (with its button) and the quality; the second: the audio and the subtitles.
-            expect(await top('Anime download folder')).toBe(await top('Anime quality'));
-            expect(await labelTop('Anime download folder')).toBe(await labelTop('Anime quality'));
-            expect(await top('Anime audio')).toBe(await top('Anime subtitles'));
-            expect(await labelTop('Anime audio')).toBe(await labelTop('Anime subtitles'));
-            expect(await top('Anime download folder')).toBeLessThan(await top('Anime audio'));
-            expect(await height(page.getByLabel('Anime quality', { exact: true }))).toBe(await height(page.getByLabel('Anime download folder', { exact: true })));
+            const quality = await box('Anime quality');
+            const audio = await box('Anime audio');
+            const subtitles = await box('Anime subtitles');
+            // One under the other, on the same left edge and with the same width.
+            expect(new Set([quality.x, audio.x, subtitles.x]).size).toBe(1);
+            expect(new Set([quality.width, audio.width, subtitles.width]).size).toBe(1);
+            expect(quality.y).toBeLessThan(audio.y);
+            expect(audio.y).toBeLessThan(subtitles.y);
+            expect(new Set([quality.height, audio.height, subtitles.height]).size).toBe(1);
+            // The folder is above them, with BROWSE on its row and MIGRATE FOLDER on the row below.
+            const folder = await box('Anime download folder');
+            expect(folder.x).toBe(quality.x);
+            expect(folder.y).toBeLessThan(quality.y);
+            expect(folder.height).toBe(quality.height);
+            const browse = await page.locator('.settings .panel', { hasText: 'Anime download folder' }).getByRole('button', { name: 'BROWSE' }).boundingBox();
+            expect(Math.round(browse?.y ?? -1)).toBe(folder.y);
+            const migrate = await page.getByRole('button', { name: 'MIGRATE FOLDER' }).boundingBox();
+            expect(Math.round(migrate?.x ?? -1)).toBe(folder.x);
+            expect(Math.round(migrate?.y ?? -1)).toBeGreaterThan(folder.y + folder.height);
+            expect(Math.round(migrate?.y ?? -1)).toBeLessThan(quality.y);
         });
 
         test('the button of a history entry keeps its size however long the title is', async () => {

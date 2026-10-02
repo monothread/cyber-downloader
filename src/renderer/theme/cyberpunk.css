@@ -358,9 +358,12 @@ body::after {
 
 .empty { color: var(--muted); text-align: center; padding: 32px 0; letter-spacing: 2px; }
 
-.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 18px; align-items: stretch; }
-.panel.panel--wide { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); column-gap: 18px; align-content: start; align-items: start; }
-.panel.panel--wide > legend { grid-column: 1 / -1; }
+/* The panels of the settings flow in columns (one, two or three, see responsive.css): each panel is as tall as what is in it and the
+   columns fill up evenly, so there are no empty cells and no panel of another width. */
+.settings { column-count: 1; column-gap: 18px; }
+.settings > .panel { break-inside: avoid; margin: 0 0 18px; }
+.settings > .save-status { column-span: all; margin-bottom: 14px; }
+.settings > .settings__actions { column-span: all; }
 
 .panel {
     background: var(--panel);

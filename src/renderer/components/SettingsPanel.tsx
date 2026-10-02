@@ -287,7 +287,7 @@ export function SettingsPanel() {
             </fieldset>
 
             {animeSupported && (
-                <fieldset className="panel panel--wide">
+                <fieldset className="panel">
                     <legend>{t('settings.anime')}</legend>
                     <div className="field-row">
                         <TextField
@@ -310,17 +310,21 @@ export function SettingsPanel() {
                         >
                             {t('settings.browse')}
                         </button>
-                        <button
-                            type="button"
-                            className="btn btn--small btn--primary"
-                            title={t('settings.animeMigrate.hint')}
-                            disabled={migrating}
-                            onClick={() => {
-                                void handleMigrateAnimeFolder();
-                            }}
-                        >
-                            {migrating ? t('settings.animeMigrate.running', { done: migration.done, total: migration.total }) : t('settings.animeMigrate')}
-                        </button>
+                    </div>
+                    <div className="field">
+                        <div className="field-row">
+                            <button
+                                type="button"
+                                className="btn btn--small btn--primary"
+                                disabled={migrating}
+                                onClick={() => {
+                                    void handleMigrateAnimeFolder();
+                                }}
+                            >
+                                {migrating ? t('settings.animeMigrate.running', { done: migration.done, total: migration.total }) : t('settings.animeMigrate')}
+                            </button>
+                        </div>
+                        <span className="field__hint">{t('settings.animeMigrate.hint')}</span>
                     </div>
                     <SelectField
                         label={t('settings.animeQuality')}
@@ -617,7 +621,7 @@ export function SettingsPanel() {
                 />
             </fieldset>
 
-            <fieldset className="panel panel--wide">
+            <fieldset className="panel">
                 <legend>{t('settings.advanced')}</legend>
                 <TextField
                     label={t('settings.rateLimit')}

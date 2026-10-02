@@ -1,17 +1,10 @@
-/* One layout for every screen: the page grows with the window (and the interface with the screen), the lists take more columns
+/* One layout for every window up to a 1920x1080 screen: the page grows with the window, the lists take more columns
    when there is room, and the controls stack when there is not. Nothing here depends on a theme: it only moves and sizes. */
 
-/* --- The size of the interface follows the size of the screen ---------------------------------------------------------------
-   Media queries look at the real window, so --ui-scale (how much bigger than 1080p-sized the interface is) and --app-max (how wide
-   the page may get, in the scaled units) are chosen together: 1366x768 and 1920x1080 stay as they are, 2560x1440 and ultrawide get
-   25% more, 4K 75% more. */
+/* --- The page grows with the window, up to what a 1920x1080 screen needs ----------------------------------------------------
+   Bigger screens are not a target: the page stops growing at --app-max and stays in the middle. */
 :root {
-    --ui-scale: 1;
     --app-max: 1000px;
-}
-
-html {
-    zoom: var(--ui-scale);
 }
 
 @media (min-width: 1280px) {
@@ -20,28 +13,6 @@ html {
 
 @media (min-width: 1700px) {
     :root { --app-max: 1400px; }
-}
-
-/* 1440p, 21:9 and 32:9 */
-@media (min-width: 2200px) and (min-height: 1200px) {
-    :root { --ui-scale: 1.25; --app-max: 1500px; }
-}
-
-@media (min-width: 3000px) and (min-height: 1200px) {
-    :root { --app-max: 2000px; }
-}
-
-@media (min-width: 4200px) and (min-height: 1200px) {
-    :root { --app-max: 2600px; }
-}
-
-/* 4K and above */
-@media (min-height: 1900px) {
-    :root { --ui-scale: 1.75; --app-max: 1700px; }
-}
-
-@media (min-width: 4200px) and (min-height: 1900px) {
-    :root { --app-max: 2400px; }
 }
 
 .app {
@@ -73,33 +44,13 @@ html {
     }
 }
 
-@container main (min-width: 1500px) {
-    .queue {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .history > .history__list,
-    .anime__search > .history__list {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
+@container main (min-width: 900px) {
     .settings {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        column-count: 2;
     }
 }
 
-@container main (min-width: 2100px) {
-    .queue {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-
-    .history > .history__list,
-    .anime__search > .history__list {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-}
-
-/* A season of a series is a row that wraps when the card is narrow (a card in a column is): the title (shown only on hover) takes what is
+/* A season of a series is a row that wraps when the card is narrow (a card in a column is): the title takes what is
    left and the buttons go to the next line, on the right, when they do not fit. */
 .season__row {
     flex-wrap: wrap;

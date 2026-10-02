@@ -87,7 +87,7 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 - **Anime (Linux and Windows)**, see below
 
 ## Windows and screens
-The interface follows the size of the window and of the screen: from a half-screen window of 480 px up to an ultrawide (3440x1440) or 4K, the text and the spaces grow with the screen and the lists take two, three or four columns when there is room.
+The interface follows the size of the window, from a half-screen window of 480 px up to a 1920x1080 screen (bigger screens are not a target): the lists take two columns when there is room and the settings flow in even columns.
 
 ## Anime
 A section for anime on top of [ani-cli](https://github.com/pystardust/ani-cli), which ships inside the app together with the small tools it needs (BusyBox and curl; BusyBox for Windows on Windows); nothing has to be installed. It needs Windows 10 version 1903 or newer on Windows.

@@ -1084,43 +1084,98 @@ test.describe('languages', () => {
 });
 
 test.describe('settings layout', () => {
-    test('the panels have the same width and the panels of a row have the same height', async () => {
+    interface PanelBox {
+        legend: string;
+        left: number;
+        top: number;
+        width: number;
+        height: number;
+    }
+
+    async function panelBoxes(page: Page): Promise<PanelBox[]> {
+        return page.locator('.settings .panel').evaluateAll((panels) => {
+            return panels.map((panel) => {
+                const rect = panel.getBoundingClientRect();
+                return { legend: panel.querySelector('legend')?.textContent ?? '', left: Math.round(rect.left), top: Math.round(rect.top + window.scrollY), width: Math.round(rect.width), height: Math.round(rect.height) };
+            });
+        });
+    }
+
+    const LEGENDS = ['APPEARANCE & WINDOW', 'OUTPUT', 'ANIME', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'APP UPDATES', 'ADVANCED'];
+
+    test('the panels have all the same width and flow in two even columns, with no panel on a row of its own', async () => {
         const { page } = session;
         await page.setViewportSize({ width: 1100, height: 900 });
         await page.getByRole('button', { name: 'SETTINGS' }).click();
-        const boxes = await page.locator('.settings .panel').evaluateAll((panels) => {
-            return panels.map((panel) => {
-                const rect = panel.getBoundingClientRect();
-                return { legend: panel.querySelector('legend')?.textContent ?? '', wide: panel.classList.contains('panel--wide'), top: Math.round(rect.top + window.scrollY), width: Math.round(rect.width), height: Math.round(rect.height) };
-            });
-        });
+        const boxes = await panelBoxes(page);
+
         expect(boxes.map((box) => {
             return box.legend;
-        })).toEqual(['APPEARANCE & WINDOW', 'OUTPUT', 'ANIME', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'APP UPDATES', 'ADVANCED']);
-        const regular = boxes.filter((box) => {
-            return !box.wide;
-        });
-        expect(new Set(regular.map((box) => {
+        }).sort()).toEqual([...LEGENDS].sort());
+        expect(new Set(boxes.map((box) => {
             return box.width;
         })).size).toBe(1);
-        const rows = new Map<number, number[]>();
-        regular.forEach((box) => {
-            rows.set(box.top, [...(rows.get(box.top) ?? []), box.height]);
+        const columns = new Map<number, PanelBox[]>();
+        boxes.forEach((box) => {
+            columns.set(box.left, [...(columns.get(box.left) ?? []), box]);
         });
-        expect(rows.size).toBe(4);
-        rows.forEach((heights) => {
-            expect(heights).toHaveLength(2);
-            expect(heights[0]).toBe(heights[1]);
+        expect(columns.size).toBe(2);
+        // Both columns start at the same height and end close to each other (no more than one panel apart).
+        const bottoms = [...columns.values()].map((panels) => {
+            return Math.max(...panels.map((box) => {
+                return box.top + box.height;
+            }));
         });
-        // The anime and the advanced panels take the whole row.
-        const wide = boxes.filter((box) => {
-            return box.wide;
+        const tops = [...columns.values()].map((panels) => {
+            return Math.min(...panels.map((box) => {
+                return box.top;
+            }));
         });
-        expect(wide.map((box) => {
-            return box.legend;
-        })).toEqual(['ANIME', 'ADVANCED']);
-        wide.forEach((box) => {
-            expect(box.width).toBeGreaterThan((regular[0]?.width ?? 0) * 1.8);
+        expect(new Set(tops).size).toBe(1);
+        expect(Math.abs((bottoms[0] ?? 0) - (bottoms[1] ?? 0))).toBeLessThan(Math.max(...boxes.map((box) => {
+            return box.height;
+        })));
+        // Inside a column the panels are one under the other, with the same gap, and never overlap.
+        columns.forEach((panels) => {
+            const ordered = [...panels].sort((first, second) => {
+                return first.top - second.top;
+            });
+            ordered.slice(1).forEach((box, index) => {
+                const previous = ordered[index];
+                // 18 px, give or take the rounding of each box.
+                expect(Math.abs(box.top - ((previous?.top ?? 0) + (previous?.height ?? 0)) - 18)).toBeLessThanOrEqual(1);
+            });
+        });
+    });
+
+    test('the panels are one column of the same width in a narrow window', async () => {
+        const { page } = session;
+        await page.setViewportSize({ width: 800, height: 900 });
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        const boxes = await panelBoxes(page);
+        expect(boxes).toHaveLength(LEGENDS.length);
+        expect(new Set(boxes.map((box) => {
+            return box.left;
+        })).size).toBe(1);
+        expect(new Set(boxes.map((box) => {
+            return box.width;
+        })).size).toBe(1);
+    });
+
+    test('no panel has columns of its own: the fields of every panel are stacked on the same left edge', async () => {
+        const { page } = session;
+        await page.setViewportSize({ width: 1100, height: 900 });
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        const lefts = await page.locator('.settings .panel').evaluateAll((panels) => {
+            return panels.map((panel) => {
+                const fields = Array.from(panel.querySelectorAll(':scope > .field, :scope > .field-row'));
+                return new Set(fields.map((field) => {
+                    return Math.round(field.getBoundingClientRect().left);
+                })).size;
+            });
+        });
+        lefts.forEach((count) => {
+            expect(count).toBeLessThanOrEqual(1);
         });
     });
 });

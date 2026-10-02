@@ -8,9 +8,9 @@ const ROOT = resolve(__dirname, '../..');
 const ELECTRON_PATH = createRequire(__filename)('electron') as unknown as string;
 const FAKE_ANI_CLI = resolve(__dirname, 'fixtures/fake-ani-cli.sh');
 const FAKE_YTDLP = resolve(__dirname, 'fixtures/fake-yt-dlp.js');
-// The sizes of the windows on screens of 1366x768 up to an ultrawide of 3440x1440 (the taskbar takes some of the height), and
+// The sizes of the windows on screens of 1366x768 up to 1920x1080 (the taskbar takes some of the height), and
 // narrow ones.
-const SIZES: Array<[number, number]> = [[480, 800], [600, 800], [768, 1000], [1024, 768], [1366, 768], [1920, 1050], [2560, 1400], [3440, 1400]];
+const SIZES: Array<[number, number]> = [[480, 800], [600, 800], [768, 1000], [1024, 768], [1366, 768], [1920, 1050]];
 // The three themes: the font of one is wider than the others and its boxes are cut differently.
 const THEMES = ['cyberpunk', 'dark', 'light'];
 test.setTimeout(600000);
@@ -115,7 +115,7 @@ async function audit(page: Page, where: string): Promise<string[]> {
     }, where);
 }
 
-test('nothing is cut, misaligned or out of its box on any screen, at any size from 480 to 3440 pixels', async () => {
+test('nothing is cut, misaligned or out of its box on any screen, at any size from 480 to 1920 pixels', async () => {
     const work = mkdtempSync(join(tmpdir(), 'pullwave-audit-'));
     const userData = join(work, 'user-data');
     mkdirSync(userData, { recursive: true });

@@ -839,11 +839,11 @@ describe('SettingsPanel anime section', () => {
             expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, animeDownloadDir: '/picked/anime' });
         });
 
-        it('has the MIGRATE FOLDER button, with what it does as its hint', () => {
+        it('has the MIGRATE FOLDER button, with what it does as a visible hint', () => {
             render(<SettingsPanel />);
             const button = screen.getByRole('button', { name: 'MIGRATE FOLDER' });
             expect(button).toBeEnabled();
-            expect(button).toHaveAttribute('title', 'Choose a new folder: the app copies all the anime there, checks the copies and then removes the old files');
+            expect(screen.getByText('Choose a new folder: the app copies all the anime there, checks the copies and then removes the old files')).toHaveClass('field__hint');
         });
 
         it('leaves the folder free to edit while the library is empty', () => {

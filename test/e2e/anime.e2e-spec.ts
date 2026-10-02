@@ -773,7 +773,7 @@ test.describe('layout for every size of window', () => {
         await expect(page.locator('.job .badge--done')).toHaveCount(3);
     }
 
-    // How the page is laid out at a size: the scale of the interface, the widest the page may be and the columns of a list.
+    // How the page is laid out at a size: the scale of the interface (never changed), the widest the page may be and the columns of a list.
     async function layout(page: Page, width: number, height: number): Promise<{ zoom: string; appMaxWidth: string; columns: number; overflow: boolean }> {
         await page.setViewportSize({ width, height });
         return page.evaluate(() => {
@@ -795,23 +795,22 @@ test.describe('layout for every size of window', () => {
         expect([width, height]).toEqual([480, 520]);
     });
 
-    test('grows the interface with the screen and the page with the window', async () => {
+    test('grows the page with the window up to a 1920x1080 screen, and keeps it there on a bigger one', async () => {
         const { page } = session;
         await threeDownloads(page);
 
         expect(await layout(page, 1100, 780)).toMatchObject({ zoom: '1', appMaxWidth: '1000px', columns: 1 });
         expect(await layout(page, 1366, 768)).toMatchObject({ zoom: '1', appMaxWidth: '1240px', columns: 2 });
         expect(await layout(page, 1920, 1080)).toMatchObject({ zoom: '1', appMaxWidth: '1400px', columns: 2 });
-        expect(await layout(page, 2560, 1440)).toMatchObject({ zoom: '1.25', appMaxWidth: '1500px', columns: 2 });
-        expect(await layout(page, 3440, 1440)).toMatchObject({ zoom: '1.25', appMaxWidth: '2000px', columns: 3 });
-        expect(await layout(page, 3840, 2160)).toMatchObject({ zoom: '1.75', appMaxWidth: '1700px', columns: 3 });
-        expect(await layout(page, 5120, 1440)).toMatchObject({ zoom: '1.25', appMaxWidth: '2600px', columns: 4 });
+        // Bigger screens are not a target: nothing changes there.
+        expect(await layout(page, 2560, 1440)).toMatchObject({ zoom: '1', appMaxWidth: '1400px', columns: 2 });
+        expect(await layout(page, 3440, 1440)).toMatchObject({ zoom: '1', appMaxWidth: '1400px', columns: 2 });
     });
 
     test('never needs to scroll sideways, from the smallest window up', async () => {
         const { page } = session;
         await threeDownloads(page);
-        for (const [width, height] of [[480, 800], [600, 800], [768, 1024], [1024, 768], [1366, 768], [1920, 1080], [3440, 1440]]) {
+        for (const [width, height] of [[480, 800], [600, 800], [768, 1024], [1024, 768], [1366, 768], [1920, 1080]]) {
             expect(await layout(page, width as number, height as number)).toMatchObject({ overflow: false });
         }
     });
