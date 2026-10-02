@@ -47,3 +47,4 @@
 - Layout for every size of window (D-042), 2026-10-02: scale of the interface by screen (1, 1.25, 1.75), width of the page and number of columns by window, a narrow layout down to a 480 px window, and a geometric audit as an end-to-end test (it found an overflow in the season rows at 1366 px). The tests now open their window on the primary monitor.
 
 - Every anime is a series (D-043), 2026-10-02: tab DOWNLOADS renamed VIDEO DOWNLOADER, slim cards that always have OPEN SERIES / REMOVE SERIES, the series name as a search box with the existing series as options. Unit and e2e updated.
+- Release 0.12.0, 2026-10-02: Test Windows failed once (a test written for POSIX paths, fixed in `12fafd4`) and then ran green; Release Linux and Release Windows ran green from `12fafd4`, one draft with 8 files, published. Tag `v0.12.0` = `12fafd4`.
