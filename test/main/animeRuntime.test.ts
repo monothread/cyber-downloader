@@ -89,7 +89,7 @@ describe('createAnimeRuntime', () => {
         db.markDone(done.id, '/lib/Naruto/Naruto Episode 1.mp4', 10);
 
         expect(runtime?.media.resolve('episode', done.id, '')).toBe('/lib/Naruto/Naruto Episode 1.mp4');
-        expect(runtime?.media.resolve('subtitle', done.id, '')).toBe('/lib/Naruto/Naruto Episode 1.vtt');
+        expect(runtime?.media.resolve('subtitle', done.id, '')).toBe(join('/lib/Naruto', 'Naruto Episode 1.vtt'));
         expect(runtime?.media.resolve('episode', waiting.id, '')).toBeNull();
         expect(runtime?.media.resolve('episode', 99, '')).toBeNull();
     });

@@ -50,14 +50,23 @@ describe('filesOfEpisode', () => {
         return { list: () => { return names; }, read: () => { return null; }, size: () => { return null; }, write: () => { return undefined; } };
     };
 
+    const video = join('/lib', 'a.mp4');
+
     it('lists the video and its subtitles', () => {
-        expect(filesOfEpisode('/lib/a.mp4', files([]))).toEqual(['/lib/a.mp4', '/lib/a.vtt', '/lib/pullwave.json']);
+        expect(filesOfEpisode(video, files([]))).toEqual([video, join('/lib', 'a.vtt'), join('/lib', 'pullwave.json')]);
     });
 
     it('also lists the subtitles of the source and the ones the user loaded, and nothing from other episodes', () => {
         expect(
-            filesOfEpisode('/lib/a.mp4', files(['a.mp4', 'a.vtt', 'a.subtitle-English.vtt', 'a.subtitle-Japanese.vtt', 'a.import-mine.vtt', 'a.5.vtt', 'a2.vtt', 'b.subtitle-English.vtt']))
-        ).toEqual(['/lib/a.mp4', '/lib/a.vtt', '/lib/a.subtitle-English.vtt', '/lib/a.subtitle-Japanese.vtt', '/lib/a.import-mine.vtt', '/lib/pullwave.json']);
+            filesOfEpisode(video, files(['a.mp4', 'a.vtt', 'a.subtitle-English.vtt', 'a.subtitle-Japanese.vtt', 'a.import-mine.vtt', 'a.5.vtt', 'a2.vtt', 'b.subtitle-English.vtt']))
+        ).toEqual([
+            video,
+            join('/lib', 'a.vtt'),
+            join('/lib', 'a.subtitle-English.vtt'),
+            join('/lib', 'a.subtitle-Japanese.vtt'),
+            join('/lib', 'a.import-mine.vtt'),
+            join('/lib', 'pullwave.json')
+        ]);
     });
 
     it('lists what is really on the disk by default', () => {

@@ -370,7 +370,11 @@ describe('registerAnimeHandlers', () => {
 
             expect(queue.forget).toHaveBeenCalledWith([episode.id]);
             expect(db.getEpisode(episode.id)).toBeNull();
-            expect(removeFiles).toHaveBeenCalledWith(['/lib/Naruto/Naruto Episode 1.mp4', '/lib/Naruto/Naruto Episode 1.vtt', '/lib/Naruto/pullwave.json']);
+            expect(removeFiles).toHaveBeenCalledWith([
+                '/lib/Naruto/Naruto Episode 1.mp4',
+                '/lib/Naruto/Naruto Episode 1.vtt',
+                join('/lib/Naruto', 'pullwave.json')
+            ]);
             expect(removeFolders).not.toHaveBeenCalled();
             expect(onLibraryChanged).toHaveBeenCalledTimes(1);
         });
@@ -398,7 +402,7 @@ describe('registerAnimeHandlers', () => {
             expect(removeFiles).toHaveBeenCalledWith([
                 '/lib/Naruto/Episode 1/Naruto Episode 1.mp4',
                 '/lib/Naruto/Episode 1/Naruto Episode 1.vtt',
-                '/lib/Naruto/Episode 1/pullwave.json'
+                join('/lib/Naruto/Episode 1', 'pullwave.json')
             ]);
             expect(removeEmptyFolders).toHaveBeenCalledTimes(1);
             expect(removeEmptyFolders).toHaveBeenCalledWith(['/lib/Naruto/Episode 1']);
@@ -435,7 +439,14 @@ describe('registerAnimeHandlers', () => {
 
             expect(queue.forget).toHaveBeenCalledWith([first.id, second.id, 3]);
             expect(db.getAnime(anime.id)).toBeNull();
-            expect(removeFiles).toHaveBeenCalledWith(['/lib/Naruto/1.mp4', '/lib/Naruto/1.vtt', '/lib/Naruto/pullwave.json', '/lib/Naruto/2.mkv', '/lib/Naruto/2.vtt', '/lib/Naruto/pullwave.json']);
+            expect(removeFiles).toHaveBeenCalledWith([
+                '/lib/Naruto/1.mp4',
+                '/lib/Naruto/1.vtt',
+                join('/lib/Naruto', 'pullwave.json'),
+                '/lib/Naruto/2.mkv',
+                '/lib/Naruto/2.vtt',
+                join('/lib/Naruto', 'pullwave.json')
+            ]);
             expect(removeFolders).toHaveBeenCalledWith(['/lib/Naruto']);
             expect(onLibraryChanged).toHaveBeenCalledTimes(1);
         });
