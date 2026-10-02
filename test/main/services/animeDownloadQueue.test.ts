@@ -615,11 +615,11 @@ describe('AnimeDownloadQueue series', () => {
     });
 
     it('keeps downloading into the folder an anime already has, even after it was joined to a series', () => {
-        const { queue, downloads, db } = setup({}, {}, { directories: ['/media/My Naruto'] });
+        const { queue, downloads, db } = setup({}, {}, { directories: [join('/media', 'My Naruto')] });
         const anime = db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'sub' });
-        db.markDone(db.ensureEpisode(anime.id, '1').id, join('/media/My Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 10);
+        db.markDone(db.ensureEpisode(anime.id, '1').id, join('/media', 'My Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 10);
         queue.enqueue({ ...REQUEST, series: 'Naruto Series', season: 1, episodes: ['2'] });
-        expect(downloads[0]?.options.downloadDir).toBe(join('/media/My Naruto', 'Episode 2'));
+        expect(downloads[0]?.options.downloadDir).toBe(join('/media', 'My Naruto', 'Episode 2'));
     });
 
     it('does not join the anime when the season is taken by another anime of the series', () => {
