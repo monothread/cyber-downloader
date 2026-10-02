@@ -60,7 +60,16 @@ test('downloads an episode at the lowest quality, with its subtitles, and plays 
     await expect(page.locator('.job .badge--done')).toHaveText('DOWNLOADED', { timeout: 240000 });
 
     const folder = join(workDir, 'anime', 'Cyberpunk_ Edgerunners', 'Episode 1');
-    expect(readdirSync(folder).sort()).toEqual(['Cyberpunk_ Edgerunners Episode 1.mp4', 'Cyberpunk_ Edgerunners Episode 1.vtt']);
+    const files = readdirSync(folder).sort();
+    // The video, the subtitle ani-cli picked, the metadata, and a file for every language the source offers (which ones it
+    // offers is the source's to decide).
+    expect(files).toEqual(expect.arrayContaining(['Cyberpunk_ Edgerunners Episode 1.mp4', 'Cyberpunk_ Edgerunners Episode 1.vtt', 'pullwave.json']));
+    expect(files).toContain('Cyberpunk_ Edgerunners Episode 1.subtitle-English.vtt');
+    expect(
+        files.filter((name) => {
+            return !name.startsWith('Cyberpunk_ Edgerunners Episode 1.') && name !== 'pullwave.json';
+        })
+    ).toEqual([]);
     expect(statSync(join(folder, 'Cyberpunk_ Edgerunners Episode 1.mp4')).size).toBeGreaterThan(10_000_000);
 
     await page.getByRole('button', { name: 'BACK' }).click();
