@@ -2,7 +2,15 @@ import { posix, win32 } from 'node:path';
 import type { AniDownloadProgress, AniError, AnimeDownloadRequest, AnimeEpisodeRecord, AnimeJob, AnimeRecord, LibraryAnime } from '@shared/anime';
 import type { Settings } from '@shared/types';
 import type { AnimeDb } from './animeDb';
-import { animeBaseDirectory, animeDownloadDirectory, animeFileName, animeFolderOf, episodeDownloadDirectory, episodeFolderOf } from './animeFiles';
+import {
+    animeBaseDirectory,
+    animeDownloadDirectory,
+    animeFileName,
+    animeFolderOf,
+    episodeDownloadDirectory,
+    episodeFolderOf,
+    seasonDownloadDirectory
+} from './animeFiles';
 import type { AniDownloadHandle, AniDownloadOptions } from './aniCliService';
 
 // Progress lines come many times a second; the screen only needs to hear about a visible change.
@@ -48,6 +56,9 @@ export class AnimeDownloadQueue {
     // Queues the episodes (the ones already downloaded or already waiting are left as they are) and returns the anime.
     enqueue(request: AnimeDownloadRequest): LibraryAnime | null {
         const anime = this.deps.db.upsertAnime({ title: request.title, query: request.query, searchIndex: request.index, audio: request.audio });
+        if (request.series && request.season) {
+            this.deps.db.setSeries(anime.id, request.series, request.season, request.seasonName === undefined ? anime.seasonName : request.seasonName);
+        }
         request.episodes.forEach((number) => {
             this.queueEpisode(anime, this.deps.db.ensureEpisode(anime.id, number));
         });
@@ -161,9 +172,7 @@ export class AnimeDownloadQueue {
         }
         const settings = this.deps.getSettings();
         const platform = this.deps.platform ?? process.platform;
-        const animeDirectory =
-            this.existingAnimeDirectory(anime.id, platform) ??
-            animeDownloadDirectory(animeBaseDirectory(settings, this.deps.defaultDownloadDir, platform), anime.title, platform);
+        const animeDirectory = this.existingAnimeDirectory(anime.id, platform) ?? this.newAnimeDirectory(anime, settings, platform);
         const downloadDir = episodeDownloadDirectory(animeDirectory, job.episode, platform);
         try {
             this.deps.ensureDirectory(downloadDir);
@@ -205,6 +214,16 @@ export class AnimeDownloadQueue {
             this.pump();
         });
         return true;
+    }
+
+    // Where an anime that has nothing downloaded yet goes: the folder of its season when it is part of a series, otherwise one of
+    // its own.
+    private newAnimeDirectory(anime: AnimeRecord, settings: Settings, platform: NodeJS.Platform): string {
+        const baseDirectory = animeBaseDirectory(settings, this.deps.defaultDownloadDir, platform);
+        if (anime.series !== null && anime.season !== null) {
+            return seasonDownloadDirectory(baseDirectory, anime.series, anime.season, anime.title, platform);
+        }
+        return animeDownloadDirectory(baseDirectory, anime.title, platform);
     }
 
     // The folder the anime already has, when the folder was renamed or moved the new episodes still go with the old ones. Only a

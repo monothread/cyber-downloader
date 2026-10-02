@@ -97,11 +97,11 @@ describe('useAppLanguage and useTranslator', () => {
 
 describe('App in another language', () => {
     it.each([
-        ['en', 'DOWNLOADS', 'HISTORY', 'SETTINGS', 'Sections', 'TARGET LINKS'],
-        ['pt', 'DOWNLOADS', 'HISTÓRICO', 'CONFIGURAÇÕES', 'Seções', 'LINKS DE DESTINO'],
-        ['es', 'DESCARGAS', 'HISTORIAL', 'AJUSTES', 'Secciones', 'ENLACES DE DESTINO'],
-        ['zh', '下载', '历史', '设置', '栏目', '目标链接'],
-        ['ja', 'ダウンロード', '履歴', '設定', 'セクション', '対象リンク']
+        ['en', 'VIDEO DOWNLOADER', 'HISTORY', 'SETTINGS', 'Sections', 'TARGET LINKS'],
+        ['pt', 'BAIXADOR DE VÍDEOS', 'HISTÓRICO', 'CONFIGURAÇÕES', 'Seções', 'LINKS DE DESTINO'],
+        ['es', 'DESCARGADOR DE VÍDEOS', 'HISTORIAL', 'AJUSTES', 'Secciones', 'ENLACES DE DESTINO'],
+        ['zh', '视频下载器', '历史', '设置', '栏目', '目标链接'],
+        ['ja', '動画ダウンローダー', '履歴', '設定', 'セクション', '対象リンク']
     ] as const)('shows the tabs in "%s" and sets the document language', async (language, downloads, history, settings, sections, targetLinks) => {
         useLanguage(language);
         mock.api.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS, language });
@@ -129,7 +129,7 @@ describe('App in another language', () => {
         await waitFor(() => {
             expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, language: 'es' });
         });
-        expect(await screen.findByRole('button', { name: 'DESCARGAS' })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'DESCARGADOR DE VÍDEOS' })).toBeInTheDocument();
         expect(screen.getByLabelText('Idioma')).toHaveValue('es');
         expect(document.documentElement.lang).toBe('es');
     });
@@ -137,7 +137,7 @@ describe('App in another language', () => {
     it('follows the browser language when the setting is "device"', async () => {
         vi.spyOn(window.navigator, 'language', 'get').mockReturnValue('ja-JP');
         render(<App />);
-        expect(screen.getByRole('button', { name: 'ダウンロード' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '動画ダウンローダー' })).toBeInTheDocument();
         expect(document.documentElement.lang).toBe('ja');
     });
 });

@@ -30,7 +30,7 @@ src/
       playlistFilter.ts         # drops HLS quality variants covered by a master playlist
       streamGrouping.ts         # folds near-identical addresses of one video (mirrors/redirects) into one candidate
       streamFinder.ts           # static scan -> hidden browser; keeps candidates' request details in the main process
-      # Anime section (Linux and Windows, D-036 to D-040)
+      # Anime section (Linux and Windows, D-036 to D-041)
       aniCliLocator.ts          # which ani-cli/busybox/curl, tool links, isolated env, patched copy of the script
       aniCliRunner.ts           # spawn `busybox sh ani-cli ...`, menu choices, progress, cancel
       aniCliService.ts          # search, episodes, download, resolveStream on top of the runner
@@ -43,18 +43,19 @@ src/
       subtitleFiles.ts          # subtitles next to a video (default, source, imported), .srt to .vtt, importing a file
       episodeMetadata.ts        # `pullwave.json` next to each video: what the library needs to recognize it again
       libraryScan.ts / libraryImport.ts   # IMPORT LIBRARY: scan a folder, add / skip / point episodes to their new file
+    shared/series.ts            # suggestSeries, series names (shared by the screen and the main process), season limits
       mediaProtocol.ts          # pullwave-media:// (downloaded files, byte ranges)
       streamProxy.ts            # pullwave-stream:// (HLS streams fetched with the referer, playlists rewritten)
     animeRuntime.ts             # wires the anime services (null where the section does not exist)
     ipc/registerAnimeHandlers.ts  # anime:* channels (answers "unsupported" where the section does not exist)
   preload/index.ts              # contextBridge with a typed API
   renderer/
-    App.tsx, theme/cyberpunk.css
+    App.tsx, theme/cyberpunk.css, theme/themes.css, theme/responsive.css (scale, width and columns by size of window, D-042)
     i18n/ language (system locale), useTranslator (React hook)
     components/ UrlInput, QueueList, JobCard, SettingsPanel, HistoryList, ErrorBanner, BinaryStatus,
                 Toast, UpdateBanner, UpdateActions, StreamFinder, fields,
                 AnimePanel, AnimeSearch, AnimeDetail, AnimeJobs, AnimeLibrary, AnimePlayer, AnimeStreamPlayer, AnimeRemove,
-                VideoControls (the player's own control bar), subtitleChoice / subtitleScale (what the viewer chose)
+                VideoControls (the player's own control bar), subtitleChoice / subtitleScale (what the viewer chose), SeriesFields (series name and season)
     hooks/ useAutoSaveSettings (debounced settings auto-save)
     store/ (zustand): appStore.ts, animeStore.ts
 test/            # unit tests mirroring src
@@ -83,6 +84,7 @@ Same shape as the rest: renderer (`animeStore`, `Anime*` components) → `window
 - **Player:** `<video>` (no native controls: `VideoControls` draws the bar with the theme variables) reads `pullwave-media://episode/<id>` and `.../subtitle/<id>[/<track>]`, served by `mediaProtocol.ts` with byte ranges; a subtitle is looked up among the episode's files by id, never turned into a path. **Watch without downloading:** `anime:stream-open` runs ani-cli with the `debug` player (it prints the address), `StreamSessions` opens a session and hls.js in the renderer plays `pullwave-stream://p/<session>/<address>`, which the main process fetches with the right referer, rewriting playlists. Both schemes are registered as privileged before the app is ready; the CSP allows them (and `blob:` for hls.js). See D-036/D-037.
 - **Patches:** ani-cli is pinned and checked by hash; `AniCliLocator.withPatches` runs a patched copy (subtitle language, referer in the debug output) and falls back to the original when its lines do not match (D-037). The script can be updated from the settings (D-038).
 - **Folders and the library (D-040):** each episode is downloaded into `<anime folder>/Episode N/` (the queue reuses the folder an anime already has); `pullwave.json` beside the video keeps what the library knows; `anime:import-library` scans a folder chosen in the main process and adds, skips or re-points episodes; `anime:library` also answers which downloaded files are gone (`fileMissing`); `anime:open-folder` opens an anime's folder from an id.
+- **Series (D-041):** `anime.series` / `anime.season` (set by the user, suggested by `suggestSeries`) group the entries in the library and name the folder `<series>/Season N/Episode M`; `anime:set-series` validates and refuses a season that is taken; removal never removes whole a folder another entry has files in.
 - **Where it exists:** `isAnimeSupported(platform)` (Linux and Windows). Elsewhere `createAnimeRuntime` returns null; the tab, the settings panel and the version chip are not shown, the protocols are not registered and the IPC channels answer "unsupported".
 - **Windows specifics (D-039):** folder names avoid the names Windows reserves and a trailing dot or space, and are shortened so a file path stays under 240 characters; what could not be deleted at once (a file the player has just let go of) is deleted again 500 ms later; cancelling kills the process tree with `taskkill /T /F`.
 - **Tests:** `test/e2e/anime.e2e-spec.ts` drives the real app with `test/e2e/fixtures/fake-ani-cli.sh` (set through `PULLWAVE_ANI_CLI`) and a local HLS server that refuses requests without the right referer; `anime-live.e2e-spec.ts` talks to the real source when `PULLWAVE_LIVE=1`. The "Test Windows" workflow runs them (and the unit tests that do not assume POSIX paths) on a real Windows runner.

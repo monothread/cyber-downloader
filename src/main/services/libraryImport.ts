@@ -18,6 +18,10 @@ export function importLibrary(db: AnimeDb, scan: ScanResult, options: LibraryImp
     const summary: AnimeImportSummary = { added: 0, relinked: 0, skipped: 0, ignored: scan.ignored };
     scan.episodes.forEach((found) => {
         const anime = db.importAnime({ title: found.title, query: found.query, searchIndex: found.searchIndex, audio: found.audio ?? options.defaultAudio });
+        if (found.series !== null && found.season !== null && anime.series === null) {
+            // What the user set before is never replaced, and a season that is already taken leaves the anime on its own.
+            db.setSeries(anime.id, found.series, found.season, found.seasonName);
+        }
         const size = options.fileSize(found.videoPath);
         const known = db.getEpisodeByNumber(anime.id, found.number);
         if (known?.status === 'done' && known.filePath === found.videoPath) {

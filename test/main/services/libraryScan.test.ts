@@ -62,8 +62,8 @@ describe('scanLibraryFolder', () => {
         expect(scanLibraryFolder('/lib', files)).toEqual({
             ignored: 0,
             episodes: [
-                { videoPath: '/lib/Naruto/Episode 1/Naruto Episode 1.mp4', title: 'Naruto', number: '1', audio: null, query: 'Naruto', searchIndex: 0, progress: null },
-                { videoPath: '/lib/Naruto/Episode 2/Naruto Episode 2.mkv', title: 'Naruto', number: '2', audio: null, query: 'Naruto', searchIndex: 0, progress: null }
+                { videoPath: '/lib/Naruto/Episode 1/Naruto Episode 1.mp4', title: 'Naruto', number: '1', audio: null, query: 'Naruto', searchIndex: 0, progress: null, series: null, season: null, seasonName: null },
+                { videoPath: '/lib/Naruto/Episode 2/Naruto Episode 2.mkv', title: 'Naruto', number: '2', audio: null, query: 'Naruto', searchIndex: 0, progress: null, series: null, season: null, seasonName: null }
             ]
         });
     });
@@ -92,16 +92,66 @@ describe('scanLibraryFolder', () => {
                     audio: 'dub',
                     query: 're zero',
                     searchIndex: 3,
-                    progress: { positionSeconds: 100, durationSeconds: 1400, watched: true }
+                    progress: { positionSeconds: 100, durationSeconds: 1400, watched: true },
+                    series: null,
+                    season: null,
+                    seasonName: null
                 }
             ]
         });
     });
 
+    it('takes the series and the season from the metadata', () => {
+        const files = tree({ '/lib/x/Season 1/Episode 2/video.mp4': '', '/lib/x/Season 1/Episode 2/pullwave.json': META({ series: 'Frieren', season: 3 }) });
+        expect(scanLibraryFolder('/lib', files).episodes[0]).toMatchObject({ title: 'Re:Zero', series: 'Frieren', season: 3 });
+    });
+
+    it('takes the name the anime is shown with from the metadata', () => {
+        const files = tree({ '/lib/x/Episode 2/video.mp4': '', '/lib/x/Episode 2/pullwave.json': META({ series: 'Bleach', season: 4, seasonName: 'The Conflict' }) });
+        expect(scanLibraryFolder('/lib', files).episodes[0]).toMatchObject({ series: 'Bleach', season: 4, seasonName: 'The Conflict' });
+    });
+
+    it('takes the series and the season from the folders when there is no metadata', () => {
+        const files = tree({
+            '/lib/Frieren/Season 2/Episode 1/Frieren Season 2 Episode 1.mp4': '',
+            '/lib/Frieren/Season 12/Episode 3/video.mp4': ''
+        });
+        expect(
+            scanLibraryFolder('/lib', files).episodes.map((episode) => {
+                return [episode.title, episode.number, episode.series, episode.season];
+            })
+        ).toEqual([
+            ['Frieren', '3', 'Frieren', 12],
+            ['Frieren Season 2', '1', 'Frieren', 2]
+        ]);
+    });
+
+    it('finds nothing of a series in folders that only look like it', () => {
+        const files = tree({
+            '/lib/Frieren/Season two/Episode 1/a Episode 1.mp4': '',
+            '/lib/Frieren/Part 2/Episode 1/b Episode 1.mp4': '',
+            '/lib/Frieren/Season 2/d Episode 1.mp4': ''
+        });
+        expect(
+            scanLibraryFolder('/lib', files).episodes.map((episode) => {
+                return [episode.series, episode.season];
+            })
+        ).toEqual([
+            [null, null],
+            [null, null],
+            [null, null]
+        ]);
+    });
+
+    it('takes the folder that was chosen for the series when the season folders are right inside it', () => {
+        const files = tree({ '/lib/Frieren/Season 2/Episode 1/Frieren Episode 1.mp4': '' });
+        expect(scanLibraryFolder('/lib/Frieren', files).episodes[0]).toMatchObject({ series: 'Frieren', season: 2 });
+    });
+
     it('falls back to the names when the metadata is not valid', () => {
         const files = tree({ '/lib/Naruto/Episode 4/Naruto Episode 4.mp4': '', '/lib/Naruto/Episode 4/pullwave.json': META({ audio: 'raw' }) });
         expect(scanLibraryFolder('/lib', files).episodes).toEqual([
-            { videoPath: '/lib/Naruto/Episode 4/Naruto Episode 4.mp4', title: 'Naruto', number: '4', audio: null, query: 'Naruto', searchIndex: 0, progress: null }
+            { videoPath: '/lib/Naruto/Episode 4/Naruto Episode 4.mp4', title: 'Naruto', number: '4', audio: null, query: 'Naruto', searchIndex: 0, progress: null, series: null, season: null, seasonName: null }
         ]);
     });
 
@@ -199,7 +249,10 @@ describe('scanLibraryFolder', () => {
                 audio: 'dub',
                 query: 're zero',
                 searchIndex: 3,
-                progress: { positionSeconds: 100, durationSeconds: 1400, watched: true }
+                progress: { positionSeconds: 100, durationSeconds: 1400, watched: true },
+                series: null,
+                season: null,
+                seasonName: null
             }
         ]);
         expect(defaultScanFileSystem.read(join(folder, 'missing'))).toBeNull();

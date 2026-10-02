@@ -1,3 +1,4 @@
+import { cleanSeasonName, cleanSeriesName, isValidSeason } from '@shared/series';
 import { ANIME_AUDIOS, type AnimeAudio, type AnimeEpisodeRecord, type AnimeRecord } from '@shared/anime';
 import { isValidEpisode } from './aniArgsBuilder';
 import { episodeFolderOf, METADATA_FILE_NAME, metadataPathFor } from './animeFiles';
@@ -19,6 +20,11 @@ export interface EpisodeMetadata {
     positionSeconds: number;
     durationSeconds: number;
     watched: boolean;
+    // The series and season the user gave the anime (both, or neither).
+    series?: string;
+    season?: number;
+    // The name the anime is shown with in its series (only with them).
+    seasonName?: string;
 }
 
 export interface MetadataFiles {
@@ -27,8 +33,13 @@ export interface MetadataFiles {
 }
 
 export function metadataOf(anime: AnimeRecord, episode: AnimeEpisodeRecord): EpisodeMetadata {
+    const joined =
+        anime.series !== null && anime.season !== null
+            ? { series: anime.series, season: anime.season, ...(anime.seasonName !== null ? { seasonName: anime.seasonName } : {}) }
+            : {};
     return {
         version: METADATA_VERSION,
+        ...joined,
         title: anime.title,
         query: anime.query,
         searchIndex: anime.searchIndex,
@@ -55,7 +66,7 @@ export function parseEpisodeMetadata(content: string): EpisodeMetadata | null {
     if (typeof raw !== 'object' || raw === null) {
         return null;
     }
-    const { version, title, query, searchIndex, audio, number, positionSeconds, durationSeconds, watched } = raw as Record<string, unknown>;
+    const { version, title, query, searchIndex, audio, number, positionSeconds, durationSeconds, watched, series, season, seasonName } = raw as Record<string, unknown>;
     const knownAudio = ANIME_AUDIOS.find((candidate) => {
         return candidate === audio;
     });
@@ -76,7 +87,11 @@ export function parseEpisodeMetadata(content: string): EpisodeMetadata | null {
     ) {
         return null;
     }
-    return { version, title, query, searchIndex, audio: knownAudio, number, positionSeconds, durationSeconds, watched };
+    // The series and the season only count together; a pair that cannot be used is left out and the rest of the file is kept.
+    const cleanedSeries = typeof series === 'string' ? cleanSeriesName(series) : null;
+    const cleanedName = typeof seasonName === 'string' ? cleanSeasonName(seasonName) : null;
+    const joined = cleanedSeries !== null && isValidSeason(season) ? { series: cleanedSeries, season, ...(cleanedName ? { seasonName: cleanedName } : {}) } : {};
+    return { version, title, query, searchIndex, audio: knownAudio, number, positionSeconds, durationSeconds, watched, ...joined };
 }
 
 export function readEpisodeMetadata(videoPath: string, files: Pick<MetadataFiles, 'read'>): EpisodeMetadata | null {

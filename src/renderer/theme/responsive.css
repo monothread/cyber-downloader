@@ -1,0 +1,303 @@
+/* One layout for every screen: the page grows with the window (and the interface with the screen), the lists take more columns
+   when there is room, and the controls stack when there is not. Nothing here depends on a theme: it only moves and sizes. */
+
+/* --- The size of the interface follows the size of the screen ---------------------------------------------------------------
+   Media queries look at the real window, so --ui-scale (how much bigger than 1080p-sized the interface is) and --app-max (how wide
+   the page may get, in the scaled units) are chosen together: 1366x768 and 1920x1080 stay as they are, 2560x1440 and ultrawide get
+   25% more, 4K 75% more. */
+:root {
+    --ui-scale: 1;
+    --app-max: 1000px;
+}
+
+html {
+    zoom: var(--ui-scale);
+}
+
+@media (min-width: 1280px) {
+    :root { --app-max: 1240px; }
+}
+
+@media (min-width: 1700px) {
+    :root { --app-max: 1400px; }
+}
+
+/* 1440p, 21:9 and 32:9 */
+@media (min-width: 2200px) and (min-height: 1200px) {
+    :root { --ui-scale: 1.25; --app-max: 1500px; }
+}
+
+@media (min-width: 3000px) and (min-height: 1200px) {
+    :root { --app-max: 2000px; }
+}
+
+@media (min-width: 4200px) and (min-height: 1200px) {
+    :root { --app-max: 2600px; }
+}
+
+/* 4K and above */
+@media (min-height: 1900px) {
+    :root { --ui-scale: 1.75; --app-max: 1700px; }
+}
+
+@media (min-width: 4200px) and (min-height: 1900px) {
+    :root { --app-max: 2400px; }
+}
+
+.app {
+    max-width: var(--app-max);
+}
+
+/* --- More columns when there is room (measured on the page, not on the window) ---------------------------------------------- */
+.app__main {
+    container: main / inline-size;
+}
+
+@container main (min-width: 1100px) {
+    .queue {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+    }
+
+    /* The bars and the messages of a list use its whole width; the cards share it. */
+    .queue > :not(article) {
+        grid-column: 1 / -1;
+    }
+
+    .history > .history__list,
+    .anime__search > .history__list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+    }
+}
+
+@container main (min-width: 1500px) {
+    .queue {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .history > .history__list,
+    .anime__search > .history__list {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .settings {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@container main (min-width: 2100px) {
+    .queue {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .history > .history__list,
+    .anime__search > .history__list {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+/* A season of a series is a row that wraps when the card is narrow (a card in a column is): the title (shown only on hover) takes what is
+   left and the buttons go to the next line, on the right, when they do not fit. */
+.season__row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+}
+
+/* The name given to a season can be long: it is cut instead of making the row taller. */
+.season__chip {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.season__title {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.season__actions {
+    margin-left: auto;
+}
+
+/* --- The cards of the library are slim and all the same size ------------------------------------------------------------------
+   An anime on its own and a series have the same card: the name with how many seasons it has, and the two buttons. What is long (the
+   seasons, the episodes, the editor of a series) is on the screen of the series. */
+.library > .library__card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+}
+
+.queue.library {
+    align-items: stretch;
+}
+
+.library__footer {
+    margin-top: auto;
+}
+
+.library__view {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* --- Less room: the controls stack ------------------------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+    .app {
+        padding: 12px 12px;
+    }
+
+    .logo {
+        font-size: 22px;
+        letter-spacing: 3px;
+    }
+
+    .app__main {
+        padding: 12px 0 20px;
+    }
+
+    .tabs {
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .tab {
+        flex: none;
+        padding: 8px 12px;
+        letter-spacing: 1px;
+    }
+
+    .anime__bar {
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .queue__toolbar {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .anime__actions {
+        justify-content: flex-start;
+    }
+
+    .field-row {
+        flex-wrap: wrap;
+    }
+
+    .field-row .field {
+        min-width: min(100%, 220px);
+    }
+
+    .history__item {
+        flex-wrap: wrap;
+    }
+
+    /* The text keeps a width of its own; the buttons go to the next line instead of squeezing it. */
+    .history__main {
+        flex: 1 1 160px;
+    }
+
+    .history__item > .btn,
+    .history__item > .anime__actions {
+        flex: 1 1 auto;
+        white-space: normal;
+    }
+
+    .job__actions {
+        flex-wrap: wrap;
+    }
+
+    /* A season of a series: the chip and the progress on the first line, the buttons on the second. */
+    .season__row {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    /* There is no hover on a narrow (or touch) window and no room for the title: it stays for screen readers and as a tooltip. */
+    .season__title {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .season__actions {
+        flex: 1 1 100%;
+        justify-content: flex-end;
+    }
+
+    .series__title {
+        font-size: 15px;
+    }
+
+    .series .job__head {
+        flex-wrap: wrap;
+    }
+
+    .player {
+        padding: 6px;
+    }
+
+    .player__box {
+        padding: 8px 10px;
+    }
+
+    .player__box .job__head {
+        flex-wrap: wrap;
+    }
+
+    .player__title {
+        white-space: normal;
+    }
+
+    .player__controls {
+        flex-wrap: wrap;
+        row-gap: 8px;
+    }
+
+    .player__seek {
+        flex: 1 1 100%;
+        order: -1;
+    }
+
+    .modal {
+        padding: 12px 14px;
+    }
+}
+
+@media (max-width: 520px) {
+    .player__volume,
+    .player__size {
+        display: none;
+    }
+
+    .logo {
+        font-size: 18px;
+        letter-spacing: 2px;
+    }
+
+    .app__header {
+        gap: 8px;
+    }
+
+    .chip {
+        font-size: 10px;
+    }
+
+    .btn:not(.btn--small) {
+        padding-inline: 10px;
+    }
+
+    .season__chip {
+        min-width: 0;
+    }
+}

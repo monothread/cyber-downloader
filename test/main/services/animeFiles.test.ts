@@ -12,6 +12,11 @@ import {
     DEFAULT_ANIME_FOLDER,
     animeFolderOf,
     episodeDownloadDirectory,
+    foldersWithoutOthers,
+    SEASON_FOLDER_PREFIX,
+    seasonDownloadDirectory,
+    seasonFolderName,
+    seriesFolderOf,
     METADATA_FILE_NAME,
     metadataPathFor,
     episodeFolderName,
@@ -249,6 +254,67 @@ describe('the metadata of an episode', () => {
     it('is a file with a fixed name in the folder of the video', () => {
         expect(METADATA_FILE_NAME).toBe('pullwave.json');
         expect(metadataPathFor(join('/lib', 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'))).toBe(join('/lib', 'Naruto', 'Episode 1', 'pullwave.json'));
+    });
+});
+
+describe('the folder of a season of a series', () => {
+    it('is named after the season', () => {
+        expect(SEASON_FOLDER_PREFIX).toBe('Season ');
+        expect(seasonFolderName(2)).toBe('Season 2');
+    });
+
+    it('is inside the folder of the series, with the rules of the system the files are on', () => {
+        expect(seasonDownloadDirectory('/lib', 'Frieren: Beyond', 2, 'Frieren Season 2', 'linux')).toBe('/lib/Frieren_ Beyond/Season 2');
+        expect(seasonDownloadDirectory('D:\\Anime', 'Re:Zero', 3, 'Re:Zero Season 3', 'win32')).toBe('D:\\Anime\\Re_Zero\\Season 3');
+        expect(seasonDownloadDirectory(join('/lib'), 'Naruto', 1, 'Naruto')).toBe(join('/lib', 'Naruto', 'Season 1'));
+    });
+
+    it('shortens the name of the series on Windows so the whole path of a file stays under the limit', () => {
+        const base = `C:\\${'a'.repeat(100)}`;
+        const folder = seasonDownloadDirectory(base, 'S'.repeat(100), 99, 'T'.repeat(40), 'win32');
+        expect(folder.endsWith('\\Season 99')).toBe(true);
+        expect(`${folder}\\Episode 999\\${'T'.repeat(40)} Episode 999.mp4`.length).toBeLessThanOrEqual(WINDOWS_PATH_BUDGET);
+    });
+
+    it('never makes the name of the series shorter than the minimum', () => {
+        const folder = seasonDownloadDirectory(`C:\\${'a'.repeat(300)}`, 'S'.repeat(100), 1, 'T', 'win32');
+        expect(folder.split('\\').at(-2)?.length).toBe(MIN_FOLDER_NAME_LENGTH);
+    });
+
+    it('is found from the folder of the season, and not for the folder of an anime on its own', () => {
+        expect(seriesFolderOf('/lib/Frieren/Season 2', 'linux')).toBe('/lib/Frieren');
+        expect(seriesFolderOf('D:\\Anime\\Frieren\\Season 12', 'win32')).toBe('D:\\Anime\\Frieren');
+        expect(seriesFolderOf('/lib/Frieren', 'linux')).toBeNull();
+        expect(seriesFolderOf('/lib/Frieren/Season two', 'linux')).toBeNull();
+        expect(seriesFolderOf('/lib/Frieren/My Season 2', 'linux')).toBeNull();
+        expect(seriesFolderOf(join('/lib', 'Frieren', 'Season 1'))).toBe(join('/lib', 'Frieren'));
+    });
+
+    it('counts the extra level in the budget of Windows only', () => {
+        expect(folderNameBudget('C:\\Anime', 'Naruto', 'win32', 10)).toBe(MAX_FOLDER_NAME_LENGTH);
+        expect(folderNameBudget(`C:\\${'a'.repeat(120)}`, 'Naruto', 'win32', 10)).toBe(folderNameBudget(`C:\\${'a'.repeat(120)}`, 'Naruto', 'win32') - 10);
+        expect(folderNameBudget('/short', 'Naruto', 'linux', 10)).toBe(MAX_FOLDER_NAME_LENGTH);
+    });
+});
+
+describe('foldersWithoutOthers', () => {
+    it('keeps the folders that none of the other files are in', () => {
+        expect(foldersWithoutOthers(['/lib/A', '/lib/B'], ['/lib/B/Season 2/Episode 1/x.mp4', '/lib/C/y.mp4'], 'linux')).toEqual(['/lib/A']);
+    });
+
+    it('does not mistake a folder for another one that starts with its name', () => {
+        expect(foldersWithoutOthers(['/lib/Bleach'], ['/lib/Bleach Kai/x.mp4'], 'linux')).toEqual(['/lib/Bleach']);
+    });
+
+    it('knows the folders of Windows', () => {
+        expect(foldersWithoutOthers(['D:\\Anime\\A', 'D:\\Anime\\B'], ['D:\\Anime\\B\\Season 2\\x.mp4'], 'win32')).toEqual(['D:\\Anime\\A']);
+    });
+
+    it('keeps everything when there are no other files, and handles a folder given with its separator', () => {
+        expect(foldersWithoutOthers(['/lib/A'], [], 'linux')).toEqual(['/lib/A']);
+        expect(foldersWithoutOthers(['/lib/A/'], ['/lib/A/x.mp4'], 'linux')).toEqual([]);
+        expect(foldersWithoutOthers([], ['/lib/A/x.mp4'], 'linux')).toEqual([]);
+        expect(foldersWithoutOthers([join('/lib', 'A')], [join('/lib', 'A', 'x.mp4')])).toEqual([]);
     });
 });
 

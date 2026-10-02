@@ -56,6 +56,13 @@ export interface AnimeRecord {
     searchIndex: number;
     audio: AnimeAudio;
     createdAt: number;
+    // The seasons of one anime are separate entries in the source: the user joins them with a series name and a season number
+    // (both set or both null).
+    series: string | null;
+    // Where the anime goes among the others of its series (1 or more); it only orders them.
+    season: number | null;
+    // The name the anime is shown with inside its series, instead of "SEASON N"; it is not used to order.
+    seasonName: string | null;
 }
 
 export interface AnimeEpisodeRecord {
@@ -118,7 +125,14 @@ export interface AnimeDownloadRequest {
     index: number;
     audio: AnimeAudio;
     episodes: string[];
+    // The series and season the anime is saved under; null leaves it as it is.
+    series?: string | null;
+    season?: number | null;
+    // The name it is shown with in the series; undefined leaves it as it is.
+    seasonName?: string | null;
 }
+
+export type AnimeSeriesResponse = { ok: true } | { ok: false; reason: 'invalid' | 'season-taken' };
 
 export type AnimeDownloadResponse = { ok: true; anime: LibraryAnime } | { ok: false; message: string };
 

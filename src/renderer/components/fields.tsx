@@ -6,7 +6,7 @@ interface FieldShellProps {
     children: ReactNode;
 }
 
-function FieldShell({ label, hint, children }: FieldShellProps) {
+export function FieldShell({ label, hint, children }: FieldShellProps) {
     return (
         <label className="field">
             <span className="field__label">{label}</span>

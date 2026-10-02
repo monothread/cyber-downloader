@@ -101,6 +101,53 @@ describe('parseEpisodeMetadata', () => {
     });
 });
 
+describe('the series in the metadata', () => {
+    it('is written when the anime is in a series, and not otherwise', () => {
+        const episode = makeEpisode({ number: '2' });
+        expect(metadataOf(makeAnime([], { series: 'Frieren', season: 2 }), episode)).toMatchObject({ series: 'Frieren', season: 2 });
+        expect(Object.keys(metadataOf(makeAnime([], { series: null, season: null }), episode))).not.toContain('series');
+        expect(Object.keys(metadataOf(makeAnime([], { series: 'Frieren', season: null }), episode))).not.toContain('series');
+    });
+
+    it('carries the name the anime is shown with, only with the series', () => {
+        const episode = makeEpisode({ number: '2' });
+        expect(metadataOf(makeAnime([], { series: 'Bleach', season: 4, seasonName: 'The Conflict' }), episode)).toMatchObject({ series: 'Bleach', season: 4, seasonName: 'The Conflict' });
+        expect(Object.keys(metadataOf(makeAnime([], { series: 'Bleach', season: 4, seasonName: null }), episode))).not.toContain('seasonName');
+        expect(Object.keys(metadataOf(makeAnime([], { series: null, season: null, seasonName: 'Alone' }), episode))).not.toContain('seasonName');
+        expect(parseEpisodeMetadata(valid({ series: 'Bleach', season: 4, seasonName: '  The  Conflict ' }))).toEqual({ ...METADATA, series: 'Bleach', season: 4, seasonName: 'The Conflict' });
+        expect(parseEpisodeMetadata(valid({ series: 'Bleach', season: 4, seasonName: ' ' }))).toEqual({ ...METADATA, series: 'Bleach', season: 4 });
+        expect(parseEpisodeMetadata(valid({ series: 'Bleach', season: 4, seasonName: 5 }))).toEqual({ ...METADATA, series: 'Bleach', season: 4 });
+        expect(parseEpisodeMetadata(valid({ seasonName: 'Alone' }))).toEqual(METADATA);
+    });
+
+    it('is read with the rest, and cleaned', () => {
+        expect(parseEpisodeMetadata(valid({ series: '  Frieren  Beyond ', season: 3 }))).toEqual({ ...METADATA, series: 'Frieren Beyond', season: 3 });
+    });
+
+    it.each([
+        ['a season without a series', { season: 2 }],
+        ['a series without a season', { series: 'Frieren' }],
+        ['an empty series', { series: ' ', season: 2 }],
+        ['a series that is not text', { series: 4, season: 2 }],
+        ['a season out of range', { series: 'Frieren', season: 100 }],
+        ['a season that is not an integer', { series: 'Frieren', season: 1.5 }],
+        ['a season that is text', { series: 'Frieren', season: '2' }]
+    ])('leaves out %s and keeps the rest of the file', (_name, extra) => {
+        const parsed = parseEpisodeMetadata(valid(extra));
+        expect(parsed).toEqual(METADATA);
+        expect(Object.keys(parsed ?? {})).not.toContain('series');
+        expect(Object.keys(parsed ?? {})).not.toContain('season');
+    });
+
+    it('is kept when the file is written and read back', () => {
+        const folder = join(makeTempDir(), 'Frieren', 'Season 2', 'Episode 1');
+        const video = join(folder, 'a.mp4');
+        const joined = { ...METADATA, series: 'Frieren', season: 2 };
+        writeEpisodeMetadata(video, joined, defaultSubtitleFileSystem);
+        expect(readEpisodeMetadata(video, defaultSubtitleFileSystem)).toEqual(joined);
+    });
+});
+
 describe('readEpisodeMetadata and writeEpisodeMetadata', () => {
     it('writes beside the video and reads it back', () => {
         const folder = join(makeTempDir(), 'Naruto', 'Episode 1');

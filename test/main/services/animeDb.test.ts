@@ -18,7 +18,7 @@ afterEach(() => {
 
 describe('AnimeDb schema', () => {
     it('applies the migrations and remembers the version', () => {
-        expect(makeDb().schemaVersion).toBe(1);
+        expect(makeDb().schemaVersion).toBe(3);
     });
 
     it('keeps the data and does not migrate again when the file is opened twice', () => {
@@ -31,7 +31,7 @@ describe('AnimeDb schema', () => {
         first.close();
 
         const second = new AnimeDb(path);
-        expect(second.schemaVersion).toBe(1);
+        expect(second.schemaVersion).toBe(3);
         expect(second.list()).toEqual([
             {
                 id: anime.id,
@@ -40,6 +40,9 @@ describe('AnimeDb schema', () => {
                 searchIndex: 1,
                 audio: 'sub',
                 createdAt: NOW,
+                series: null,
+                season: null,
+                seasonName: null,
                 episodes: [
                     {
                         id: 1,
@@ -88,14 +91,14 @@ describe('AnimeDb schema', () => {
 
 describe('AnimeDb.upsertAnime', () => {
     it('creates an anime', () => {
-        expect(makeDb().upsertAnime(NARUTO)).toEqual({ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub', createdAt: NOW });
+        expect(makeDb().upsertAnime(NARUTO)).toEqual({ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub', createdAt: NOW, series: null, season: null, seasonName: null });
     });
 
     it('treats the same title and audio as the same anime and refreshes its search data', () => {
         const db = makeDb();
         const first = db.upsertAnime(NARUTO);
         const second = db.upsertAnime({ ...NARUTO, query: 'naruto shippuden', searchIndex: 3 });
-        expect(second).toEqual({ id: first.id, title: 'Naruto', query: 'naruto shippuden', searchIndex: 3, audio: 'sub', createdAt: NOW });
+        expect(second).toEqual({ id: first.id, title: 'Naruto', query: 'naruto shippuden', searchIndex: 3, audio: 'sub', createdAt: NOW, series: null, season: null, seasonName: null });
         expect(db.list()).toHaveLength(1);
     });
 
@@ -320,7 +323,7 @@ describe('AnimeDb importing what was found on the disk', () => {
     it('adds an anime, and keeps it as it is when it is already there', () => {
         const db = makeDb();
         const added = db.importAnime({ title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'sub' });
-        expect(added).toEqual({ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'sub', createdAt: NOW });
+        expect(added).toEqual({ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'sub', createdAt: NOW, series: null, season: null, seasonName: null });
         expect(db.importAnime({ title: 'Naruto', query: 'other', searchIndex: 9, audio: 'sub' })).toEqual(added);
         expect(db.list()).toHaveLength(1);
     });
@@ -363,5 +366,167 @@ describe('AnimeDb importing what was found on the disk', () => {
         const anime = db.upsertAnime(NARUTO);
         db.markDone(db.ensureEpisode(anime.id, '1').id, '/a.mp4', 1);
         expect(db.getEpisode(1)?.fileMissing).toBe(false);
+    });
+});
+
+describe('AnimeDb series and seasons', () => {
+    it('adds the columns by a migration that keeps what was there', () => {
+        const dir = makeTempDir();
+        const path = join(dir, 'anime.db');
+        const old = new DatabaseSync(path);
+        old.exec(
+            `CREATE TABLE anime (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, query TEXT NOT NULL, search_index INTEGER NOT NULL, audio TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE (title, audio));
+             CREATE TABLE episode (id INTEGER PRIMARY KEY AUTOINCREMENT, anime_id INTEGER NOT NULL REFERENCES anime (id) ON DELETE CASCADE, number TEXT NOT NULL, status TEXT NOT NULL, file_path TEXT, size_bytes INTEGER, error_code TEXT, error_raw TEXT, position_seconds REAL NOT NULL DEFAULT 0, duration_seconds REAL NOT NULL DEFAULT 0, watched INTEGER NOT NULL DEFAULT 0, downloaded_at INTEGER, UNIQUE (anime_id, number));
+             INSERT INTO anime (title, query, search_index, audio, created_at) VALUES ('Naruto', 'naruto', 1, 'sub', 5);
+             PRAGMA user_version = 1;`
+        );
+        old.close();
+
+        const db = new AnimeDb(path, () => {
+            return NOW;
+        });
+        expect(db.schemaVersion).toBe(3);
+        expect(db.list()).toEqual([{ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub', createdAt: 5, series: null, season: null, seasonName: null, episodes: [] }]);
+        db.close();
+    });
+
+    it('starts with no series', () => {
+        expect(makeDb().upsertAnime(NARUTO)).toMatchObject({ series: null, season: null });
+    });
+
+    it('joins an anime to a series with a season, and takes it out again', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        expect(db.setSeries(anime.id, 'Naruto Series', 2)).toBe(true);
+        expect(db.getAnime(anime.id)).toMatchObject({ series: 'Naruto Series', season: 2 });
+        expect(db.setSeries(anime.id, null, null)).toBe(true);
+        expect(db.getAnime(anime.id)).toMatchObject({ series: null, season: null });
+    });
+
+    it('keeps the series when the anime is saved again', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        db.setSeries(anime.id, 'Naruto Series', 2);
+        db.upsertAnime({ ...NARUTO, query: 'naruto again' });
+        expect(db.getAnime(anime.id)).toMatchObject({ query: 'naruto again', series: 'Naruto Series', season: 2 });
+    });
+
+    it('refuses a season that another anime of the series and audio has, whatever the case or the accents of the name', () => {
+        const db = makeDb();
+        const first = db.upsertAnime(NARUTO);
+        const second = db.upsertAnime({ ...NARUTO, title: 'Naruto 2', searchIndex: 2 });
+        db.setSeries(first.id, 'Pokémon', 1);
+        expect(db.seasonTaken('pokemon', 1, 'sub', second.id)).toBe(true);
+        expect(db.setSeries(second.id, 'POKEMON', 1)).toBe(false);
+        expect(db.getAnime(second.id)).toMatchObject({ series: null, season: null });
+        expect(db.setSeries(second.id, 'POKEMON', 2)).toBe(true);
+    });
+
+    it('allows the same season in another series, another audio, or the anime itself', () => {
+        const db = makeDb();
+        const sub = db.upsertAnime(NARUTO);
+        const dub = db.upsertAnime({ ...NARUTO, audio: 'dub' });
+        const other = db.upsertAnime({ ...NARUTO, title: 'Other', searchIndex: 3 });
+        db.setSeries(sub.id, 'Series', 1);
+        expect(db.setSeries(dub.id, 'Series', 1)).toBe(true);
+        expect(db.setSeries(other.id, 'Another series', 1)).toBe(true);
+        expect(db.setSeries(sub.id, 'Series', 1)).toBe(true);
+        expect(db.seasonTaken('Series', 1, 'sub', sub.id)).toBe(false);
+    });
+
+    it('does nothing for an anime that is not there', () => {
+        expect(makeDb().setSeries(99, 'Series', 1)).toBe(false);
+    });
+
+    it('finds an anime by its title and audio', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        expect(db.findAnime('Naruto', 'sub')).toEqual(anime);
+        expect(db.findAnime('Naruto', 'dub')).toBeNull();
+        expect(db.findAnime('Bleach', 'sub')).toBeNull();
+    });
+
+    it('does not replace a series when an anime is imported', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        db.setSeries(anime.id, 'Series', 3);
+        expect(db.importAnime(NARUTO)).toMatchObject({ series: 'Series', season: 3 });
+    });
+
+    it('keeps one spelling for a series: the same name in another case, with other accents or extra spaces joins the one that is there', () => {
+        const db = makeDb();
+        const first = db.upsertAnime(NARUTO);
+        const second = db.upsertAnime({ ...NARUTO, title: 'Naruto 2', searchIndex: 2 });
+        const third = db.upsertAnime({ ...NARUTO, title: 'Naruto 3', searchIndex: 3 });
+        db.setSeries(first.id, 'Pokémon Journeys', 1);
+        db.setSeries(second.id, 'POKEMON   journeys', 2);
+        db.setSeries(third.id, ' pokemon journeys ', 3);
+        expect(
+            db.list().map((anime) => {
+                return [anime.series, anime.season];
+            })
+        ).toEqual([
+            ['Pokémon Journeys', 1],
+            ['Pokémon Journeys', 2],
+            ['Pokémon Journeys', 3]
+        ]);
+    });
+
+    it('lets the only anime of a series spell it differently', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        db.setSeries(anime.id, 'frieren', 1);
+        db.setSeries(anime.id, 'Frieren', 1);
+        expect(db.getAnime(anime.id)?.series).toBe('Frieren');
+    });
+
+    it('gives the spelling of the library for a name, or the name itself when it is new', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        db.setSeries(anime.id, 'Bleach', 1);
+        expect(db.canonicalSeries('BLEACH')).toBe('Bleach');
+        expect(db.canonicalSeries('Bleach', anime.id)).toBe('Bleach');
+        expect(db.canonicalSeries('Frieren')).toBe('Frieren');
+        expect(db.canonicalSeries('bleach', anime.id)).toBe('bleach');
+    });
+
+    it('keeps the name an anime is shown with in its series, and drops it with the series', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        expect(db.setSeries(anime.id, 'Bleach', 2, 'Thousand-Year Blood War')).toBe(true);
+        expect(db.getAnime(anime.id)).toMatchObject({ series: 'Bleach', season: 2, seasonName: 'Thousand-Year Blood War' });
+        expect(db.setSeries(anime.id, 'Bleach', 2)).toBe(true);
+        expect(db.getAnime(anime.id)?.seasonName).toBeNull();
+        db.setSeries(anime.id, 'Bleach', 3, 'Arc');
+        db.setSeries(anime.id, null, null, 'Ignored');
+        expect(db.getAnime(anime.id)).toMatchObject({ series: null, season: null, seasonName: null });
+    });
+
+    it('does not use the name to tell the anime of a series apart: only the order counts', () => {
+        const db = makeDb();
+        const first = db.upsertAnime(NARUTO);
+        const second = db.upsertAnime({ ...NARUTO, title: 'Naruto 2', searchIndex: 2 });
+        db.setSeries(first.id, 'Naruto', 1, 'Same name');
+        expect(db.setSeries(second.id, 'Naruto', 2, 'Same name')).toBe(true);
+        expect(db.setSeries(second.id, 'Naruto', 1, 'Other name')).toBe(false);
+    });
+
+    it('adds the column of the name by a migration that keeps what was there', () => {
+        const dir = makeTempDir();
+        const path = join(dir, 'anime.db');
+        const first = new AnimeDb(path, () => {
+            return NOW;
+        });
+        const anime = first.upsertAnime(NARUTO);
+        first.setSeries(anime.id, 'Series', 2);
+        first.close();
+        const raw = new DatabaseSync(path);
+        raw.exec('ALTER TABLE anime DROP COLUMN season_name; PRAGMA user_version = 2;');
+        raw.close();
+
+        const db = new AnimeDb(path);
+        expect(db.schemaVersion).toBe(3);
+        expect(db.getAnime(anime.id)).toMatchObject({ series: 'Series', season: 2, seasonName: null });
+        db.close();
     });
 });

@@ -11,6 +11,9 @@ function found(overrides: Partial<ScannedEpisode> = {}): ScannedEpisode {
         query: 'Naruto',
         searchIndex: 0,
         progress: null,
+        series: null,
+        season: null,
+        seasonName: null,
         ...overrides
     };
 }
@@ -177,6 +180,47 @@ describe('importLibrary', () => {
         const { db, options } = setup();
         importLibrary(db, { episodes: [found()], ignored: 0 }, options);
         expect(db.getEpisode(1)?.sizeBytes).toBeNull();
+    });
+
+    it('joins the anime to the series the folders or the metadata say, and never replaces what the user set', () => {
+        const { db, options } = setup();
+        importLibrary(db, { episodes: [found({ series: 'Frieren', season: 2 })], ignored: 0 }, options);
+        expect(db.getAnime(1)).toMatchObject({ series: 'Frieren', season: 2 });
+
+        db.setSeries(1, 'My Frieren', 5);
+        importLibrary(db, { episodes: [found({ videoPath: '/x/Naruto Episode 2.mp4', number: '2', series: 'Frieren', season: 2 })], ignored: 0 }, options);
+        expect(db.getAnime(1)).toMatchObject({ series: 'My Frieren', season: 5 });
+    });
+
+    it('joins the series with the spelling the library already has', () => {
+        const { db, options } = setup();
+        importLibrary(db, { episodes: [found({ title: 'Frieren', series: 'Frieren', season: 1 })], ignored: 0 }, options);
+        importLibrary(db, { episodes: [found({ title: 'Frieren 2', videoPath: '/x/Frieren 2 Episode 1.mp4', series: 'FRIEREN', season: 2 })], ignored: 0 }, options);
+        expect(
+            db.list().map((anime) => {
+                return anime.series;
+            })
+        ).toEqual(['Frieren', 'Frieren']);
+    });
+
+    it('brings back the name the anime was shown with in its series', () => {
+        const { db, options } = setup();
+        importLibrary(db, { episodes: [found({ title: 'Bleach 4', series: 'Bleach', season: 4, seasonName: 'The Conflict' })], ignored: 0 }, options);
+        expect(db.getAnime(1)).toMatchObject({ series: 'Bleach', season: 4, seasonName: 'The Conflict' });
+    });
+
+    it('leaves the anime on its own when its season is already taken in the series', () => {
+        const { db, options } = setup();
+        importLibrary(db, { episodes: [found({ title: 'Frieren', series: 'Frieren', season: 1 })], ignored: 0 }, options);
+        importLibrary(db, { episodes: [found({ title: 'Other', videoPath: '/x/Other Episode 1.mp4', series: 'frieren', season: 1 })], ignored: 0 }, options);
+        expect(
+            db.list().map((anime) => {
+                return [anime.title, anime.series, anime.season];
+            })
+        ).toEqual([
+            ['Frieren', 'Frieren', 1],
+            ['Other', null, null]
+        ]);
     });
 
     it('does nothing for an empty scan, and works without being told when episodes are saved', () => {

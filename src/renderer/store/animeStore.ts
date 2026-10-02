@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { AniError, AnimeAudio, AnimeJob, AnimeProgressUpdate, AnimeSearchResult, AnimeStatus, AnimeStream, LibraryAnime } from '@shared/anime';
+import type { AniError, AnimeAudio, AnimeSeriesResponse, AnimeJob, AnimeProgressUpdate, AnimeSearchResult, AnimeStatus, AnimeStream, LibraryAnime } from '@shared/anime';
+import { cleanSeasonName, cleanSeriesName, isValidSeason, type SeriesChoice } from '@shared/series';
 import { createTranslator, type MessageKey, type MessageParams } from '@shared/i18n';
 import { resolveAppLanguage } from '../i18n/language';
 import { useAppStore } from './appStore';
@@ -74,7 +75,10 @@ export interface AnimeState {
     // Goes to the library, to the anime that was being looked at in the search.
     showInLibrary: (animeId: number) => void;
     closeResult: () => void;
-    downloadEpisodes: (episodes: string[]) => Promise<void>;
+    // Downloads episodes of the opened anime; `joined` is the series and season it is saved under (none leaves it as it is).
+    downloadEpisodes: (episodes: string[], joined?: SeriesChoice | null) => Promise<void>;
+    // Joins an anime of the library to a series with a season number, or takes it out of one (null, null), then reads the library.
+    setSeries: (animeId: number, series: string | null, season: number | null, seasonName: string | null) => Promise<AnimeSeriesResponse>;
     cancelJob: (episodeId: number) => Promise<void>;
     retryJob: (episodeId: number) => Promise<void>;
     clearFinishedJobs: () => Promise<void>;
@@ -303,9 +307,14 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
             set({ selection: null });
         },
 
-        downloadEpisodes: async (episodes) => {
+        downloadEpisodes: async (episodes, joined = null) => {
             const { selection } = get();
             if (!selection || episodes.length === 0) {
+                return;
+            }
+            const name = cleanSeasonName(joined?.seasonName ?? '');
+            if (joined && (cleanSeriesName(joined.series) === null || !isValidSeason(joined.season) || name === undefined)) {
+                notify('error', translateNow('anime.series.error.invalid'));
                 return;
             }
             const response = await window.api.downloadAnime({
@@ -313,13 +322,22 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
                 query: selection.query,
                 index: selection.result.index,
                 audio: selection.audio,
-                episodes
+                episodes,
+                ...(joined ? { series: cleanSeriesName(joined.series) as string, season: joined.season, seasonName: name as string | null } : {})
             });
             if (response.ok) {
                 notify('info', translateNow('anime.notice.queued', { count: episodes.length, title: response.anime.title }));
                 return;
             }
             notify('error', translateNow('anime.notice.queueFailed', { reason: response.message }));
+        },
+
+        setSeries: async (animeId, series, season, seasonName) => {
+            const response = await window.api.setAnimeSeries(animeId, series, season, seasonName);
+            if (response.ok) {
+                set({ library: await window.api.listAnimeLibrary() });
+            }
+            return response;
         },
 
         cancelJob: async (episodeId) => {

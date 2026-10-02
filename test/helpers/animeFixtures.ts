@@ -19,7 +19,7 @@ export function makeEpisode(overrides: Partial<AnimeEpisodeRecord> = {}): AnimeE
 }
 
 export function makeAnime(episodes: AnimeEpisodeRecord[], overrides: Partial<LibraryAnime> = {}): LibraryAnime {
-    return { id: 1, title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub', createdAt: 1, episodes, ...overrides };
+    return { id: 1, title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub', createdAt: 1, series: null, season: null, seasonName: null, episodes, ...overrides };
 }
 
 export function makeAnimeJob(overrides: Partial<AnimeJob> = {}): AnimeJob {

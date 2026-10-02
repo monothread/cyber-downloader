@@ -1,5 +1,5 @@
 import { delimiter, join } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, screen, session, shell } from 'electron';
 import { ANIME_MEDIA_SCHEME, ANIME_STREAM_SCHEME, isAnimeSupported } from '@shared/anime';
 import { IPC } from '@shared/constants';
 import { createAnimeRuntime } from './animeRuntime';
@@ -114,12 +114,23 @@ function handleWindowClose(event: Electron.Event): void {
     void requestQuit?.();
 }
 
+// PULLWAVE_E2E_PRIMARY_DISPLAY=1 opens the window on the primary monitor (the end-to-end tests set it, so they run where the
+// person running them is looking and not on whichever monitor the system picks).
+function primaryDisplayPosition(width: number, height: number): { x: number; y: number } | Record<string, never> {
+    if (process.env.PULLWAVE_E2E_PRIMARY_DISPLAY !== '1') {
+        return {};
+    }
+    const area = screen.getPrimaryDisplay().workArea;
+    return { x: area.x + Math.max(0, Math.round((area.width - width) / 2)), y: area.y + Math.max(0, Math.round((area.height - height) / 2)) };
+}
+
 function createWindow(): BrowserWindow {
     const window = new BrowserWindow({
         width: 1100,
         height: 780,
-        minWidth: 820,
-        minHeight: 600,
+        ...primaryDisplayPosition(1100, 780),
+        minWidth: 480,
+        minHeight: 520,
         backgroundColor: '#07060f',
         title: 'PULLWAVE',
         autoHideMenuBar: true,

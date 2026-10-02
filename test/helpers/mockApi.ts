@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { AnimeImportResponse, AnimeJob, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
+import type { AnimeImportResponse, AnimeSeriesResponse, AnimeJob, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 export interface MockApiHandle {
@@ -147,6 +147,9 @@ export function createMockApi(): MockApiHandle {
         }),
         openAnimeFolder: vi.fn(async () => {
             return undefined;
+        }),
+        setAnimeSeries: vi.fn(async (): Promise<AnimeSeriesResponse> => {
+            return { ok: true };
         }),
         importAnimeLibrary: vi.fn(async (): Promise<AnimeImportResponse> => {
             return { ok: false, reason: 'cancelled' };

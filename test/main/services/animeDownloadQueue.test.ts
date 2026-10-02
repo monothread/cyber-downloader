@@ -551,3 +551,81 @@ describe('AnimeDownloadQueue folders and metadata', () => {
         expect(downloads[0]?.options.downloadDir).toBe(join(ANIME_FOLDER, 'Episode 2'));
     });
 });
+
+describe('AnimeDownloadQueue series', () => {
+    const SERIES_REQUEST: AnimeDownloadRequest = { title: 'Frieren Season 2', query: 'frieren', index: 2, audio: 'sub', episodes: ['1', '2'], series: 'Frieren', season: 2 };
+
+    it('saves the series and the season with the anime', () => {
+        const { queue, db } = setup();
+        queue.enqueue(SERIES_REQUEST);
+        expect(db.getAnime(1)).toMatchObject({ title: 'Frieren Season 2', series: 'Frieren', season: 2 });
+    });
+
+    it('downloads into the folder of the season, inside the folder of the series', () => {
+        const { queue, downloads, ensureDirectory } = setup({ maxConcurrent: 2 });
+        queue.enqueue(SERIES_REQUEST);
+        expect(downloads[0]?.options.downloadDir).toBe(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Frieren', 'Season 2', 'Episode 1'));
+        expect(downloads[1]?.options.downloadDir).toBe(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Frieren', 'Season 2', 'Episode 2'));
+        expect(ensureDirectory).toHaveBeenNthCalledWith(1, join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Frieren', 'Season 2', 'Episode 1'));
+    });
+
+    it('joins the series with the spelling the library already has, so the folders are the same', () => {
+        const { queue, downloads, db } = setup({ maxConcurrent: 2 });
+        queue.enqueue({ ...SERIES_REQUEST, title: 'Frieren', season: 1, episodes: ['1'], index: 1 });
+        queue.enqueue({ ...SERIES_REQUEST, series: ' FRIEREN ', episodes: ['1'] });
+        expect(db.getAnime(2)).toMatchObject({ series: 'Frieren', season: 2 });
+        expect(downloads[1]?.options.downloadDir).toBe(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Frieren', 'Season 2', 'Episode 1'));
+    });
+
+    it('saves the name the anime is shown with, and keeps it when a later request does not say one', () => {
+        const { queue, db } = setup();
+        queue.enqueue({ ...SERIES_REQUEST, seasonName: 'The Second One', episodes: ['1'] });
+        expect(db.getAnime(1)).toMatchObject({ season: 2, seasonName: 'The Second One' });
+        queue.enqueue({ ...SERIES_REQUEST, episodes: ['2'] });
+        expect(db.getAnime(1)?.seasonName).toBe('The Second One');
+        queue.enqueue({ ...SERIES_REQUEST, seasonName: null, episodes: ['3'] });
+        expect(db.getAnime(1)?.seasonName).toBeNull();
+    });
+
+    it('puts two seasons of a series side by side', () => {
+        const { queue, downloads } = setup({ maxConcurrent: 2 });
+        queue.enqueue({ ...SERIES_REQUEST, title: 'Frieren', season: 1, episodes: ['1'], index: 1 });
+        queue.enqueue({ ...SERIES_REQUEST, episodes: ['1'] });
+        expect(downloads[0]?.options.downloadDir).toBe(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Frieren', 'Season 1', 'Episode 1'));
+        expect(downloads[1]?.options.downloadDir).toBe(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Frieren', 'Season 2', 'Episode 1'));
+    });
+
+    it('uses the folder of the series of the settings and the rules of the system the files are on', () => {
+        const { queue, downloads } = setup({ animeDownloadDir: 'D:\\Anime' }, {}, { platform: 'win32', downloads: 'C:\\Users\\me\\Downloads' });
+        queue.enqueue({ ...SERIES_REQUEST, series: 'Re:Zero', episodes: ['1'] });
+        expect(downloads[0]?.options.downloadDir).toBe('D:\\Anime\\Re_Zero\\Season 2\\Episode 1');
+    });
+
+    it('keeps an anime that is not in a series in a folder of its own, as before', () => {
+        const { queue, downloads } = setup();
+        queue.enqueue({ ...REQUEST, episodes: ['1'] });
+        expect(downloads[0]?.options.downloadDir).toBe(join(DOWNLOADS, DEFAULT_ANIME_FOLDER, 'Naruto', 'Episode 1'));
+    });
+
+    it('leaves the series of an anime as it is when the request does not say one', () => {
+        const { queue, db } = setup();
+        queue.enqueue({ ...SERIES_REQUEST, episodes: ['1'] });
+        queue.enqueue({ ...SERIES_REQUEST, series: undefined, season: undefined, episodes: ['2'] });
+        expect(db.getAnime(1)).toMatchObject({ series: 'Frieren', season: 2 });
+    });
+
+    it('keeps downloading into the folder an anime already has, even after it was joined to a series', () => {
+        const { queue, downloads, db } = setup({}, {}, { directories: ['/media/My Naruto'] });
+        const anime = db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'sub' });
+        db.markDone(db.ensureEpisode(anime.id, '1').id, join('/media/My Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 10);
+        queue.enqueue({ ...REQUEST, series: 'Naruto Series', season: 1, episodes: ['2'] });
+        expect(downloads[0]?.options.downloadDir).toBe(join('/media/My Naruto', 'Episode 2'));
+    });
+
+    it('does not join the anime when the season is taken by another anime of the series', () => {
+        const { queue, db } = setup();
+        queue.enqueue({ ...SERIES_REQUEST, title: 'Frieren', season: 2, episodes: ['1'] });
+        queue.enqueue({ ...SERIES_REQUEST, episodes: ['1'] });
+        expect(db.getAnime(2)).toMatchObject({ title: 'Frieren Season 2', series: null, season: null });
+    });
+});

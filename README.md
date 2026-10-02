@@ -86,12 +86,16 @@ Once installed, the app checks for new versions by itself (Settings > APP UPDATE
 - Update yt-dlp from the UI (downloads the latest verified release into the app data folder)
 - **Anime (Linux and Windows)**, see below
 
+## Windows and screens
+The interface follows the size of the window and of the screen: from a half-screen window of 480 px up to an ultrawide (3440x1440) or 4K, the text and the spaces grow with the screen and the lists take two, three or four columns when there is room.
+
 ## Anime
 A section for anime on top of [ani-cli](https://github.com/pystardust/ani-cli), which ships inside the app together with the small tools it needs (BusyBox and curl; BusyBox for Windows on Windows); nothing has to be installed. It needs Windows 10 version 1903 or newer on Windows.
 
 - **Search** an anime (subtitled or dubbed), open it and see its episodes.
 - **Download** episodes or a whole season. The number of downloads running or waiting is a button at the top of the section; it opens the list on a screen of its own, with BACK to return.
-- **Library:** what was downloaded (kept in a local SQLite database), with sizes, where you stopped watching and what failed. Each episode is saved in a folder of its own (`<anime>/Episode N/`) with its video and all its subtitles. Search the library by title, mark an episode as watched (or not; it counts as watched from 75% too), open the folder of an anime, jump between the library and the search for the same anime (GET MORE EPISODES / VIEW IN LIBRARY). Removing an episode or an anime also deletes its files, and its folder.
+- **Library:** what was downloaded (kept in a local SQLite database), with sizes, where you stopped watching and what failed. Each episode is saved in a folder of its own with its video and all its subtitles (`<series>/Season N/Episode M/`).
+- **Series and seasons:** the source lists every season as a separate anime. Give each one the same **series** name and its own **order** number (the app suggests them from the title; you can change them before downloading or later with EDIT SERIES), and, if you want, a **name** to show on it instead of "SEASON N". Every anime is a series: the library shows one slim card per series (counted as one anime) with the number of seasons, OPEN SERIES and REMOVE SERIES; the seasons, in order, with their episodes and buttons are on the screen of the series. The name of the series is a search box that offers the series already in the library or keeps a new name. The cards are in alphabetical order. Nothing is grouped by itself, and changing the series does not move files already downloaded. Search the library by title, mark an episode as watched (or not; it counts as watched from 75% too), open the folder of an anime, jump between the library and the search for the same anime (GET MORE EPISODES / VIEW IN LIBRARY). Removing an episode or an anime also deletes its files, and its folder.
 - **Player** inside the app, with its own controls in the theme: play/pause, seek, volume, fullscreen (click to pause, double click for fullscreen), previous and next episode, resume where you stopped, the size of the subtitles (A- / A+) and, for downloaded episodes, a choice of subtitle.
 - **Watch without downloading:** pick one episode and press WATCH.
 - **Subtitles** in the language of the app (or one chosen in Settings > ANIME), when the source offers it. Every language the source offers is saved with a new download and can be chosen in the player; you can also load your own `.vtt` or `.srt` file for one episode (LOAD SUBTITLE).

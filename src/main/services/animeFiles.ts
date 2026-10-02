@@ -1,5 +1,6 @@
 import { rmdirSync, rmSync } from 'node:fs';
 import { dirname, join, posix, win32 } from 'node:path';
+import { MAX_SEASON } from '@shared/series';
 import type { Settings } from '@shared/types';
 import { subtitleFilesOf, type SubtitleFileSystem } from './subtitleFiles';
 
@@ -88,13 +89,19 @@ export function animeFolderOf(videoPath: string, episode: string, platform: Node
     return path.dirname(episodeFolder ?? videoPath);
 }
 
+// The folder of the series a folder of a season is in, or null when the folder is not one of a season (an anime on its own).
+export function seriesFolderOf(animeFolder: string, platform: NodeJS.Platform = process.platform): string | null {
+    const path = pathFor(platform);
+    return new RegExp(`^${SEASON_FOLDER_PREFIX}\\d+$`).test(path.basename(animeFolder)) ? path.dirname(animeFolder) : null;
+}
+
 // How long the folder of an anime may be so that its files (named after the whole title, which ani-cli decides, inside the
 // folder of the episode) stay inside the path limit of Windows. Elsewhere the limit is the usual one.
-export function folderNameBudget(baseDir: string, title: string, platform: NodeJS.Platform = process.platform): number {
+export function folderNameBudget(baseDir: string, title: string, platform: NodeJS.Platform = process.platform, extraLevels = 0): number {
     if (platform !== 'win32') {
         return MAX_FOLDER_NAME_LENGTH;
     }
-    const used = baseDir.length + 1 + 1 + episodeFolderName('999').length + 1 + animeFileName(title, '999').length;
+    const used = baseDir.length + 1 + 1 + extraLevels + episodeFolderName('999').length + 1 + animeFileName(title, '999').length;
     return Math.min(MAX_FOLDER_NAME_LENGTH, Math.max(MIN_FOLDER_NAME_LENGTH, WINDOWS_PATH_BUDGET - used));
 }
 
@@ -106,6 +113,22 @@ export function animeBaseDirectory(settings: Settings, defaultDownloadDir: strin
 // The name of the folder of an anime inside `parent`.
 function expectedFolderName(parent: string, title: string, platform: NodeJS.Platform): string {
     return animeFolderName(title, { platform, maxLength: folderNameBudget(parent, title, platform) });
+}
+
+// An anime that is a season of a series is saved in the folder of the series, in one of its own for the season.
+export const SEASON_FOLDER_PREFIX = 'Season ';
+
+export function seasonFolderName(season: number): string {
+    return `${SEASON_FOLDER_PREFIX}${season}`;
+}
+
+// The folder the episodes of a season of a series are saved in, inside `baseDir`: "<series>/Season N". `title` is the title of
+// the anime, which names the files (that is what the path limit of Windows is counted with).
+export function seasonDownloadDirectory(baseDir: string, series: string, season: number, title: string, platform: NodeJS.Platform = process.platform): string {
+    const extra = seasonFolderName(MAX_SEASON).length + 1;
+    const budget = Math.max(MIN_FOLDER_NAME_LENGTH, folderNameBudget(baseDir, title, platform, extra));
+    const seriesFolder = animeFolderName(series, { platform, maxLength: budget });
+    return pathFor(platform).join(baseDir, seriesFolder, seasonFolderName(season));
 }
 
 // The folder the episodes of an anime are saved in, inside `baseDir`.
@@ -125,6 +148,18 @@ export function animeFoldersToRemove(title: string, filePaths: readonly string[]
     ];
     return [...new Set(candidates)].filter((folder) => {
         return path.basename(folder) === expectedFolderName(path.dirname(folder), title, platform);
+    });
+}
+
+// The folders that no other file of the library is in: a folder is only removed whole when it holds nothing of another anime
+// (the folder of a series holds the seasons of the others).
+export function foldersWithoutOthers(folders: readonly string[], otherFiles: readonly string[], platform: NodeJS.Platform = process.platform): string[] {
+    const path = pathFor(platform);
+    return folders.filter((folder) => {
+        const prefix = folder.endsWith(path.sep) ? folder : `${folder}${path.sep}`;
+        return !otherFiles.some((file) => {
+            return file.startsWith(prefix);
+        });
     });
 }
 

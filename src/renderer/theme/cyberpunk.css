@@ -416,6 +416,61 @@ body::after {
 
 .history__item--error { border-left-color: var(--red); }
 .history__item--watched { background: var(--tint-green); }
+.series__title { margin: 0; font-size: 17px; letter-spacing: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.series .job__badges { display: flex; align-items: center; gap: 8px; }
+
+/* A season of a series is a row of its card; it opens to show the actions and the episodes. */
+.series__season { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.season__row { display: flex; align-items: center; gap: 12px; }
+
+.season__chip {
+    flex: none;
+    min-width: 92px;
+    padding: 4px 10px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--cyan);
+    border: 1px solid var(--cyan);
+    background: var(--tint-cyan);
+}
+
+/* The title the source gave the season is only shown while the pointer (or the keyboard) is on the row: the chip already says which
+   season it is. It keeps its place, so the row does not move. */
+.season__title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.season__row:hover .season__title, .season__row:focus-within .season__title { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+    .season__title { transition: none; }
+}
+.season__meta { flex: none; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.season__actions { flex: none; display: flex; gap: 8px; }
+.season__panel { display: flex; flex-direction: column; gap: 10px; padding-left: 12px; border-left: 2px solid var(--line); }
+
+.series-editor { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
+.series-picker { display: flex; flex-direction: column; gap: 8px; }
+.series-search { position: relative; }
+.series-search__list { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 4px 0; list-style: none; max-height: 200px; overflow-y: auto; background: var(--panel, var(--bg)); border: 1px solid var(--cyan); box-shadow: var(--glow); }
+.series-search__option { padding: 6px 10px; cursor: pointer; }
+.series-search__option:hover { background: var(--cyan); color: var(--bg); }
+.series-fields { align-items: flex-end; }
+.series-fields .field:first-child { flex: 1; min-width: 0; }
+.series-fields .field:last-child { flex: none; width: 120px; }
+
 .missing-mark {
     display: inline-flex;
     align-items: center;

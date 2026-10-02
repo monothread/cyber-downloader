@@ -5,14 +5,20 @@ import {
     downloadedAnime,
     downloadedCount,
     END_MARGIN_SECONDS,
+    compareNames,
+    groupLibrary,
     isWatched,
+    libraryEntry,
     matchesSearch,
     MIN_RESUME_SECONDS,
     nextDownloadedEpisode,
     previousDownloadedEpisode,
     resumePosition,
+    seasonLabel,
+    seriesNames,
     WATCHED_RATIO
 } from '@renderer/components/animeText';
+import { createTranslator } from '@shared/i18n';
 import { makeAnime, makeAnimeJob, makeEpisode } from '../../helpers/animeFixtures';
 
 describe('constants', () => {
@@ -186,6 +192,131 @@ describe('matchesSearch', () => {
     it('works with other alphabets', () => {
         expect(matchesSearch('進撃の巨人', '巨人')).toBe(true);
         expect(matchesSearch('進撃の巨人', '鬼滅')).toBe(false);
+    });
+});
+
+describe('seriesNames', () => {
+    it('lists each series once, whatever the case or the accents, in alphabetical order', () => {
+        const library = [
+            makeAnime([], { id: 1, title: 'Pokémon', series: 'Pokémon', season: 1 }),
+            makeAnime([], { id: 2, title: 'Pokemon 2', series: 'POKEMON', season: 2 }),
+            makeAnime([], { id: 3, title: 'Bleach', series: 'Bleach', season: 1 }),
+            makeAnime([], { id: 4, title: 'Alone' })
+        ];
+        expect(seriesNames(library)).toEqual(['Bleach', 'Pokémon']);
+    });
+
+    it('is empty when nothing is in a series', () => {
+        expect(seriesNames([])).toEqual([]);
+        expect(seriesNames([makeAnime([])])).toEqual([]);
+    });
+});
+
+describe('groupLibrary', () => {
+    it('joins the seasons of a series in order and leaves the others as cards of their own', () => {
+        const library = [
+            makeAnime([], { id: 1, title: 'Bleach', series: 'Bleach', season: 1 }),
+            makeAnime([], { id: 2, title: 'Naruto' }),
+            makeAnime([], { id: 3, title: 'Bleach Season 3', series: 'bleach', season: 3 }),
+            makeAnime([], { id: 4, title: 'Bleach Season 2', series: 'Bleach', season: 2 })
+        ];
+        expect(
+            groupLibrary(library).map((group) => {
+                return [group.key, group.series, group.entries.map((entry) => { return entry.id; })];
+            })
+        ).toEqual([
+            ['series-bleach', 'Bleach', [1, 4, 3]],
+            ['anime-2', 'Naruto', [2]]
+        ]);
+    });
+
+    it('puts the sub and the dub of one season side by side', () => {
+        const library = [
+            makeAnime([], { id: 1, title: 'Bleach', audio: 'sub', series: 'Bleach', season: 1 }),
+            makeAnime([], { id: 2, title: 'Bleach', audio: 'dub', series: 'Bleach', season: 1 }),
+            makeAnime([], { id: 3, title: 'Bleach 2', audio: 'sub', series: 'Bleach', season: 2 })
+        ];
+        expect(groupLibrary(library)[0]?.entries.map((entry) => { return entry.id; })).toEqual([2, 1, 3]);
+    });
+
+    it('does not join an anime that has a series but no season, or a season but no series', () => {
+        const library = [makeAnime([], { id: 1, title: 'A', series: 'S', season: null }), makeAnime([], { id: 2, title: 'B', series: null, season: 2 })];
+        expect(
+            groupLibrary(library).map((group) => {
+                return group.series;
+            })
+        ).toEqual(['A', 'B']);
+    });
+
+    it('orders the cards alphabetically (a series by its name) and the seasons by their place, never by their names', () => {
+        const library = [
+            makeAnime([], { id: 1, title: 'Zeta' }),
+            makeAnime([], { id: 2, title: 'B Two', series: 'Beta', season: 2, seasonName: 'Aaa' }),
+            makeAnime([], { id: 3, title: 'alpha' }),
+            makeAnime([], { id: 4, title: 'B One', series: 'Beta', season: 1, seasonName: 'Zzz' })
+        ];
+        expect(
+            groupLibrary(library).map((group) => {
+                return [group.series, group.entries.map((entry) => { return entry.id; })];
+            })
+        ).toEqual([
+            ['alpha', [3]],
+            ['Beta', [4, 2]],
+            ['Zeta', [1]]
+        ]);
+    });
+
+    it('keeps an anime that is alone in its series as a series of one season', () => {
+        const library = [makeAnime([], { id: 1, title: 'Frieren Season 2', series: 'Frieren', season: 2 }), makeAnime([], { id: 2, title: 'Naruto' })];
+        expect(
+            groupLibrary(library).map((group) => {
+                return [group.key, group.series, group.entries.length];
+            })
+        ).toEqual([
+            ['series-frieren', 'Frieren', 1],
+            ['anime-2', 'Naruto', 1]
+        ]);
+    });
+
+    it('is empty for an empty library', () => {
+        expect(groupLibrary([])).toEqual([]);
+    });
+});
+
+describe('compareNames', () => {
+    it('orders alphabetically without regard to case or accents, and numbers by their value', () => {
+        const names = ['zebra', 'Árvore', 'apple', 'Naruto 10', 'Naruto 2', 'Banana', 'banana'];
+        expect([...names].sort(compareNames)).toEqual(['apple', 'Árvore', 'Banana', 'banana', 'Naruto 2', 'Naruto 10', 'zebra']);
+    });
+
+    it('is zero for names that only differ in case or accents', () => {
+        expect(compareNames('Pokémon', 'POKEMON')).toBe(0);
+        expect(compareNames('a', 'b')).toBeLessThan(0);
+        expect(compareNames('b', 'a')).toBeGreaterThan(0);
+    });
+});
+
+describe('seasonLabel', () => {
+    const t = createTranslator('en');
+
+    it('is the name the anime was given in its series, otherwise its place in it', () => {
+        expect(seasonLabel(makeAnime([], { series: 'Bleach', season: 2, seasonName: 'Blood War' }), t)).toBe('Blood War');
+        expect(seasonLabel(makeAnime([], { series: 'Bleach', season: 2, seasonName: null }), t)).toBe('SEASON 2');
+        expect(seasonLabel(makeAnime([], { series: null, season: null }), t)).toBe('SEASON 1');
+    });
+
+    it('is written in the language of the app', () => {
+        expect(seasonLabel(makeAnime([], { series: 'Bleach', season: 3 }), createTranslator('pt'))).toBe('TEMPORADA 3');
+    });
+});
+
+describe('libraryEntry', () => {
+    it('finds the anime of the library with that title and audio, downloaded or not', () => {
+        const sub = makeAnime([], { id: 1, title: 'Naruto', audio: 'sub' });
+        const dub = makeAnime([], { id: 2, title: 'Naruto', audio: 'dub' });
+        expect(libraryEntry([sub, dub], 'Naruto', 'dub')).toBe(dub);
+        expect(libraryEntry([sub], 'Naruto', 'dub')).toBeNull();
+        expect(libraryEntry([sub], 'Bleach', 'sub')).toBeNull();
     });
 });
 

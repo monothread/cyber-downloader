@@ -5,6 +5,7 @@ import type {
     AnimeImportResponse,
     AnimeJob,
     AnimeProgressUpdate,
+    AnimeSeriesResponse,
     AnimeSearchResponse,
     AnimeStatus,
     AnimeSubtitleImportResponse,
@@ -297,6 +298,8 @@ export interface CyberApi {
     removeAnime: (animeId: number) => Promise<void>;
     // Opens the folder the videos of an anime of the library are in.
     openAnimeFolder: (animeId: number) => Promise<void>;
+    // Joins an anime to a series with a season number, or takes it out of one (null, null).
+    setAnimeSeries: (animeId: number, series: string | null, season: number | null, seasonName: string | null) => Promise<AnimeSeriesResponse>;
     // Asks for a folder of anime and puts what is in it into the library.
     importAnimeLibrary: () => Promise<AnimeImportResponse>;
     saveAnimeProgress: (update: AnimeProgressUpdate) => Promise<void>;

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useTranslator } from '../i18n/useTranslator';
 import { useAnimeStore } from '../store/animeStore';
-import { animeErrorKey, downloadedAnime } from './animeText';
+import { suggestSeries } from '@shared/series';
+import { animeErrorKey, downloadedAnime, seriesNames } from './animeText';
+import { SeriesFields } from './SeriesFields';
 
 // The episodes of the anime that was opened: pick some, or take the whole season.
 export function AnimeDetail() {
@@ -25,6 +27,14 @@ export function AnimeDetail() {
         return state.showInLibrary;
     });
     const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+    // What the anime is joined to already, or what its title suggests: it is saved with the first download.
+    const entry = library.find((candidate) => {
+        return candidate.title === selection?.result.title && candidate.audio === selection.audio;
+    });
+    const suggested = suggestSeries(selection?.result.title ?? '');
+    const [series, setSeries] = useState(entry?.series ?? suggested.series);
+    const [season, setSeason] = useState(entry?.season ?? suggested.season);
+    const [seasonName, setSeasonName] = useState(entry?.seasonName ?? '');
 
     const anime = library.find((candidate) => {
         return candidate.title === selection?.result.title && candidate.audio === selection.audio;
@@ -57,7 +67,7 @@ export function AnimeDetail() {
     }
 
     function download(numbers: string[]): void {
-        void downloadEpisodes(numbers);
+        void downloadEpisodes(numbers, series.trim().length > 0 ? { series, season, seasonName } : null);
         setPicked(new Set());
     }
 
@@ -80,6 +90,15 @@ export function AnimeDetail() {
                     </button>
                 )}
             </div>
+            <SeriesFields
+                series={series}
+                season={season}
+                seasonName={seasonName}
+                suggestions={seriesNames(library)}
+                onSeriesChange={setSeries}
+                onSeasonChange={setSeason}
+                onSeasonNameChange={setSeasonName}
+            />
             {selection.status === 'loading' && <p className="empty">{t('anime.episodes.loading')}</p>}
             {selection.status === 'error' && selection.error && (
                 <p className="field__warning" role="alert" title={selection.error.raw}>

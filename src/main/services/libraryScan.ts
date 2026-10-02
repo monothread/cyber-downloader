@@ -7,6 +7,7 @@ export const VIDEO_EXTENSIONS: readonly string[] = ['.mp4', '.mkv', '.webm', '.m
 // The folder that is chosen can be the one of all the anime, one anime or one episode: videos are looked for this deep.
 export const MAX_SCAN_DEPTH = 3;
 const EPISODE_FOLDER = /^Episode (\d+(?:\.\d+)?)$/;
+const SEASON_FOLDER = /^Season (\d{1,2})$/;
 const EPISODE_FILE = /^(.*\S) Episode (\d+(?:\.\d+)?)$/;
 
 export interface ScanEntry {
@@ -49,6 +50,11 @@ export interface ScannedEpisode {
     // 0 when it is not known.
     searchIndex: number;
     progress: { positionSeconds: number; durationSeconds: number; watched: boolean } | null;
+    // The series and the season, when the metadata says them or the folders do ("<series>/Season N/Episode M").
+    series: string | null;
+    season: number | null;
+    // The name it is shown with in the series, when the metadata says one.
+    seasonName: string | null;
 }
 
 export interface ScanResult {
@@ -72,9 +78,23 @@ function episodeFromNames(videoPath: string): Pick<ScannedEpisode, 'title' | 'nu
     if (number === undefined) {
         return null;
     }
-    const animeFolder = fromFolder === undefined ? folder : basename(dirname(dirname(videoPath)));
+    const parent = basename(dirname(dirname(videoPath)));
+    // "<series>/Season N/Episode M/<video>": the folder above the season is the one that has the name.
+    const animeFolder = fromFolder === undefined ? folder : SEASON_FOLDER.test(parent) ? basename(dirname(dirname(dirname(videoPath)))) : parent;
     const title = fromFile && fromFile[2] === number ? fromFile[1] : animeFolder;
     return title !== undefined && title.length > 0 ? { title, number } : null;
+}
+
+// The series and season the folders of a video say: "<series>/Season N/Episode M/<video>".
+function seriesFromFolders(videoPath: string): { series: string; season: number } | null {
+    const episodeFolder = dirname(videoPath);
+    const seasonFolder = dirname(episodeFolder);
+    const season = SEASON_FOLDER.exec(basename(seasonFolder))?.[1];
+    const series = basename(dirname(seasonFolder));
+    if (!EPISODE_FOLDER.test(basename(episodeFolder)) || season === undefined || series.length === 0 || series === basename(seasonFolder)) {
+        return null;
+    }
+    return { series, season: Number(season) };
 }
 
 function scanOne(videoPath: string, files: ScanFileSystem): ScannedEpisode | null {
@@ -87,11 +107,15 @@ function scanOne(videoPath: string, files: ScanFileSystem): ScannedEpisode | nul
             audio: metadata.audio,
             query: metadata.query,
             searchIndex: metadata.searchIndex,
-            progress: { positionSeconds: metadata.positionSeconds, durationSeconds: metadata.durationSeconds, watched: metadata.watched }
+            progress: { positionSeconds: metadata.positionSeconds, durationSeconds: metadata.durationSeconds, watched: metadata.watched },
+            series: metadata.series ?? null,
+            season: metadata.season ?? null,
+            seasonName: metadata.seasonName ?? null
         };
     }
     const names = episodeFromNames(videoPath);
-    return names ? { videoPath, ...names, audio: null, query: names.title, searchIndex: 0, progress: null } : null;
+    const joined = seriesFromFolders(videoPath);
+    return names ? { videoPath, ...names, audio: null, query: names.title, searchIndex: 0, progress: null, series: joined?.series ?? null, season: joined?.season ?? null, seasonName: null } : null;
 }
 
 // The episodes in a folder and the folders inside it, in a steady order.

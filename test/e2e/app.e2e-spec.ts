@@ -342,7 +342,7 @@ test('pending text edits are saved when leaving the settings tab', async () => {
     const { page, userData } = session;
     await page.getByRole('button', { name: 'SETTINGS' }).click();
     await page.getByLabel('Subtitle languages').fill('fr,de');
-    await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
     await expect.poll(() => {
         return readSettings(userData).subtitleLangs;
     }).toBe('fr,de');
@@ -371,7 +371,7 @@ test('persists edited settings to disk and passes them to yt-dlp', async () => {
         ytdlpPath: FAKE_YTDLP
     });
 
-    await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
     await submitUrl(page, 'https://example.com/ok');
     await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
     const args = readCalls(logPath).find((call) => {
@@ -393,7 +393,7 @@ test('auto-generated subtitles are saved and passed to yt-dlp together with the 
     await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
     expect(readSettings(userData)).toMatchObject({ writeSubtitles: true, autoSubtitles: true, subtitleLangs: 'ja' });
 
-    await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
     await submitUrl(page, 'https://example.com/ok');
     await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
     const args = readCalls(logPath).find((call) => {
@@ -414,7 +414,7 @@ test('embedding subtitles passes --embed-subs instead of --write-subs so no sepa
     await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
     expect(readSettings(userData)).toMatchObject({ writeSubtitles: true, autoSubtitles: true, embedSubtitles: true, subtitleLangs: 'ja' });
 
-    await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
     await submitUrl(page, 'https://example.com/ok');
     await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
     const args = readCalls(logPath).find((call) => {
@@ -436,7 +436,7 @@ test('auto-generated subtitles without a language warn in the settings and block
     await expect(page.getByRole('alert')).toHaveText(message);
     await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
 
-    await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
     await submitUrl(page, 'https://example.com/ok');
     await expect(page.getByText(message)).toBeVisible();
     await expect(page.locator('.badge')).toHaveCount(0);
@@ -630,7 +630,7 @@ test.describe('browser detection', () => {
         expect(readSettings(userData)).toMatchObject({ useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: originDir });
         await expect(page.getByRole('alert')).toHaveCount(0);
 
-        await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+        await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
         await submitUrl(page, 'https://example.com/ok');
         await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
         const args = readCalls(logPath).find((call) => {
@@ -656,7 +656,7 @@ test.describe('browser detection', () => {
         await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
         expect(readSettings(userData)).toMatchObject({ cookiesBrowser: 'brave', cookiesBrowserDir: originDir, cookiesProfile: 'Profile 1' });
 
-        await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+        await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
         await submitUrl(page, 'https://example.com/ok');
         await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
         const args = readCalls(logPath).find((call) => {
@@ -926,7 +926,7 @@ test.describe('languages', () => {
     test('the language setting from the settings file is shown and every language is named in itself', async () => {
         const { page, userData } = session;
         await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-        await expect(page.getByRole('button', { name: 'DOWNLOADS' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByRole('button', { name: 'VIDEO DOWNLOADER' })).toHaveAttribute('aria-current', 'page');
         await page.getByRole('button', { name: 'SETTINGS' }).click();
         await expect(page.getByLabel('Language', { exact: true })).toHaveValue('en');
         const options = await page.getByLabel('Language', { exact: true }).locator('option').allTextContents();
@@ -971,7 +971,7 @@ test.describe('languages', () => {
         await page.getByRole('button', { name: 'SETTINGS' }).click();
         await page.getByLabel('Language', { exact: true }).selectOption('pt');
         await expect(page.getByText('Todas as alterações foram salvas.')).toBeVisible({ timeout: 6000 });
-        await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+        await page.getByRole('button', { name: 'BAIXADOR DE VÍDEOS' }).click();
         await page.getByLabel('Link 1', { exact: true }).fill('nope');
         await page.getByRole('button', { name: 'BAIXAR', exact: true }).click();
         const alert = page.getByRole('alert').filter({ hasText: 'URL inválida. Use um link http(s).' });
@@ -985,7 +985,7 @@ test.describe('languages', () => {
         await page.getByLabel('Language', { exact: true }).selectOption('es');
         await expect(page.getByText('Todos los cambios guardados.')).toBeVisible({ timeout: 6000 });
         expect(readSettings(userData).language).toBe('es');
-        await page.getByRole('button', { name: 'DESCARGAS' }).click();
+        await page.getByRole('button', { name: 'DESCARGADOR DE VÍDEOS' }).click();
         await page.getByLabel('Enlace 1', { exact: true }).fill('https://example.com/fail');
         await page.getByRole('button', { name: 'DESCARGAR', exact: true }).click();
         const banner = page.getByRole('alert').filter({ hasText: 'Vídeo no disponible' });
@@ -1012,7 +1012,7 @@ test.describe('languages', () => {
             const reopenedPage = await reopened.firstWindow();
             await reopenedPage.waitForSelector('.logo');
             await expect(reopenedPage.locator('html')).toHaveAttribute('lang', 'ja');
-            await expect(reopenedPage.getByRole('navigation', { name: 'セクション' }).getByRole('button', { name: 'ダウンロード' })).toHaveAttribute('aria-current', 'page');
+            await expect(reopenedPage.getByRole('navigation', { name: 'セクション' }).getByRole('button', { name: '動画ダウンローダー' })).toHaveAttribute('aria-current', 'page');
             await reopenedPage.getByRole('button', { name: '設定' }).click();
             await expect(reopenedPage.getByLabel('言語', { exact: true })).toHaveValue('ja');
             expect(readSettings(userData)).toMatchObject({ language: 'ja', downloadDir });
@@ -1034,7 +1034,7 @@ test.describe('languages', () => {
             const spanishPage = await spanish.firstWindow();
             await spanishPage.waitForSelector('.logo');
             await expect(spanishPage.locator('html')).toHaveAttribute('lang', 'es');
-            await expect(spanishPage.getByRole('button', { name: 'DESCARGAS' })).toHaveAttribute('aria-current', 'page');
+            await expect(spanishPage.getByRole('button', { name: 'DESCARGADOR DE VÍDEOS' })).toHaveAttribute('aria-current', 'page');
             await spanishPage.getByRole('button', { name: 'AJUSTES' }).click();
             await expect(spanishPage.getByLabel('Idioma', { exact: true })).toHaveValue('device');
             expect(readSettings(userData).language).toBe('device');
@@ -1788,7 +1788,7 @@ test.describe('live streams', () => {
         await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
         expect(readSettings(userData)).toMatchObject({ liveFromStart: true, waitForLive: true });
 
-        await page.getByRole('button', { name: 'DOWNLOADS' }).click();
+        await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
         await submitUrl(page, 'https://example.com/watch?v=live-settings');
         await expect(page.getByTestId('job-card').locator('.badge')).toHaveText('COMPLETE');
         const args = lastYtdlpCall(logPath, 'live-settings');

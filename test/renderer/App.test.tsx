@@ -33,7 +33,7 @@ describe('App', () => {
         const user = userEvent.setup();
         render(<App />);
         await screen.findByLabelText('Link 1');
-        expect(screen.getByRole('button', { name: 'DOWNLOADS' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByRole('button', { name: 'VIDEO DOWNLOADER' })).toHaveAttribute('aria-current', 'page');
         expect(screen.getByRole('button', { name: 'HISTORY' })).not.toHaveAttribute('aria-current');
 
         await user.click(screen.getByRole('button', { name: 'HISTORY' }));
@@ -44,7 +44,7 @@ describe('App', () => {
         expect(screen.getByText('Changes are saved automatically.')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'SAVE SETTINGS' })).not.toBeInTheDocument();
 
-        await user.click(screen.getByRole('button', { name: 'DOWNLOADS' }));
+        await user.click(screen.getByRole('button', { name: 'VIDEO DOWNLOADER' }));
         expect(screen.getByLabelText('Link 1')).toBeInTheDocument();
     });
 
@@ -247,7 +247,7 @@ describe('App anime section', () => {
         render(<App />);
         await screen.findByLabelText('Link 1');
         expect(screen.queryByRole('button', { name: 'ANIME' })).not.toBeInTheDocument();
-        expect(screen.getAllByRole('button', { name: /^(DOWNLOADS|HISTORY|SETTINGS)$/ })).toHaveLength(3);
+        expect(screen.getAllByRole('button', { name: /^(VIDEO DOWNLOADER|HISTORY|SETTINGS)$/ })).toHaveLength(3);
     });
 
     it('adds the anime tab, between downloads and history, where it exists', async () => {
@@ -260,7 +260,7 @@ describe('App anime section', () => {
                 .map((button) => {
                     return button.textContent;
                 })
-        ).toEqual(['DOWNLOADS', 'ANIME', 'HISTORY', 'SETTINGS']);
+        ).toEqual(['VIDEO DOWNLOADER', 'ANIME', 'HISTORY', 'SETTINGS']);
     });
 
     it('shows the anime section when its tab is chosen', async () => {

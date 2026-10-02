@@ -11,6 +11,7 @@ import type {
     AnimeRecord,
     LibraryAnime
 } from '@shared/anime';
+import { sameSeries } from '@shared/series';
 
 export const INTERRUPTED_MESSAGE = 'The app was closed before the download finished.';
 
@@ -39,7 +40,12 @@ const MIGRATIONS: readonly string[] = [
         watched INTEGER NOT NULL DEFAULT 0,
         downloaded_at INTEGER,
         UNIQUE (anime_id, number)
-    );`
+    );`,
+    // The seasons of an anime are separate entries in the source; the user joins them under a series with a season number.
+    `ALTER TABLE anime ADD COLUMN series TEXT;
+    ALTER TABLE anime ADD COLUMN season INTEGER;`,
+    // The name an anime is shown with inside its series (the season number only orders them).
+    `ALTER TABLE anime ADD COLUMN season_name TEXT;`
 ];
 
 const EPISODE_STATUSES: readonly AnimeEpisodeStatus[] = ['queued', 'downloading', 'done', 'error', 'cancelled'];
@@ -96,7 +102,10 @@ function toAnime(row: Row): AnimeRecord {
         query: text(row, 'query'),
         searchIndex: numeric(row, 'search_index'),
         audio: text(row, 'audio') === 'dub' ? 'dub' : 'sub',
-        createdAt: numeric(row, 'created_at')
+        createdAt: numeric(row, 'created_at'),
+        series: nullableText(row, 'series'),
+        season: nullableNumeric(row, 'season'),
+        seasonName: nullableText(row, 'season_name')
     };
 }
 
@@ -219,6 +228,44 @@ export class AnimeDb {
         return toAnime(row ?? {});
     }
 
+    // Whether another anime (not the one with this id) of the same audio already has this season of the series.
+    seasonTaken(series: string, season: number, audio: AnimeAudio, exceptAnimeId: number): boolean {
+        return this.all('SELECT * FROM anime WHERE season = ? AND audio = ? AND id != ?', season, audio, exceptAnimeId).some((row) => {
+            const other = nullableText(row, 'series');
+            return other !== null && sameSeries(other, series);
+        });
+    }
+
+    // The name a series goes by: the spelling the library already has for it (the same name in another case, with other accents or
+    // extra spaces is the same series), otherwise the name as it is. The anime that is being joined does not count: it is the only
+    // one that has the series, it can spell it differently.
+    canonicalSeries(series: string, exceptAnimeId = 0): string {
+        const known = this.all('SELECT series FROM anime WHERE series IS NOT NULL AND id != ? ORDER BY id', exceptAnimeId).find((row) => {
+            return sameSeries(text(row, 'series'), series);
+        });
+        return known ? text(known, 'series') : series;
+    }
+
+    // Joins an anime to a series with its place in it (and, if wanted, the name it is shown with), or takes it out of one. False when
+    // that place is already taken.
+    setSeries(animeId: number, series: string | null, season: number | null, seasonName: string | null = null): boolean {
+        const anime = this.getAnime(animeId);
+        if (!anime) {
+            return false;
+        }
+        if (series !== null && season !== null && this.seasonTaken(series, season, anime.audio, animeId)) {
+            return false;
+        }
+        this.run(
+            'UPDATE anime SET series = ?, season = ?, season_name = ? WHERE id = ?',
+            series === null ? null : this.canonicalSeries(series, animeId),
+            season,
+            series === null ? null : seasonName,
+            animeId
+        );
+        return true;
+    }
+
     getEpisodeByNumber(animeId: number, number: string): AnimeEpisodeRecord | null {
         const row = this.one('SELECT * FROM episode WHERE anime_id = ? AND number = ?', animeId, number);
         return row ? toEpisode(row) : null;
@@ -242,6 +289,11 @@ export class AnimeDb {
             number
         );
         return toEpisode(row ?? {});
+    }
+
+    findAnime(title: string, audio: AnimeAudio): AnimeRecord | null {
+        const row = this.one('SELECT * FROM anime WHERE title = ? AND audio = ?', title, audio);
+        return row ? toAnime(row) : null;
     }
 
     getAnime(id: number): AnimeRecord | null {

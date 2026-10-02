@@ -38,6 +38,7 @@ export const IPC = {
     animeRemoveEpisode: 'anime:remove-episode',
     animeRemoveAnime: 'anime:remove-anime',
     animeOpenFolder: 'anime:open-folder',
+    animeSetSeries: 'anime:set-series',
     animeImportLibrary: 'anime:import-library',
     animeProgress: 'anime:progress',
     animeSubtitles: 'anime:subtitles',

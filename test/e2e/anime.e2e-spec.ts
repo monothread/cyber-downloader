@@ -96,7 +96,7 @@ test.afterEach(async () => {
 
 test('adds the anime tab and opens its search', async () => {
     const { page } = session;
-    await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('button')).toHaveText(['DOWNLOADS', 'ANIME', 'HISTORY', 'SETTINGS']);
+    await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('button')).toHaveText(['VIDEO DOWNLOADER', 'ANIME', 'HISTORY', 'SETTINGS']);
     await openAnimeTab(page);
     await expect(page.getByRole('button', { name: 'ANIME', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByLabel('Anime name')).toBeVisible();
@@ -163,15 +163,16 @@ test('downloads an episode with the quality of the settings and shows it in the 
     await backFromDownloads(page);
     expect(calls().at(-1)).toBe('sub | -d -S 1 -e 2 -q 720p fake');
 
-    const video = join(animeDir, 'Fake Anime', 'Episode 2', 'Fake Anime Episode 2.mp4');
+    const video = join(animeDir, 'Fake Anime', 'Season 1', 'Episode 2', 'Fake Anime Episode 2.mp4');
     expect(readFileSync(video, 'utf-8')).toBe('FAKEVIDEO0123456789');
-    expect(readFileSync(join(animeDir, 'Fake Anime', 'Episode 2', 'Fake Anime Episode 2.vtt'), 'utf-8')).toBe('WEBVTT\n');
+    expect(readFileSync(join(animeDir, 'Fake Anime', 'Season 1', 'Episode 2', 'Fake Anime Episode 2.vtt'), 'utf-8')).toBe('WEBVTT\n');
 
     await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
     const card = page.getByTestId('anime-card');
     await expect(card.getByRole('heading')).toHaveText('Fake Anime');
-    await expect(card.getByText('1/1 DOWNLOADED')).toBeVisible();
-    await card.getByRole('button', { name: 'SHOW EPISODES' }).click();
+    await expect(card.getByText('1 SEASON')).toBeVisible();
+    await card.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+    await expect(page.getByText('1/1 DOWNLOADED')).toBeVisible();
     await expect(page.getByTestId('anime-episode').locator('.history__meta').first()).toHaveText('DOWNLOADED · 19 B');
 });
 
@@ -187,7 +188,7 @@ test('downloads a whole season, as many at a time as the settings allow', async 
     await expect(page.locator('.job .badge--done')).toHaveCount(3);
     await backFromDownloads(page);
     ['1', '2', '3'].forEach((number) => {
-        expect(existsSync(join(animeDir, 'Fake Anime', `Episode ${number}`, `Fake Anime Episode ${number}.mp4`))).toBe(true);
+        expect(existsSync(join(animeDir, 'Fake Anime', 'Season 1', `Episode ${number}`, `Fake Anime Episode ${number}.mp4`))).toBe(true);
     });
     expect(
         calls()
@@ -220,6 +221,7 @@ test('asks for the subtitles in the language of the app, and in another one when
     }).toBe('Spanish');
     await openAnimeTab(page);
     await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+    await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
     await page.getByRole('button', { name: 'REMOVE ANIME: Fake Anime' }).click();
     await page.getByRole('button', { name: 'CONFIRM' }).click();
     await page.getByRole('button', { name: 'SEARCH', exact: true }).first().click();
@@ -274,11 +276,11 @@ test('cancelling a download ends the process: the file is never finished', async
 
     // The fake would have written the file five seconds after it started: it must not, because nothing is left running.
     await page.waitForTimeout(7000);
-    expect(existsSync(join(animeDir, 'Fake Anime', 'Episode 1', 'Fake Anime Episode 1.mp4'))).toBe(false);
+    expect(existsSync(join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1', 'Fake Anime Episode 1.mp4'))).toBe(false);
     await expect(job.locator('.badge--cancelled')).toBeVisible();
     await backFromDownloads(page);
     await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
-    await page.getByRole('button', { name: 'SHOW EPISODES' }).click();
+    await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
     await expect(page.getByTestId('anime-episode').locator('.history__meta').first()).toHaveText('CANCELLED');
 });
 
@@ -318,7 +320,10 @@ test('keeps the library after the app is restarted', async () => {
     session = await launch(userData);
     await openAnimeTab(session.page);
     await session.page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
-    await expect(session.page.getByTestId('anime-card').getByText('1/1 DOWNLOADED')).toBeVisible();
+    await expect(session.page.getByTestId('anime-card').getByText('1 SEASON')).toBeVisible();
+    await session.page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+    await expect(session.page.getByText('1/1 DOWNLOADED')).toBeVisible();
+    await session.page.getByRole('button', { name: 'BACK' }).click();
     await showDownloads(session.page);
     await expect(session.page.getByTestId('anime-job')).toHaveCount(0);
     await expect(session.page.getByText('// NO DOWNLOADS YET.')).toBeVisible();
@@ -392,7 +397,7 @@ test.describe('player', () => {
         const { page } = session;
         await downloadEpisode(page);
         await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
-        await page.getByRole('button', { name: 'SHOW EPISODES' }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
         await page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' }).click();
 
         const dialog = page.getByRole('dialog', { name: 'Fake Anime · EP 1' });
@@ -424,11 +429,11 @@ async function downloadFirstEpisode(page: Page): Promise<void> {
 test('removes an episode and always deletes its files from the disk', async () => {
     const { page, animeDir } = session;
     await downloadFirstEpisode(page);
-    const video = join(animeDir, 'Fake Anime', 'Episode 1', 'Fake Anime Episode 1.mp4');
+    const video = join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1', 'Fake Anime Episode 1.mp4');
     expect(existsSync(video)).toBe(true);
 
     await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
-    await page.getByRole('button', { name: 'SHOW EPISODES' }).click();
+    await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
     await page.getByRole('button', { name: 'REMOVE: Fake Anime EP 1' }).click();
     await expect(page.getByText('The files are deleted from the disk too.')).toBeVisible();
     await expect(page.getByRole('checkbox')).toHaveCount(0);
@@ -438,10 +443,10 @@ test('removes an episode and always deletes its files from the disk', async () =
     await expect.poll(() => {
         return existsSync(video);
     }).toBe(false);
-    expect(existsSync(join(animeDir, 'Fake Anime', 'Episode 1', 'Fake Anime Episode 1.vtt'))).toBe(false);
+    expect(existsSync(join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1', 'Fake Anime Episode 1.vtt'))).toBe(false);
     // The folder of the episode goes with it.
     await expect.poll(() => {
-        return existsSync(join(animeDir, 'Fake Anime', 'Episode 1'));
+        return existsSync(join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1'));
     }).toBe(false);
     // The anime itself stays in the library; only its folder is removed with the anime.
     expect(existsSync(join(animeDir, 'Fake Anime'))).toBe(true);
@@ -454,6 +459,7 @@ test('removes an anime with its files and its folder', async () => {
     expect(existsSync(join(animeDir, 'Fake Anime'))).toBe(true);
 
     await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+    await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
     await page.getByRole('button', { name: 'REMOVE ANIME: Fake Anime' }).click();
     await page.getByRole('button', { name: 'CONFIRM' }).click();
 
@@ -474,7 +480,7 @@ test.describe('library and folder in sync', () => {
     test('rebuilds the library from the folder when the library was lost, with the metadata next to the video', async () => {
         const { page, userData, animeDir } = session;
         await downloadFirstEpisode(page);
-        const metadata = join(animeDir, 'Fake Anime', 'Episode 1', 'pullwave.json');
+        const metadata = join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1', 'pullwave.json');
         expect(JSON.parse(readFileSync(metadata, 'utf-8'))).toEqual({
             version: 1,
             title: 'Fake Anime',
@@ -484,7 +490,9 @@ test.describe('library and folder in sync', () => {
             number: '1',
             positionSeconds: 0,
             durationSeconds: 0,
-            watched: false
+            watched: false,
+            series: 'Fake Anime',
+            season: 1
         });
         await session.app.close();
         rmSync(join(userData, 'anime', 'anime.db'), { force: true });
@@ -497,7 +505,10 @@ test.describe('library and folder in sync', () => {
         await expect(session.page.locator('.toast__message')).toHaveText('IMPORT DONE: 1 ADDED · 0 POINTED TO A NEW PLACE · 0 ALREADY IN THE LIBRARY · 0 NOT RECOGNIZED');
         const card = session.page.getByTestId('anime-card');
         await expect(card.getByRole('heading')).toHaveText('Fake Anime');
-        await expect(card.getByText('1/1 DOWNLOADED')).toBeVisible();
+        await expect(card.getByText('1 SEASON')).toBeVisible();
+        await card.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await expect(session.page.getByText('1/1 DOWNLOADED')).toBeVisible();
+        await session.page.getByRole('button', { name: 'BACK' }).click();
 
         // The second time everything is already there.
         await session.page.getByRole('button', { name: 'IMPORT LIBRARY' }).click();
@@ -509,20 +520,23 @@ test.describe('library and folder in sync', () => {
         const { page, animeDir } = session;
         await downloadFirstEpisode(page);
         await openLibrary(page);
-        await page.getByRole('button', { name: 'SHOW EPISODES' }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
         await expect(page.getByRole('img', { name: 'FILE NOT FOUND' })).toHaveCount(0);
 
         renameSync(join(animeDir, 'Fake Anime'), join(animeDir, 'My Renamed Folder'));
         // The library looks at the disk when it is shown.
         await page.locator('.tab', { hasText: 'SEARCH' }).click();
         await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
-        await page.getByRole('button', { name: 'SHOW EPISODES' }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
         await expect(page.getByRole('img', { name: 'FILE NOT FOUND' })).toHaveCount(1);
         await expect(page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' })).toBeDisabled();
 
+        // The import is on the cards: the screen of the anime has a way back.
+        await page.getByRole('button', { name: 'BACK' }).click();
         await page.getByRole('button', { name: 'IMPORT LIBRARY' }).click();
         await expect(page.locator('.toast__message')).toHaveText('IMPORT DONE: 0 ADDED · 1 POINTED TO A NEW PLACE · 0 ALREADY IN THE LIBRARY · 0 NOT RECOGNIZED');
         await expect(page.getByTestId('anime-card')).toHaveCount(1);
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
         await expect(page.getByRole('img', { name: 'FILE NOT FOUND' })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' })).toBeEnabled();
     });
@@ -530,10 +544,10 @@ test.describe('library and folder in sync', () => {
     test('shows the mark and disables the player for an episode whose file was removed from the disk', async () => {
         const { page, animeDir } = session;
         await downloadFirstEpisode(page);
-        rmSync(join(animeDir, 'Fake Anime', 'Episode 1', 'Fake Anime Episode 1.mp4'));
+        rmSync(join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1', 'Fake Anime Episode 1.mp4'));
 
         await openLibrary(page);
-        await page.getByRole('button', { name: 'SHOW EPISODES' }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
         const row = page.getByTestId('anime-episode');
         await expect(row.getByRole('img', { name: 'FILE NOT FOUND' })).toHaveAttribute(
             'title',
@@ -556,8 +570,240 @@ test.describe('library and folder in sync', () => {
         await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
         await waitForDownloaded(page, 2);
 
-        expect(existsSync(join(animeDir, 'My Renamed Folder', 'Episode 2', 'Fake Anime Episode 2.mp4'))).toBe(true);
+        expect(existsSync(join(animeDir, 'My Renamed Folder', 'Season 1', 'Episode 2', 'Fake Anime Episode 2.mp4'))).toBe(true);
         expect(existsSync(join(animeDir, 'Fake Anime'))).toBe(false);
+    });
+});
+
+test.describe('series and seasons', () => {
+    async function downloadSecondEntry(page: Page, series: string, season: string): Promise<void> {
+        await page.getByRole('button', { name: 'BACK' }).click();
+        await page.getByRole('button', { name: 'OPEN: Fake Anime 2', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'EP 3', exact: true })).toBeVisible();
+        await page.getByRole('textbox', { name: 'Series' }).fill(series);
+        await page.getByRole('spinbutton', { name: 'Order' }).fill(season);
+        await page.getByRole('button', { name: 'EP 1', exact: true }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+        await waitForDownloaded(page, 2);
+    }
+
+    test('saves each anime in a season folder, suggesting the series, and joins two entries by hand into one card', async () => {
+        const { page, animeDir } = session;
+        await openAnimeTab(page);
+        await openFirstResult(page);
+        await expect(page.getByRole('textbox', { name: 'Series' })).toHaveValue('Fake Anime');
+        await expect(page.getByRole('spinbutton', { name: 'Order' })).toHaveValue('1');
+        await page.getByRole('button', { name: 'EP 1', exact: true }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+        await waitForDownloaded(page);
+        expect(existsSync(join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1', 'Fake Anime Episode 1.mp4'))).toBe(true);
+
+        await downloadSecondEntry(page, 'Fake Anime', '2');
+        expect(existsSync(join(animeDir, 'Fake Anime', 'Season 2', 'Episode 1', 'Fake Anime 2 Episode 1.mp4'))).toBe(true);
+
+        await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        const card = page.getByTestId('anime-card');
+        await expect(card).toHaveCount(1);
+        await expect(card.getByRole('heading', { level: 3 })).toHaveText('Fake Anime');
+        await expect(card.getByText('2 SEASONS')).toBeVisible();
+        // A series with two seasons is one anime in the count.
+        await expect(page.getByText('1 ANIMES')).toBeVisible();
+        // The card only has the two buttons and the count of seasons.
+        await expect(card.locator('.season__chip')).toHaveCount(0);
+        await expect(card.getByRole('button')).toHaveText(['OPEN SERIES', 'REMOVE SERIES']);
+        // Its own screen has the seasons with their buttons, and a way back.
+        await card.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await expect(page.locator('.season__chip')).toHaveText(['SEASON 1', 'SEASON 2']);
+        await expect(page.getByTestId('anime-season')).toHaveCount(2);
+        await expect(page.getByTestId('anime-season').getByRole('heading', { level: 4 })).toHaveText(['Fake Anime', 'Fake Anime 2']);
+        await page.getByRole('button', { name: 'BACK' }).click();
+        await expect(page.getByTestId('anime-card')).toHaveCount(1);
+    });
+
+    test('offers the series that exist, joins them with one click and keeps a single spelling', async () => {
+        const { page } = session;
+        await openAnimeTab(page);
+        await openFirstResult(page);
+        await page.getByRole('textbox', { name: 'Series' }).fill('Frieren');
+        await page.getByRole('button', { name: 'EP 1', exact: true }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+        await waitForDownloaded(page);
+
+        await page.getByRole('button', { name: 'BACK' }).click();
+        await page.getByRole('button', { name: 'OPEN: Fake Anime 2', exact: true }).click();
+        await expect(page.getByRole('textbox', { name: 'Series' })).toHaveValue('Fake Anime 2');
+        await page.getByRole('textbox', { name: 'Series' }).fill('frie');
+        await page.getByRole('listbox', { name: 'In the library' }).getByRole('option', { name: 'Frieren' }).click();
+        await expect(page.getByRole('textbox', { name: 'Series' })).toHaveValue('Frieren');
+        // Typed with another spelling it is still the same series.
+        await page.getByRole('textbox', { name: 'Series' }).fill('FRIEREN ');
+        await page.getByRole('spinbutton', { name: 'Order' }).fill('2');
+        await page.getByRole('button', { name: 'EP 1', exact: true }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+        await waitForDownloaded(page, 2);
+
+        expect(existsSync(join(session.animeDir, 'Frieren', 'Season 1', 'Episode 1'))).toBe(true);
+        expect(existsSync(join(session.animeDir, 'Frieren', 'Season 2', 'Episode 1'))).toBe(true);
+        expect(readdirSync(session.animeDir)).toEqual(['Frieren']);
+        await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await expect(page.getByTestId('anime-card')).toHaveCount(1);
+        await expect(page.getByTestId('anime-card').getByRole('heading', { level: 3 })).toHaveText('Frieren');
+    });
+
+    test('shows the name given to a season instead of SEASON N, and orders the seasons by their order, not by their names', async () => {
+        const { page } = session;
+        await openAnimeTab(page);
+        await openFirstResult(page);
+        await page.getByRole('textbox', { name: 'Name shown' }).fill('Zebra');
+        await page.getByRole('button', { name: 'EP 1', exact: true }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+        await waitForDownloaded(page);
+        await page.getByRole('button', { name: 'BACK' }).click();
+        await page.getByRole('button', { name: 'OPEN: Fake Anime 2', exact: true }).click();
+        await page.getByRole('textbox', { name: 'Series' }).fill('Fake Anime');
+        await page.getByRole('spinbutton', { name: 'Order' }).fill('2');
+        await page.getByRole('textbox', { name: 'Name shown' }).fill('Apple');
+        await page.getByRole('button', { name: 'EP 1', exact: true }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+        await waitForDownloaded(page, 2);
+
+        await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await expect(page.locator('.season__chip')).toHaveText(['Zebra', 'Apple']);
+        await expect(page.getByTestId('anime-season').getByRole('heading', { level: 4 })).toHaveText(['Fake Anime', 'Fake Anime 2']);
+        // The folders follow the order, whatever the names.
+        expect(existsSync(join(session.animeDir, 'Fake Anime', 'Season 1', 'Episode 1'))).toBe(true);
+        expect(existsSync(join(session.animeDir, 'Fake Anime', 'Season 2', 'Episode 1'))).toBe(true);
+        // Seen from the search, the anime carries the name it is shown with.
+        await page.locator('.tab', { hasText: 'SEARCH' }).click();
+        await page.getByRole('button', { name: 'BACK' }).click();
+        await expect(page.getByText('Fake Anime · Apple')).toBeVisible();
+    });
+
+    test('refuses a season that is taken, and joins the anime once the season is free', async () => {
+        const { page } = session;
+        await openAnimeTab(page);
+        await openFirstResult(page);
+        await page.getByRole('button', { name: 'EP 1', exact: true }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+        await waitForDownloaded(page);
+        await downloadSecondEntry(page, 'Fake Anime 2', '1');
+
+        await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await expect(page.getByTestId('anime-card')).toHaveCount(2);
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime 2' }).click();
+        await page.getByRole('button', { name: 'EDIT SERIES: Fake Anime 2' }).click();
+        await page.getByRole('textbox', { name: 'Series' }).fill('Fake Anime');
+        await page.getByRole('spinbutton', { name: 'Order' }).fill('1');
+        await page.getByRole('button', { name: 'SAVE' }).click();
+        await expect(page.getByRole('alert')).toHaveText('That order is already used by another anime of the series.');
+
+        await page.getByRole('spinbutton', { name: 'Order' }).fill('2');
+        await page.getByRole('button', { name: 'SAVE' }).click();
+        // The anime is now a season of the other series: its own screen is gone and the cards are back.
+        await expect(page.getByTestId('anime-card')).toHaveCount(1);
+        await expect(page.getByTestId('anime-card').getByText('2 SEASONS')).toBeVisible();
+
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await page.getByTestId('anime-season').last().getByRole('button', { name: 'SHOW EPISODES' }).click();
+        await page.getByRole('button', { name: 'EDIT SERIES: Fake Anime 2' }).click();
+        await page.getByRole('button', { name: 'REMOVE FROM SERIES' }).click();
+        // Left alone, the anime is not in the series any more: the screen keeps the series with its one season.
+        await expect(page.getByTestId('anime-season')).toHaveCount(1);
+        await page.getByRole('button', { name: 'BACK' }).click();
+        await expect(page.getByTestId('anime-card')).toHaveCount(2);
+    });
+
+    test('brings the series back when the library is rebuilt from the folder', async () => {
+        const { page, userData } = session;
+        await openAnimeTab(page);
+        await openFirstResult(page);
+        await page.getByRole('button', { name: 'EP 1', exact: true }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+        await waitForDownloaded(page);
+        await downloadSecondEntry(page, 'Fake Anime', '2');
+        await session.app.close();
+        rmSync(join(userData, 'anime', 'anime.db'), { force: true });
+
+        session = await launch(userData);
+        await openAnimeTab(session.page);
+        await session.page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await session.page.getByRole('button', { name: 'IMPORT LIBRARY' }).click();
+        await expect(session.page.locator('.toast__message')).toHaveText('IMPORT DONE: 2 ADDED · 0 POINTED TO A NEW PLACE · 0 ALREADY IN THE LIBRARY · 0 NOT RECOGNIZED');
+        const card = session.page.getByTestId('anime-card');
+        await expect(card).toHaveCount(1);
+        await expect(card.getByText('2 SEASONS')).toBeVisible();
+        await card.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await expect(session.page.locator('.season__chip')).toHaveText(['SEASON 1', 'SEASON 2']);
+    });
+});
+
+test.describe('layout for every size of window', () => {
+    async function threeDownloads(page: Page): Promise<void> {
+        await openAnimeTab(page);
+        await openFirstResult(page);
+        await page.getByRole('button', { name: 'SELECT ALL' }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (3)' }).click();
+        await showDownloads(page);
+        await expect(page.locator('.job .badge--done')).toHaveCount(3);
+    }
+
+    // How the page is laid out at a size: the scale of the interface, the widest the page may be and the columns of a list.
+    async function layout(page: Page, width: number, height: number): Promise<{ zoom: string; appMaxWidth: string; columns: number; overflow: boolean }> {
+        await page.setViewportSize({ width, height });
+        return page.evaluate(() => {
+            const list = document.querySelector('.queue') as HTMLElement;
+            const tracks = getComputedStyle(list).gridTemplateColumns;
+            return {
+                zoom: getComputedStyle(document.documentElement).zoom,
+                appMaxWidth: getComputedStyle(document.querySelector('.app') as HTMLElement).maxWidth,
+                columns: getComputedStyle(list).display === 'grid' ? tracks.split(' ').length : 1,
+                overflow: document.documentElement.scrollWidth > window.innerWidth
+            };
+        });
+    }
+
+    test('lets the window be as small as 480 pixels wide', async () => {
+        const [width, height] = await session.app.evaluate(({ BrowserWindow }) => {
+            return BrowserWindow.getAllWindows()[0]?.getMinimumSize() ?? [0, 0];
+        });
+        expect([width, height]).toEqual([480, 520]);
+    });
+
+    test('grows the interface with the screen and the page with the window', async () => {
+        const { page } = session;
+        await threeDownloads(page);
+
+        expect(await layout(page, 1100, 780)).toMatchObject({ zoom: '1', appMaxWidth: '1000px', columns: 1 });
+        expect(await layout(page, 1366, 768)).toMatchObject({ zoom: '1', appMaxWidth: '1240px', columns: 2 });
+        expect(await layout(page, 1920, 1080)).toMatchObject({ zoom: '1', appMaxWidth: '1400px', columns: 2 });
+        expect(await layout(page, 2560, 1440)).toMatchObject({ zoom: '1.25', appMaxWidth: '1500px', columns: 2 });
+        expect(await layout(page, 3440, 1440)).toMatchObject({ zoom: '1.25', appMaxWidth: '2000px', columns: 3 });
+        expect(await layout(page, 3840, 2160)).toMatchObject({ zoom: '1.75', appMaxWidth: '1700px', columns: 3 });
+        expect(await layout(page, 5120, 1440)).toMatchObject({ zoom: '1.25', appMaxWidth: '2600px', columns: 4 });
+    });
+
+    test('never needs to scroll sideways, from the smallest window up', async () => {
+        const { page } = session;
+        await threeDownloads(page);
+        for (const [width, height] of [[480, 800], [600, 800], [768, 1024], [1024, 768], [1366, 768], [1920, 1080], [3440, 1440]]) {
+            expect(await layout(page, width as number, height as number)).toMatchObject({ overflow: false });
+        }
+    });
+
+    test('stacks the controls of a narrow window: one column, the buttons under the title of an episode', async () => {
+        const { page } = session;
+        await threeDownloads(page);
+        await backFromDownloads(page);
+        await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await page.setViewportSize({ width: 480, height: 800 });
+
+        const row = page.getByTestId('anime-episode').first();
+        const title = await row.locator('.history__title').boundingBox();
+        const play = await row.getByRole('button', { name: /^PLAY/ }).boundingBox();
+        expect(play?.y).toBeGreaterThan((title?.y ?? 0) + (title?.height ?? 0));
+        expect(await page.locator('.tabs').first().evaluate((tabs) => { return getComputedStyle(tabs).overflowX; })).toBe('auto');
     });
 });
 

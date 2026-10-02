@@ -390,6 +390,81 @@ describe('importLibrary', () => {
     });
 });
 
+describe('setSeries', () => {
+    it('joins an anime to a series and reads the library again', async () => {
+        const anime = makeAnime([makeEpisode({ id: 1 })], { series: 'Frieren', season: 2 });
+        mock.api.listAnimeLibrary.mockResolvedValue([anime]);
+        expect(await useAnimeStore.getState().setSeries(1, 'Frieren', 2, 'Beyond the End')).toEqual({ ok: true });
+        expect(mock.api.setAnimeSeries).toHaveBeenCalledTimes(1);
+        expect(mock.api.setAnimeSeries).toHaveBeenCalledWith(1, 'Frieren', 2, 'Beyond the End');
+        expect(useAnimeStore.getState().library).toEqual([anime]);
+    });
+
+    it('takes an anime out of its series', async () => {
+        await useAnimeStore.getState().setSeries(1, null, null, null);
+        expect(mock.api.setAnimeSeries).toHaveBeenCalledWith(1, null, null, null);
+    });
+
+    it('gives the answer as it is, and does not read the library, when it is refused', async () => {
+        mock.api.setAnimeSeries.mockResolvedValue({ ok: false, reason: 'season-taken' });
+        expect(await useAnimeStore.getState().setSeries(1, 'Frieren', 2, null)).toEqual({ ok: false, reason: 'season-taken' });
+        expect(mock.api.listAnimeLibrary).not.toHaveBeenCalled();
+    });
+});
+
+describe('downloadEpisodes with a series', () => {
+    const selection = { result: RESULT, query: 'naruto', audio: 'dub' as const, status: 'ready' as const, episodes: ['1'], error: null };
+
+    beforeEach(() => {
+        useAnimeStore.setState({ selection });
+        useAppStore.setState({ notice: null });
+    });
+
+    it('sends the series and the season the anime is saved under', async () => {
+        mock.api.downloadAnime.mockResolvedValue({ ok: true, anime: makeAnime([]) });
+        await useAnimeStore.getState().downloadEpisodes(['1'], { series: '  Naruto  Series ', season: 2, seasonName: ' The  Second ' });
+        expect(mock.api.downloadAnime).toHaveBeenCalledWith({
+            title: 'Naruto',
+            query: 'naruto',
+            index: 2,
+            audio: 'dub',
+            episodes: ['1'],
+            series: 'Naruto Series',
+            season: 2,
+            seasonName: 'The Second'
+        });
+    });
+
+    it('sends no name when it was left empty', async () => {
+        mock.api.downloadAnime.mockResolvedValue({ ok: true, anime: makeAnime([]) });
+        await useAnimeStore.getState().downloadEpisodes(['1'], { series: 'Naruto', season: 2, seasonName: '   ' });
+        await useAnimeStore.getState().downloadEpisodes(['1'], { series: 'Naruto', season: 2 });
+        expect(mock.api.downloadAnime).toHaveBeenNthCalledWith(1, expect.objectContaining({ series: 'Naruto', season: 2, seasonName: null }));
+        expect(mock.api.downloadAnime).toHaveBeenNthCalledWith(2, expect.objectContaining({ series: 'Naruto', season: 2, seasonName: null }));
+    });
+
+    it('sends nothing about a series when there is none', async () => {
+        mock.api.downloadAnime.mockResolvedValue({ ok: true, anime: makeAnime([]) });
+        await useAnimeStore.getState().downloadEpisodes(['1'], null);
+        await useAnimeStore.getState().downloadEpisodes(['1']);
+        expect(mock.api.downloadAnime).toHaveBeenNthCalledWith(1, { title: 'Naruto', query: 'naruto', index: 2, audio: 'dub', episodes: ['1'] });
+        expect(mock.api.downloadAnime).toHaveBeenNthCalledWith(2, { title: 'Naruto', query: 'naruto', index: 2, audio: 'dub', episodes: ['1'] });
+    });
+
+    it.each([
+        ['a series name that is empty', { series: '   ', season: 1 }],
+        ['a series name that is too long', { series: 'a'.repeat(101), season: 1 }],
+        ['a season of zero', { series: 'Naruto', season: 0 }],
+        ['a season over 99', { series: 'Naruto', season: 100 }],
+        ['a season that is not whole', { series: 'Naruto', season: 1.5 }],
+        ['a name that is too long', { series: 'Naruto', season: 1, seasonName: 'a'.repeat(61) }]
+    ])('says so and downloads nothing with %s', async (_name, joined) => {
+        await useAnimeStore.getState().downloadEpisodes(['1'], joined);
+        expect(mock.api.downloadAnime).not.toHaveBeenCalled();
+        expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'Give a series name (up to 100 characters), an order from 1 to 99 and a name of up to 60 characters.' });
+    });
+});
+
 describe('downloadEpisodes', () => {
     const selection = { result: RESULT, query: 'naruto', audio: 'dub' as const, status: 'ready' as const, episodes: ['1', '2'], error: null };
 

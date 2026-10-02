@@ -59,7 +59,7 @@ test('downloads an episode at the lowest quality, with its subtitles, and plays 
     await page.getByRole('button', { name: /^DOWNLOADS \(\d+\)$/ }).click();
     await expect(page.locator('.job .badge--done')).toHaveText('DOWNLOADED', { timeout: 240000 });
 
-    const folder = join(workDir, 'anime', 'Cyberpunk_ Edgerunners', 'Episode 1');
+    const folder = join(workDir, 'anime', 'Cyberpunk_ Edgerunners', 'Season 1', 'Episode 1');
     const files = readdirSync(folder).sort();
     // The video, the subtitle ani-cli picked, the metadata, and a file for every language the source offers (which ones it
     // offers is the source's to decide).
@@ -75,7 +75,7 @@ test('downloads an episode at the lowest quality, with its subtitles, and plays 
     await page.getByRole('button', { name: 'BACK' }).click();
     await page.getByRole('button', { name: 'BACK' }).click();
     await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
-    await page.getByRole('button', { name: 'SHOW EPISODES' }).click();
+    await page.getByRole('button', { name: 'OPEN SERIES: Cyberpunk: Edgerunners' }).click();
     await page.getByRole('button', { name: /^PLAY: / }).click();
     const video = page.getByRole('dialog').locator('video');
     await expect.poll(async () => {
@@ -110,6 +110,6 @@ test('watches an episode without downloading it', async () => {
             return element.currentTime;
         });
     }, { timeout: 15000 }).toBeGreaterThan(1);
-    expect(existsSync(join(workDir, 'anime', 'Cyberpunk_ Edgerunners', 'Episode 2', 'Cyberpunk_ Edgerunners Episode 2.mp4'))).toBe(false);
+    expect(existsSync(join(workDir, 'anime', 'Cyberpunk_ Edgerunners', 'Season 1', 'Episode 2', 'Cyberpunk_ Edgerunners Episode 2.mp4'))).toBe(false);
     await page.keyboard.press('Escape');
 });

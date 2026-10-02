@@ -125,6 +125,9 @@ const api: CyberApi = {
     openAnimeFolder: (animeId) => {
         return ipcRenderer.invoke(IPC.animeOpenFolder, animeId);
     },
+    setAnimeSeries: (animeId, series, season, seasonName) => {
+        return ipcRenderer.invoke(IPC.animeSetSeries, animeId, series, season, seasonName);
+    },
     importAnimeLibrary: () => {
         return ipcRenderer.invoke(IPC.animeImportLibrary);
     },

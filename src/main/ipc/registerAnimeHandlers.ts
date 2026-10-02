@@ -7,15 +7,17 @@ import {
     type AnimeDownloadResponse,
     type AnimeImportResponse,
     type AnimeProgressUpdate,
+    type AnimeSeriesResponse,
     type AnimeStreamResponse,
     type AnimeSubtitleImportResponse,
     type AnimeSubtitleTrack
 } from '@shared/anime';
 import { IPC } from '@shared/constants';
+import { cleanSeasonName, cleanSeriesName, isValidSeason } from '@shared/series';
 import type { AnimeStatus } from '@shared/anime';
 import type { UpdateResult } from '@shared/types';
 import type { AnimeDb } from '../services/animeDb';
-import { animeFolderOf, animeFoldersToRemove, episodeFolderOf, filesOfEpisode } from '../services/animeFiles';
+import { animeFolderOf, animeFoldersToRemove, episodeFolderOf, filesOfEpisode, foldersWithoutOthers, seriesFolderOf } from '../services/animeFiles';
 import type { AnimeDownloadQueue } from '../services/animeDownloadQueue';
 import { isValidEpisode, isValidIndex, sanitizeQuery } from '../services/aniArgsBuilder';
 import type { AniCliService } from '../services/aniCliService';
@@ -103,7 +105,30 @@ export function parseDownloadRequest(input: unknown): AnimeDownloadRequest | str
     if (numbers.length === 0 || numbers.length > MAX_EPISODES_PER_REQUEST || !numbers.every(isValidEpisode)) {
         return 'The episodes are invalid.';
     }
-    return { title, query, index, audio, episodes: numbers };
+    const joined = parseSeries(raw.series, raw.season, raw.seasonName);
+    if (joined === 'invalid') {
+        return 'The series, the order or the name is invalid.';
+    }
+    return { title, query, index, audio, episodes: numbers, ...(joined ?? {}) };
+}
+
+// The series and the season that came with a request: none, both valid, or "invalid" (one without the other, a name that cannot be
+// kept, a season out of range).
+function parseSeries(series: unknown, season: unknown, seasonName: unknown): { series: string; season: number; seasonName?: string | null } | 'invalid' | null {
+    const noSeries = series === undefined || series === null || series === '';
+    const noSeason = season === undefined || season === null;
+    if (noSeries && noSeason) {
+        return null;
+    }
+    const cleaned = noSeries ? null : cleanSeriesName(asText(series));
+    if (cleaned === null || !isValidSeason(season)) {
+        return 'invalid';
+    }
+    if (seasonName === undefined) {
+        return { series: cleaned, season };
+    }
+    const name = seasonName === null ? null : cleanSeasonName(asText(seasonName));
+    return name === undefined ? 'invalid' : { series: cleaned, season, seasonName: name };
 }
 
 export function parseProgress(input: unknown): AnimeProgressUpdate | null {
@@ -137,7 +162,11 @@ function emptiedFolders(episodes: readonly AnimeEpisodeRecord[], platform: NodeJ
     const animeFolders = inFolders.map((episode) => {
         return animeFolderOf(episode.filePath as string, episode.number, platform);
     });
-    return [...new Set([...episodeFolders, ...animeFolders])];
+    const seriesFolders = animeFolders.flatMap((folder) => {
+        const series = seriesFolderOf(folder, platform);
+        return series === null ? [] : [series];
+    });
+    return [...new Set([...episodeFolders, ...animeFolders, ...seriesFolders])];
 }
 
 // On systems where the section does not exist it still answers, so the screen can tell and hide it.
@@ -169,6 +198,9 @@ function registerUnsupported(ipcMain: IpcMainLike): void {
     });
     ipcMain.handle(IPC.animeImportLibrary, (): AnimeImportResponse => {
         return { ok: false, reason: 'cancelled' };
+    });
+    ipcMain.handle(IPC.animeSetSeries, (): AnimeSeriesResponse => {
+        return { ok: false, reason: 'invalid' };
     });
     ipcMain.handle(IPC.animeSubtitles, (): AnimeSubtitleTrack[] => {
         return [];
@@ -224,6 +256,9 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
         const request = parseDownloadRequest(input);
         if (typeof request === 'string') {
             return { ok: false, message: request };
+        }
+        if (request.series && request.season && db.seasonTaken(request.series, request.season, request.audio, db.findAnime(request.title, request.audio)?.id ?? 0)) {
+            return { ok: false, message: `Order ${request.season} of "${request.series}" is already used by another anime.` };
         }
         const anime = queue.enqueue(request);
         return anime ? { ok: true, anime } : { ok: false, message: 'The anime could not be saved.' };
@@ -299,10 +334,51 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
                 return filesOfEpisode(file);
             })
         );
-        deps.removeFolders(animeFoldersToRemove(anime.title, files, deps.baseDirectory(), deps.platform));
+        // The folder of a series holds the seasons of the other anime of the series: it is never removed whole while any of them has a
+        // file in it.
+        const others = db.list().flatMap((remaining) => {
+            return remaining.episodes.flatMap((episode) => {
+                return episode.filePath === null ? [] : [episode.filePath];
+            });
+        });
+        deps.removeFolders(foldersWithoutOthers(animeFoldersToRemove(anime.title, files, deps.baseDirectory(), deps.platform), others, deps.platform));
         // A folder that was renamed is not one the app may remove whole, but what is left of it once its files are gone is empty.
         deps.removeEmptyFolders(emptiedFolders(anime.episodes, deps.platform));
         deps.onLibraryChanged();
+    });
+    // What is kept beside the videos of an anime (it says the series) is written again.
+    const refreshMetadataOf = (animeId: number): void => {
+        db.getLibraryAnime(animeId)?.episodes.forEach((episode) => {
+            if (episode.status === 'done') {
+                deps.refreshMetadata(episode.id);
+            }
+        });
+    };
+    ipcMain.handle(IPC.animeSetSeries, (_event, animeId, series, season, seasonName): AnimeSeriesResponse => {
+        const id = asId(animeId);
+        if (id === null || db.getAnime(id) === null) {
+            return { ok: false, reason: 'invalid' };
+        }
+        if (series === null && season === null) {
+            db.setSeries(id, null, null);
+            refreshMetadataOf(id);
+            deps.onLibraryChanged();
+            return { ok: true };
+        }
+        const cleaned = typeof series === 'string' ? cleanSeriesName(series) : null;
+        if (cleaned === null || !isValidSeason(season)) {
+            return { ok: false, reason: 'invalid' };
+        }
+        const name = seasonName === null || seasonName === undefined ? null : typeof seasonName === 'string' ? cleanSeasonName(seasonName) : undefined;
+        if (name === undefined) {
+            return { ok: false, reason: 'invalid' };
+        }
+        if (!db.setSeries(id, cleaned, season, name)) {
+            return { ok: false, reason: 'season-taken' };
+        }
+        refreshMetadataOf(id);
+        deps.onLibraryChanged();
+        return { ok: true };
     });
     // The address comes from the library, never from the screen: only the folder of an anime that is in it can be opened.
     ipcMain.handle(IPC.animeOpenFolder, (_event, animeId): void => {

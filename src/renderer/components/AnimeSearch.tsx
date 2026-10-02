@@ -3,7 +3,7 @@ import type { Translator } from '@shared/i18n';
 import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 import { effectiveAudio, useAnimeStore } from '../store/animeStore';
-import { animeErrorKey, downloadedAnime } from './animeText';
+import { animeErrorKey, downloadedAnime, libraryEntry, seasonLabel } from './animeText';
 import { AnimeDetail } from './AnimeDetail';
 import { SelectField, TextField } from './fields';
 
@@ -81,12 +81,16 @@ export function AnimeSearch() {
                     <ul className="history__list">
                         {search.results.map((result) => {
                             const saved = downloadedAnime(library, result.title, search.searchedAudio);
+                            const joined = libraryEntry(library, result.title, search.searchedAudio);
                             return (
                                 <li key={result.index} className="history__item">
                                     <div className="history__main">
                                         <span className="history__title" title={result.title}>
                                             {result.title}
                                         </span>
+                                        {joined?.series != null && joined.season !== null && (
+                                            <span className="history__meta">{t('anime.series.tag', { series: joined.series, label: seasonLabel(joined, t) })}</span>
+                                        )}
                                     </div>
                                     {saved && (
                                         <button
