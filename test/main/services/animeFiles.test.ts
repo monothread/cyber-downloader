@@ -1,5 +1,6 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import {
+    isInsideDirectory,
     animeBaseDirectory,
     animeDownloadDirectory,
     folderNameBudget,
@@ -400,5 +401,35 @@ describe('Windows paths', () => {
 
     it('never removes a folder that is not named after the anime', () => {
         expect(animeFoldersToRemove('Naruto', ['C:\\Users\\me\\Videos\\a.mp4'], 'D:\\Anime', 'win32')).toEqual(['D:\\Anime\\Naruto']);
+    });
+});
+
+describe('isInsideDirectory', () => {
+    it('is true for the folder itself and for what is inside it, however deep', () => {
+        expect(isInsideDirectory('/lib', '/lib', 'linux')).toBe(true);
+        expect(isInsideDirectory('/lib/', '/lib', 'linux')).toBe(true);
+        expect(isInsideDirectory('/lib/Naruto', '/lib', 'linux')).toBe(true);
+        expect(isInsideDirectory('/lib/Naruto/Episode 1/a.mp4', '/lib', 'linux')).toBe(true);
+        expect(isInsideDirectory('/lib/a/../b', '/lib', 'linux')).toBe(true);
+    });
+
+    it('is false for the folder above, a folder beside it and one that only starts with the same name', () => {
+        expect(isInsideDirectory('/', '/lib', 'linux')).toBe(false);
+        expect(isInsideDirectory('/lib2', '/lib', 'linux')).toBe(false);
+        expect(isInsideDirectory('/library/Naruto', '/lib', 'linux')).toBe(false);
+        expect(isInsideDirectory('/other/lib', '/lib', 'linux')).toBe(false);
+        expect(isInsideDirectory('/lib/../etc', '/lib', 'linux')).toBe(false);
+    });
+
+    it('is true for a folder whose name starts with two dots, which is still inside', () => {
+        expect(isInsideDirectory('/lib/..hidden', '/lib', 'linux')).toBe(true);
+    });
+
+    it('follows the rules of Windows: backslashes, drive letters and no difference between capitals', () => {
+        expect(isInsideDirectory('D:\\Anime\\Naruto', 'D:\\Anime', 'win32')).toBe(true);
+        expect(isInsideDirectory('d:\\anime\\NARUTO', 'D:\\Anime', 'win32')).toBe(true);
+        expect(isInsideDirectory('D:\\Anime', 'D:\\Anime', 'win32')).toBe(true);
+        expect(isInsideDirectory('E:\\Anime\\Naruto', 'D:\\Anime', 'win32')).toBe(false);
+        expect(isInsideDirectory('D:\\Anime2', 'D:\\Anime', 'win32')).toBe(false);
     });
 });

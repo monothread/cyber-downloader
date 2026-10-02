@@ -9,7 +9,7 @@ const initial = useAppStore.getState();
 
 beforeEach(() => {
     mock = installMockApi();
-    useAppStore.setState({ ...initial, jobs: [], history: [], settings: DEFAULT_SETTINGS, binaries: null, notice: null, updating: false, appUpdate: INITIAL_APP_UPDATE, traySupport: null, streamSearches: {}, tab: 'downloads' });
+    useAppStore.setState({ ...initial, jobs: [], history: [], settings: DEFAULT_SETTINGS, binaries: null, notice: null, noticeQueue: [], updating: false, appUpdate: INITIAL_APP_UPDATE, traySupport: null, streamSearches: {}, tab: 'downloads' });
 });
 
 const HISTORY_ENTRY: HistoryEntry = { id: 'h1', url: 'https://x.com', title: 'T', filePath: '/d/T.mp4', status: 'done', errorTitle: null, finishedAt: 5 };
@@ -40,6 +40,108 @@ describe('useAppStore basics', () => {
         expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'hi' });
         useAppStore.getState().setNotice(null);
         expect(useAppStore.getState().notice).toBeNull();
+    });
+});
+
+describe('notice queue', () => {
+    const FIRST = { kind: 'info' as const, message: 'first' };
+    const SECOND = { kind: 'info' as const, message: 'second' };
+    const THIRD = { kind: 'info' as const, message: 'third' };
+
+    it('shows a queued notice right away when none is on the screen', () => {
+        useAppStore.getState().queueNotice(FIRST);
+        expect(useAppStore.getState().notice).toEqual(FIRST);
+        expect(useAppStore.getState().noticeQueue).toEqual([]);
+    });
+
+    it('keeps the others waiting, in order, while one is on the screen', () => {
+        useAppStore.getState().queueNotice(FIRST);
+        useAppStore.getState().queueNotice(SECOND);
+        useAppStore.getState().queueNotice(THIRD);
+        expect(useAppStore.getState().notice).toEqual(FIRST);
+        expect(useAppStore.getState().noticeQueue).toEqual([SECOND, THIRD]);
+    });
+
+    it('shows the next one when the one on the screen goes away, until none is left', () => {
+        useAppStore.getState().queueNotice(FIRST);
+        useAppStore.getState().queueNotice(SECOND);
+        useAppStore.getState().queueNotice(THIRD);
+
+        useAppStore.getState().setNotice(null);
+        expect(useAppStore.getState().notice).toEqual(SECOND);
+        expect(useAppStore.getState().noticeQueue).toEqual([THIRD]);
+
+        useAppStore.getState().setNotice(null);
+        expect(useAppStore.getState().notice).toEqual(THIRD);
+        expect(useAppStore.getState().noticeQueue).toEqual([]);
+
+        useAppStore.getState().setNotice(null);
+        expect(useAppStore.getState().notice).toBeNull();
+        expect(useAppStore.getState().noticeQueue).toEqual([]);
+    });
+
+    it('replaces the notice on the screen when one is set directly, keeping the queue', () => {
+        useAppStore.getState().queueNotice(FIRST);
+        useAppStore.getState().queueNotice(SECOND);
+        useAppStore.getState().setNotice({ kind: 'error', message: 'boom' });
+        expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'boom' });
+        expect(useAppStore.getState().noticeQueue).toEqual([SECOND]);
+    });
+});
+
+describe('a download that is complete', () => {
+    it('says so, with its title, and leaves the queue', async () => {
+        await useAppStore.getState().init();
+        mock.emitJobUpdate(makeJob({ id: 'a', title: 'My video', status: 'running', percent: 50 }));
+        expect(useAppStore.getState().notice).toBeNull();
+        expect(mock.api.removeJob).not.toHaveBeenCalled();
+
+        mock.emitJobUpdate(makeJob({ id: 'a', title: 'My video', status: 'done', percent: 100 }));
+
+        expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'Download complete: My video' });
+        expect(mock.api.removeJob).toHaveBeenCalledTimes(1);
+        expect(mock.api.removeJob).toHaveBeenCalledWith('a');
+    });
+
+    it('uses the link when the download has no title', async () => {
+        await useAppStore.getState().init();
+        mock.emitJobUpdate(makeJob({ id: 'a', title: null, url: 'https://x.com/v', status: 'done' }));
+        expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'Download complete: https://x.com/v' });
+    });
+
+    it('says it in the language of the settings', async () => {
+        mock.api.getSettings.mockResolvedValueOnce({ ...DEFAULT_SETTINGS, language: 'pt' });
+        await useAppStore.getState().init();
+        mock.emitJobUpdate(makeJob({ id: 'a', title: 'Meu vídeo', status: 'done' }));
+        expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'Download concluído: Meu vídeo' });
+    });
+
+    it('shows one notice at a time when several finish together, each with its own card removed', async () => {
+        await useAppStore.getState().init();
+        mock.emitJobUpdate(makeJob({ id: 'a', title: 'One', status: 'done' }));
+        mock.emitJobUpdate(makeJob({ id: 'b', title: 'Two', status: 'done' }));
+
+        expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'Download complete: One' });
+        expect(useAppStore.getState().noticeQueue).toEqual([{ kind: 'info', message: 'Download complete: Two' }]);
+        expect(mock.api.removeJob).toHaveBeenCalledTimes(2);
+        expect(mock.api.removeJob).toHaveBeenNthCalledWith(1, 'a');
+        expect(mock.api.removeJob).toHaveBeenNthCalledWith(2, 'b');
+    });
+
+    it('does not say it again for an update of a job that was already complete', async () => {
+        mock.api.listJobs.mockResolvedValueOnce([makeJob({ id: 'a', status: 'done' })]);
+        await useAppStore.getState().init();
+        mock.emitJobUpdate(makeJob({ id: 'a', status: 'done', filePath: '/d/a.mp4' }));
+        expect(useAppStore.getState().notice).toBeNull();
+        expect(mock.api.removeJob).not.toHaveBeenCalled();
+    });
+
+    it.each(['error', 'cancelled', 'running', 'queued'] as const)('does not say it, nor remove the card, for a %s download', async (status) => {
+        await useAppStore.getState().init();
+        mock.emitJobUpdate(makeJob({ id: 'a', status }));
+        expect(useAppStore.getState().notice).toBeNull();
+        expect(mock.api.removeJob).not.toHaveBeenCalled();
+        expect(useAppStore.getState().jobs).toEqual([makeJob({ id: 'a', status })]);
     });
 });
 

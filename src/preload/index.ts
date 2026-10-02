@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IPC } from '@shared/constants';
-import type { AnimeJob } from '@shared/anime';
+import type { AnimeJob, AnimeMigrationProgress } from '@shared/anime';
 import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -131,6 +131,9 @@ const api: CyberApi = {
     importAnimeLibrary: () => {
         return ipcRenderer.invoke(IPC.animeImportLibrary);
     },
+    migrateAnimeFolder: () => {
+        return ipcRenderer.invoke(IPC.animeMigrateFolder);
+    },
     saveAnimeProgress: (update) => {
         return ipcRenderer.invoke(IPC.animeProgress, update);
     },
@@ -156,6 +159,9 @@ const api: CyberApi = {
         return subscribe<undefined>(IPC.eventAnimeLibrary, () => {
             listener();
         });
+    },
+    onAnimeMigrationProgress: (listener) => {
+        return subscribe<AnimeMigrationProgress>(IPC.eventAnimeMigration, listener);
     },
     onJobUpdate: (listener) => {
         return subscribe<DownloadJob>(IPC.eventJobUpdate, listener);

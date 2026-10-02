@@ -11,7 +11,8 @@ import { AniCliService } from './services/aniCliService';
 import { subtitleLabels } from './services/aniSubtitles';
 import { AnimeDb } from './services/animeDb';
 import { AnimeDownloadQueue } from './services/animeDownloadQueue';
-import { animeBaseDirectory, removeDirectories, removeEmptyDirectories } from './services/animeFiles';
+import { animeBaseDirectory, isInsideDirectory, removeDirectories, removeEmptyDirectories } from './services/animeFiles';
+import { migrateAnimeFolder, type MigrationFileSystem } from './services/animeMigration';
 import type { BinaryResolver } from './services/binaryResolver';
 import type { MediaSource } from './services/mediaProtocol';
 import { createStreamHandler, StreamSessions } from './services/streamProxy';
@@ -50,6 +51,13 @@ export interface AnimeRuntimeOptions {
     chooseLibraryFolder?: (startAt: string) => Promise<string | null>;
     // How the folders of anime are read (the tests replace it).
     scanFiles?: ScanFileSystem;
+    // Asks the user for the folder the anime are migrated to, starting at the given folder; null when they gave up (the tests
+    // replace it).
+    chooseMigrationFolder?: (startAt: string) => Promise<string | null>;
+    // Saves the folder the anime are in now in the settings (once a migration has moved them).
+    saveAnimeDirectory?: (directory: string) => void;
+    // How the files are copied and removed by a migration (the tests replace it).
+    migrationFiles?: MigrationFileSystem;
     // Opens a folder in the file manager of the system (the tests replace it).
     openFolder?: (path: string) => void;
     // Asks the user for a subtitle file to load; null when they gave up (the tests replace it).
@@ -206,6 +214,10 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
                 if (chosen === null) {
                     return { ok: false, reason: 'cancelled' };
                 }
+                // Every anime is inside the folder of the settings: one that is anywhere else is not accepted.
+                if (!isInsideDirectory(chosen, startAt, options.platform)) {
+                    return { ok: false, reason: 'outside', folder: startAt };
+                }
                 const summary = importLibrary(db, scanLibraryFolder(chosen, options.scanFiles), {
                     defaultAudio: settings.animeAudio,
                     fileSize,
@@ -214,6 +226,27 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
                     }
                 });
                 return { ok: true, ...summary };
+            },
+            migrateFolder: async () => {
+                const currentDirectory = animeBaseDirectory(options.getSettings(), options.defaultDownloadDir, options.platform);
+                const chosen = await (options.chooseMigrationFolder?.(currentDirectory) ?? Promise.resolve(null));
+                if (chosen === null) {
+                    return { ok: false, reason: 'cancelled' };
+                }
+                const outcome = await migrateAnimeFolder({
+                    db,
+                    files: options.migrationFiles,
+                    platform: options.platform,
+                    currentDirectory,
+                    newDirectory: chosen,
+                    saveDirectory: (directory) => {
+                        options.saveAnimeDirectory?.(directory);
+                    },
+                    onProgress: (progress) => {
+                        options.send(IPC.eventAnimeMigration, progress);
+                    }
+                });
+                return outcome.ok ? { ...outcome, destination: chosen } : outcome;
             },
             openFolder: (path) => {
                 options.openFolder?.(path);

@@ -8,7 +8,7 @@ import { useAppStore } from '@renderer/store/appStore';
 const initial = useAppStore.getState();
 
 beforeEach(() => {
-    useAppStore.setState({ ...initial, notice: null });
+    useAppStore.setState({ ...initial, notice: null, noticeQueue: [] });
 });
 
 describe('Toast', () => {
@@ -84,6 +84,32 @@ describe('Toast', () => {
                 vi.advanceTimersByTime(1000);
             });
             expect(screen.queryByText('Second')).not.toBeInTheDocument();
+        });
+
+        it('shows the queued notices one after the other, three seconds each', () => {
+            render(<Toast />);
+            act(() => {
+                useAppStore.getState().queueNotice({ kind: 'info', message: 'One' });
+                useAppStore.getState().queueNotice({ kind: 'info', message: 'Two' });
+            });
+            expect(screen.getByText('One')).toBeInTheDocument();
+            expect(screen.queryByText('Two')).not.toBeInTheDocument();
+
+            act(() => {
+                vi.advanceTimersByTime(INFO_NOTICE_MS);
+            });
+            expect(screen.queryByText('One')).not.toBeInTheDocument();
+            expect(screen.getByText('Two')).toBeInTheDocument();
+
+            act(() => {
+                vi.advanceTimersByTime(INFO_NOTICE_MS - 1);
+            });
+            expect(screen.getByText('Two')).toBeInTheDocument();
+            act(() => {
+                vi.advanceTimersByTime(1);
+            });
+            expect(screen.queryByText('Two')).not.toBeInTheDocument();
+            expect(useAppStore.getState().notice).toBeNull();
         });
 
         it('does not clear a newer error when the timer of an older info notice fires', () => {

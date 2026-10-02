@@ -101,6 +101,7 @@ export const en = {
     'toast.dismiss': 'Dismiss notification',
     'notice.ytdlpUpToDate': 'yt-dlp is up to date.',
     'notice.updateFailed': 'Update failed.',
+    'notice.downloadDone': 'Download complete: {title}',
 
     // App updates
     'update.checking': 'Checking for updates…',
@@ -265,7 +266,6 @@ export const en = {
 
     // Settings: advanced
     'settings.advanced': 'ADVANCED',
-    'settings.maxConcurrent': 'Simultaneous downloads',
     'settings.rateLimit': 'Speed limit',
     'settings.rateLimit.placeholder': 'e.g. 2M or 500K',
     'settings.ytdlpPath': 'yt-dlp path',
@@ -349,6 +349,13 @@ export const en = {
     'anime.import.button': 'IMPORT LIBRARY',
     'anime.import.hint': 'Choose a folder of anime and add what is in it to the library',
     'anime.import.done': 'IMPORT DONE: {added} ADDED · {relinked} POINTED TO A NEW PLACE · {skipped} ALREADY IN THE LIBRARY · {ignored} NOT RECOGNIZED',
+    'anime.import.outside': 'Only folders inside the anime folder can be imported: {folder}',
+    'anime.migrate.done': 'MIGRATION DONE: {episodes} EPISODES MOVED TO {folder}',
+    'anime.migrate.error.busy': 'A download or a migration is running. Wait for it to finish.',
+    'anime.migrate.error.same': 'That is already the anime folder.',
+    'anime.migrate.error.inside': 'Choose a folder that is not inside the current anime folder.',
+    'anime.migrate.error.conflict': 'The new folder already has files where the anime would be copied. Choose another folder.',
+    'anime.migrate.error.failed': 'The migration failed. What was copied was removed and nothing changed.',
     'anime.fileMissing': 'FILE NOT FOUND',
     'anime.fileMissing.hint': 'The file of this episode is not on the disk. Use IMPORT LIBRARY to point it to its new place.',
     'anime.series.label': 'Series',
@@ -421,6 +428,10 @@ export const en = {
     'settings.anime': 'ANIME',
     'settings.animeDownloadDir': 'Anime download folder',
     'settings.animeDownloadDir.placeholder': 'Default: Downloads/Pullwave Anime',
+    'settings.animeDownloadDir.locked': 'With anime in the library, the folder only changes through MIGRATE FOLDER, which moves the files too.',
+    'settings.animeMigrate': 'MIGRATE FOLDER',
+    'settings.animeMigrate.hint': 'Choose a new folder: the app copies all the anime there, checks the copies and then removes the old files',
+    'settings.animeMigrate.running': 'MIGRATING {done}/{total}…',
     'settings.animeQuality': 'Anime quality',
     'settings.animeQuality.hint': 'Used for new anime downloads.',
     'settings.animeAudio': 'Anime audio',

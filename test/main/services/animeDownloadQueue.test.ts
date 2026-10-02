@@ -91,7 +91,7 @@ describe('AnimeDownloadQueue.enqueue', () => {
             })
         ).toEqual([
             ['1', 'downloading'],
-            ['2', 'downloading'],
+            ['2', 'queued'],
             ['3', 'queued']
         ]);
         expect(db.list()).toHaveLength(1);

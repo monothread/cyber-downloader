@@ -32,7 +32,7 @@ describe('sanitizeSettings', () => {
             autoSubtitles: true,
             embedSubtitles: true,
             rateLimit: '2M',
-            maxConcurrent: 3,
+            maxConcurrent: 1,
             ytdlpPath: '/opt/yt-dlp',
             ffmpegPath: '/opt/ffmpeg',
             jsRuntime: 'node:/usr/bin/node',
@@ -137,7 +137,7 @@ describe('sanitizeSettings', () => {
         expect(result.cookiesBrowserDir).toBe('');
         expect(result.downloadDir).toBe('');
         expect(result.maxTitleLength).toBe(80);
-        expect(result.maxConcurrent).toBe(2);
+        expect(result.maxConcurrent).toBe(1);
     });
 
     it('checks the end of live streams for 10 seconds by default', () => {
@@ -174,8 +174,15 @@ describe('sanitizeSettings', () => {
         expect(sanitizeSettings({ maxTitleLength: 5 }).maxTitleLength).toBe(20);
         expect(sanitizeSettings({ maxTitleLength: 9999 }).maxTitleLength).toBe(200);
         expect(sanitizeSettings({ maxTitleLength: 80.6 }).maxTitleLength).toBe(81);
-        expect(sanitizeSettings({ maxConcurrent: 0 }).maxConcurrent).toBe(1);
-        expect(sanitizeSettings({ maxConcurrent: 50 }).maxConcurrent).toBe(5);
+    });
+
+    it('always runs one download at a time, whatever the saved value is', () => {
+        expect(DEFAULT_SETTINGS.maxConcurrent).toBe(1);
+        [0, 1, 2, 3, 5, 50, -4, 2.5, NaN, '3', null, undefined].forEach((value) => {
+            expect(sanitizeSettings({ maxConcurrent: value }).maxConcurrent).toBe(1);
+        });
+        expect(sanitizeSettings({}).maxConcurrent).toBe(1);
+        expect(sanitizeSettings(null).maxConcurrent).toBe(1);
     });
 
     it('trims string values', () => {

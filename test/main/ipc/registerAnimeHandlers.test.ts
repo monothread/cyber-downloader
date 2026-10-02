@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AniRunResult, AnimeImportResponse, AnimeSearchResult, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
+import type { AniRunResult, AnimeImportResponse, AnimeMigrationResponse, AnimeSearchResult, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { ResolvedStream } from '@main/services/aniStream';
 import { IPC } from '@shared/constants';
 import { MAX_EPISODES_PER_REQUEST, MAX_TEXT_LENGTH, parseDownloadRequest, parseProgress, registerAnimeHandlers, type AnimeHandlerDependencies } from '@main/ipc/registerAnimeHandlers';
@@ -43,6 +43,7 @@ const ANIME_CHANNELS = [
     IPC.animeImportLibrary,
     IPC.animeJobs,
     IPC.animeLibrary,
+    IPC.animeMigrateFolder,
     IPC.animeOpenFolder,
     IPC.animeProgress,
     IPC.animeRemoveAnime,
@@ -90,6 +91,9 @@ function setup(available = true) {
         list: vi.fn(() => {
             return [];
         }),
+        pendingCount: vi.fn(() => {
+            return 0;
+        }),
         cancel: vi.fn(),
         retry: vi.fn(),
         clearFinished: vi.fn(),
@@ -101,6 +105,9 @@ function setup(available = true) {
     const openFolder = vi.fn();
     const refreshMetadata = vi.fn();
     const importLibrary = vi.fn(async (): Promise<AnimeImportResponse> => {
+        return { ok: false, reason: 'cancelled' };
+    });
+    const migrateFolder = vi.fn(async (): Promise<AnimeMigrationResponse> => {
         return { ok: false, reason: 'cancelled' };
     });
     const missing = new Set<string>();
@@ -128,6 +135,7 @@ function setup(available = true) {
         openFolder,
         refreshMetadata,
         importLibrary,
+        migrateFolder,
         fileExists: (path: string) => {
             return !missing.has(path);
         },
@@ -139,7 +147,7 @@ function setup(available = true) {
         subtitles
     } as unknown as AnimeHandlerDependencies;
     registerAnimeHandlers(ipc.ipcMain, deps);
-    return { ...ipc, db, search, episodes, resolveStream, updateAniCli, aniCliInfo, streams, queue, removeFiles, removeFolders, removeEmptyFolders, openFolder, refreshMetadata, importLibrary, missing, onLibraryChanged, subtitles, deps };
+    return { ...ipc, db, search, episodes, resolveStream, updateAniCli, aniCliInfo, streams, queue, removeFiles, removeFolders, removeEmptyFolders, openFolder, refreshMetadata, importLibrary, migrateFolder, missing, onLibraryChanged, subtitles, deps };
 }
 
 describe('registerAnimeHandlers', () => {
@@ -773,6 +781,84 @@ describe('registerAnimeHandlers', () => {
         });
     });
 
+    describe('migrateFolder', () => {
+        const MOVED: AnimeMigrationResponse = { ok: true, episodes: 3, files: 6, destination: '/new/anime' };
+
+        it('migrates and tells the screen the library changed', async () => {
+            const { call, migrateFolder, onLibraryChanged } = setup();
+            migrateFolder.mockResolvedValueOnce(MOVED);
+            expect(await call(IPC.animeMigrateFolder)).toEqual(MOVED);
+            expect(migrateFolder).toHaveBeenCalledTimes(1);
+            expect(onLibraryChanged).toHaveBeenCalledTimes(1);
+        });
+
+        it.each(['cancelled', 'same', 'inside', 'conflict', 'failed'] as const)('does not tell the screen when it answers %s', async (reason) => {
+            const { call, migrateFolder, onLibraryChanged } = setup();
+            migrateFolder.mockResolvedValueOnce({ ok: false, reason });
+            expect(await call(IPC.animeMigrateFolder)).toEqual({ ok: false, reason });
+            expect(onLibraryChanged).not.toHaveBeenCalled();
+        });
+
+        it('refuses while an episode is being downloaded, without asking for a folder', async () => {
+            const { call, queue, migrateFolder, onLibraryChanged } = setup();
+            queue.pendingCount.mockReturnValue(1);
+            expect(await call(IPC.animeMigrateFolder)).toEqual({ ok: false, reason: 'busy' });
+            expect(migrateFolder).not.toHaveBeenCalled();
+            expect(onLibraryChanged).not.toHaveBeenCalled();
+        });
+
+        it('refuses a second migration while one is running, and accepts one again after it', async () => {
+            const { call, migrateFolder } = setup();
+            let finish: (response: AnimeMigrationResponse) => void = () => {
+                return;
+            };
+            migrateFolder.mockReturnValueOnce(
+                new Promise((resolve) => {
+                    finish = resolve;
+                })
+            );
+            const running = call(IPC.animeMigrateFolder);
+            expect(await call(IPC.animeMigrateFolder)).toEqual({ ok: false, reason: 'busy' });
+            expect(migrateFolder).toHaveBeenCalledTimes(1);
+
+            finish(MOVED);
+            expect(await running).toEqual(MOVED);
+
+            migrateFolder.mockResolvedValueOnce(MOVED);
+            expect(await call(IPC.animeMigrateFolder)).toEqual(MOVED);
+            expect(migrateFolder).toHaveBeenCalledTimes(2);
+        });
+
+        it('accepts another migration after one that failed with an error', async () => {
+            const { call, migrateFolder } = setup();
+            migrateFolder.mockRejectedValueOnce(new Error('boom'));
+            await expect(call(IPC.animeMigrateFolder)).rejects.toThrow('boom');
+            migrateFolder.mockResolvedValueOnce(MOVED);
+            expect(await call(IPC.animeMigrateFolder)).toEqual(MOVED);
+        });
+
+        it('does not queue downloads while it runs, and queues them again after', async () => {
+            const { call, migrateFolder, queue } = setup();
+            let finish: (response: AnimeMigrationResponse) => void = () => {
+                return;
+            };
+            migrateFolder.mockReturnValueOnce(
+                new Promise((resolve) => {
+                    finish = resolve;
+                })
+            );
+            const running = call(IPC.animeMigrateFolder);
+            const request = { title: 'Naruto', query: 'naruto', index: 1, audio: 'sub', episodes: ['1'] };
+            expect(call(IPC.animeDownload, request)).toEqual({ ok: false, message: 'The anime folder is being migrated. Try again when it is done.' });
+            expect(queue.enqueue).not.toHaveBeenCalled();
+
+            finish(MOVED);
+            await running;
+            expect(call(IPC.animeDownload, request)).toMatchObject({ ok: true });
+            expect(queue.enqueue).toHaveBeenCalledTimes(1);
+        });
+    });
+
     it('saves the progress of an episode and ignores an invalid update', () => {
         const { call, db, refreshMetadata } = setup();
         const episode = db.ensureEpisode(db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' }).id, '1');
@@ -803,6 +889,7 @@ describe('registerAnimeHandlers where the section does not exist', () => {
         expect(ipc.call(IPC.animeJobs)).toEqual([]);
         expect(ipc.call(IPC.animeStreamOpen, {})).toEqual({ ok: false, error: unsupported });
         expect(ipc.call(IPC.animeImportLibrary)).toEqual({ ok: false, reason: 'cancelled' });
+        expect(ipc.call(IPC.animeMigrateFolder)).toEqual({ ok: false, reason: 'failed' });
         expect(ipc.call(IPC.animeSetSeries, 1, 'Frieren', 1)).toEqual({ ok: false, reason: 'invalid' });
         expect(ipc.call(IPC.animeSubtitles, 1)).toEqual([]);
         expect(ipc.call(IPC.animeSubtitleImport, 1)).toEqual({ ok: false, reason: 'missing' });

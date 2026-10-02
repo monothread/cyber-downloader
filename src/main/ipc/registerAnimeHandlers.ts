@@ -6,6 +6,7 @@ import {
     type AnimeDownloadRequest,
     type AnimeDownloadResponse,
     type AnimeImportResponse,
+    type AnimeMigrationResponse,
     type AnimeProgressUpdate,
     type AnimeSeriesResponse,
     type AnimeStreamResponse,
@@ -45,6 +46,8 @@ export interface AnimeHandlerDependencies {
     refreshMetadata: (episodeId: number) => void;
     // Asks for a folder of anime and puts what is in it into the library.
     importLibrary: () => Promise<AnimeImportResponse>;
+    // Asks for the folder the anime are moved to and moves them there (see animeMigration.ts).
+    migrateFolder: () => Promise<AnimeMigrationResponse>;
     // Opens a folder in the file manager of the system.
     openFolder: (path: string) => void;
     // The folder all the anime go into, as the settings say now.
@@ -199,6 +202,9 @@ function registerUnsupported(ipcMain: IpcMainLike): void {
     ipcMain.handle(IPC.animeImportLibrary, (): AnimeImportResponse => {
         return { ok: false, reason: 'cancelled' };
     });
+    ipcMain.handle(IPC.animeMigrateFolder, (): AnimeMigrationResponse => {
+        return { ok: false, reason: 'failed' };
+    });
     ipcMain.handle(IPC.animeSetSeries, (): AnimeSeriesResponse => {
         return { ok: false, reason: 'invalid' };
     });
@@ -221,6 +227,7 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
         return;
     }
     const { service, queue, db } = deps;
+    let migrating = false;
 
     ipcMain.handle(IPC.animeStatus, (): AnimeStatus => {
         return { supported: true, available: service.isAvailable(), aniCli: service.info() };
@@ -253,6 +260,9 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
         return { ok: false, error: result.status === 'error' ? result.error : { code: 'UNKNOWN', raw: 'The search was cancelled.' } };
     });
     ipcMain.handle(IPC.animeDownload, (_event, input): AnimeDownloadResponse => {
+        if (migrating) {
+            return { ok: false, message: 'The anime folder is being migrated. Try again when it is done.' };
+        }
         const request = parseDownloadRequest(input);
         if (typeof request === 'string') {
             return { ok: false, message: request };
@@ -279,6 +289,22 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
             deps.onLibraryChanged();
         }
         return result;
+    });
+    // The files are moved one migration at a time, and never while an episode is being downloaded (nor is one started meanwhile).
+    ipcMain.handle(IPC.animeMigrateFolder, async (): Promise<AnimeMigrationResponse> => {
+        if (migrating || queue.pendingCount() > 0) {
+            return { ok: false, reason: 'busy' };
+        }
+        migrating = true;
+        try {
+            const result = await deps.migrateFolder();
+            if (result.ok) {
+                deps.onLibraryChanged();
+            }
+            return result;
+        } finally {
+            migrating = false;
+        }
     });
     ipcMain.handle(IPC.animeJobs, () => {
         return queue.list();

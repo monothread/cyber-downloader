@@ -4,6 +4,8 @@ import type {
     AnimeEpisodesResponse,
     AnimeImportResponse,
     AnimeJob,
+    AnimeMigrationProgress,
+    AnimeMigrationResponse,
     AnimeProgressUpdate,
     AnimeSeriesResponse,
     AnimeSearchResponse,
@@ -77,6 +79,7 @@ export interface Settings {
     autoSubtitles: boolean;
     embedSubtitles: boolean;
     rateLimit: string;
+    // Always 1 (downloads run one at a time); it is not shown in the settings.
     maxConcurrent: number;
     ytdlpPath: string;
     ffmpegPath: string;
@@ -302,6 +305,9 @@ export interface CyberApi {
     setAnimeSeries: (animeId: number, series: string | null, season: number | null, seasonName: string | null) => Promise<AnimeSeriesResponse>;
     // Asks for a folder of anime and puts what is in it into the library.
     importAnimeLibrary: () => Promise<AnimeImportResponse>;
+    // Asks for the folder the anime are moved to, copies them there, checks the copies, points the library and the settings to
+    // the new folder and then removes the old files.
+    migrateAnimeFolder: () => Promise<AnimeMigrationResponse>;
     saveAnimeProgress: (update: AnimeProgressUpdate) => Promise<void>;
     listAnimeSubtitles: (episodeId: number) => Promise<AnimeSubtitleTrack[]>;
     importAnimeSubtitle: (episodeId: number) => Promise<AnimeSubtitleImportResponse>;
@@ -310,6 +316,7 @@ export interface CyberApi {
     closeAnimeStream: (sessionId: string) => Promise<void>;
     onAnimeJobUpdate: (listener: (job: AnimeJob) => void) => () => void;
     onAnimeLibraryChanged: (listener: () => void) => () => void;
+    onAnimeMigrationProgress: (listener: (progress: AnimeMigrationProgress) => void) => () => void;
     onJobUpdate: (listener: (job: DownloadJob) => void) => () => void;
     onJobRemoved: (listener: (id: string) => void) => () => void;
     onHistoryChanged: (listener: () => void) => () => void;

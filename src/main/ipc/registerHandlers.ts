@@ -42,6 +42,9 @@ export interface HandlerDependencies {
     sendStreamProgress: (progress: StreamFindProgress) => void;
     onSettingsSaved: (settings: Settings) => void;
     chooseDirectory: () => Promise<string | null>;
+    // Whether the folder of the anime is fixed in the settings: with anime in the library it only changes by a migration, which
+    // moves them too.
+    animeFolderLocked?: () => boolean;
     showItemInFolder: (path: string) => void;
 }
 
@@ -52,11 +55,19 @@ function asString(value: unknown): string {
 export function registerHandlers(deps: HandlerDependencies): void {
     const { ipcMain, settingsStore, historyStore, queue } = deps;
 
+    // A change of the folder of the anime is ignored while it is locked (the rest of the settings is saved as usual).
+    function keepLockedAnimeFolder(input: unknown): unknown {
+        if (!deps.animeFolderLocked?.() || typeof input !== 'object' || input === null) {
+            return input;
+        }
+        return { ...input, animeDownloadDir: settingsStore.get().animeDownloadDir };
+    }
+
     ipcMain.handle(IPC.settingsGet, (): Settings => {
         return settingsStore.get();
     });
     ipcMain.handle(IPC.settingsSave, (_event, input): Settings => {
-        const saved = settingsStore.save(input);
+        const saved = settingsStore.save(keepLockedAnimeFolder(input));
         deps.onSettingsSaved(saved);
         return saved;
     });

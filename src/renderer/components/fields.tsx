@@ -21,10 +21,11 @@ interface TextFieldProps {
     value: string;
     hint?: string;
     placeholder?: string;
+    disabled?: boolean;
     onChange: (value: string) => void;
 }
 
-export function TextField({ label, value, hint, placeholder, onChange }: TextFieldProps) {
+export function TextField({ label, value, hint, placeholder, disabled = false, onChange }: TextFieldProps) {
     return (
         <FieldShell label={label} hint={hint}>
             <input
@@ -33,6 +34,7 @@ export function TextField({ label, value, hint, placeholder, onChange }: TextFie
                 aria-label={label}
                 value={value}
                 placeholder={placeholder}
+                disabled={disabled}
                 onChange={(event) => {
                     onChange(event.target.value);
                 }}

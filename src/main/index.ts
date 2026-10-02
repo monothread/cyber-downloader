@@ -260,6 +260,18 @@ function bootstrap(): void {
             const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
             return result.canceled ? null : (result.filePaths[0] ?? null);
         },
+        // PULLWAVE_MIGRATE_DIR answers the question of which folder to migrate the anime to (used by the end-to-end tests).
+        chooseMigrationFolder: async (startAt) => {
+            if (process.env.PULLWAVE_MIGRATE_DIR) {
+                return process.env.PULLWAVE_MIGRATE_DIR;
+            }
+            const options = { defaultPath: startAt, properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'> };
+            const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+            return result.canceled ? null : (result.filePaths[0] ?? null);
+        },
+        saveAnimeDirectory: (directory) => {
+            settingsStore.save({ ...settingsStore.get(), animeDownloadDir: directory });
+        },
         openFolder: (path) => {
             void shell.openPath(path);
         },
@@ -406,6 +418,9 @@ function bootstrap(): void {
             void manager.sync(settings.closeToTray).then(() => {
                 return manager.rebuild();
             });
+        },
+        animeFolderLocked: () => {
+            return anime !== null && anime.db.list().length > 0;
         },
         chooseDirectory: async () => {
             const options = { properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'> };

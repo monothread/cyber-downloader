@@ -26,7 +26,7 @@ interface Session {
 let session: Session;
 let workDir: string;
 
-async function launch(userData: string, settings: Record<string, unknown> = {}): Promise<Session> {
+async function launch(userData: string, settings: Record<string, unknown> = {}, env: Record<string, string> = {}): Promise<Session> {
     const animeDir = join(workDir, 'anime');
     mkdirSync(userData, { recursive: true });
     writeFileSync(
@@ -37,7 +37,7 @@ async function launch(userData: string, settings: Record<string, unknown> = {}):
         executablePath: ELECTRON_PATH,
         args: [ROOT, '--no-sandbox', `--user-data-dir=${userData}`],
         // The folder the library is rebuilt from is not asked for: there is no way to answer a dialog of the system here.
-        env: { ...process.env, PULLWAVE_ANI_CLI: FAKE_ANI_CLI, PULLWAVE_IMPORT_DIR: animeDir }
+        env: { ...process.env, PULLWAVE_ANI_CLI: FAKE_ANI_CLI, PULLWAVE_IMPORT_DIR: animeDir, ...env }
     });
     const page = await app.firstWindow();
     await page.waitForSelector('.logo');
@@ -117,6 +117,31 @@ test('searches an anime, lists the results and reports when nothing is found', a
     await expect(alert).toHaveAttribute('title', 'No results found!');
 });
 
+test('clears the results when the name is emptied', async () => {
+    const { page } = session;
+    await openAnimeTab(page);
+    await search(page, 'fake');
+    await expect(page.getByText('2 RESULTS')).toBeVisible();
+    await expect(page.locator('.history__title')).toHaveCount(2);
+
+    await page.getByLabel('Anime name').fill('');
+
+    await expect(page.getByText('2 RESULTS')).toBeHidden();
+    await expect(page.locator('.history__title')).toHaveCount(0);
+    await expect(page.getByLabel('Anime name')).toHaveValue('');
+    await expect(page.getByRole('region', { name: 'Search anime' }).getByRole('button', { name: 'SEARCH', exact: true })).toBeDisabled();
+    expect(calls()).toEqual(['sub | fake']);
+});
+
+test('clears the message of a search that found nothing when the name is emptied', async () => {
+    const { page } = session;
+    await openAnimeTab(page);
+    await search(page, 'zzz');
+    await expect(page.getByRole('alert')).toHaveText('Nothing was found for this search.');
+    await page.getByLabel('Anime name').fill('');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
 test('searches with the audio that was picked', async () => {
     const { page } = session;
     await openAnimeTab(page);
@@ -176,7 +201,7 @@ test('downloads an episode with the quality of the settings and shows it in the 
     await expect(page.getByTestId('anime-episode').locator('.history__meta').first()).toHaveText('DOWNLOADED · 19 B');
 });
 
-test('downloads a whole season, as many at a time as the settings allow', async () => {
+test('downloads a whole season, one episode at a time', async () => {
     const { page, animeDir } = session;
     await openAnimeTab(page);
     await openFirstResult(page);
@@ -833,6 +858,181 @@ test('shows the anime settings and saves them', async () => {
         const saved = JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf-8')) as Record<string, unknown>;
         return [saved.animeQuality, saved.animeAudio];
     }).toEqual(['worst', 'dub']);
+});
+
+test('shows the name of the season on its row all the time, without the pointer on it', async () => {
+    const { page } = session;
+    await downloadFirstEpisode(page);
+    await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+    await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+    await page.mouse.move(0, 0);
+
+    const title = page.getByTestId('anime-season').locator('.season__title');
+    await expect(title).toHaveText('Fake Anime');
+    await expect(title).toBeVisible();
+    await expect(title).toHaveCSS('opacity', '1');
+});
+
+test.describe('only anime inside the anime folder', () => {
+    test('does not import a folder that is outside it, and says where the anime have to be', async () => {
+        const { userData, animeDir } = session;
+        const outside = join(workDir, 'outside');
+        mkdirSync(join(outside, 'Bleach', 'Episode 1'), { recursive: true });
+        writeFileSync(join(outside, 'Bleach', 'Episode 1', 'Bleach Episode 1.mp4'), 'abc');
+        await session.app.close();
+
+        session = await launch(userData, {}, { PULLWAVE_IMPORT_DIR: outside });
+        await openAnimeTab(session.page);
+        await session.page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await session.page.getByRole('button', { name: 'IMPORT LIBRARY' }).click();
+
+        const notice = session.page.locator('.toast--error .toast__message');
+        await expect(notice).toHaveText(`Only folders inside the anime folder can be imported: ${animeDir}`);
+        await expect(session.page.getByText('// THE LIBRARY IS EMPTY. SEARCH AN ANIME AND DOWNLOAD AN EPISODE.')).toBeVisible();
+        expect(existsSync(join(outside, 'Bleach', 'Episode 1', 'Bleach Episode 1.mp4'))).toBe(true);
+    });
+
+    test('keeps the folder fixed in the settings while there is anime in the library', async () => {
+        const { page, animeDir, userData } = session;
+        await downloadFirstEpisode(page);
+        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+
+        await expect(page.getByLabel('Anime download folder')).toHaveValue(animeDir);
+        await expect(page.getByLabel('Anime download folder')).toBeDisabled();
+        await expect(page.getByText('With anime in the library, the folder only changes through MIGRATE FOLDER, which moves the files too.')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'BROWSE' }).nth(1)).toBeDisabled();
+        await expect(page.getByRole('button', { name: 'MIGRATE FOLDER' })).toBeEnabled();
+        expect((JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf-8')) as Record<string, unknown>).animeDownloadDir).toBe(animeDir);
+    });
+
+    test('leaves the folder free to change while the library is empty', async () => {
+        const { page } = session;
+        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await expect(page.getByLabel('Anime download folder')).toBeEnabled();
+        await expect(page.getByRole('button', { name: 'BROWSE' }).nth(1)).toBeEnabled();
+        await expect(page.getByRole('button', { name: 'MIGRATE FOLDER' })).toBeEnabled();
+    });
+});
+
+test.describe('migrating the folder of the anime', () => {
+    async function relaunchToMigrateTo(target: string): Promise<void> {
+        const { userData } = session;
+        await session.app.close();
+        session = await launch(userData, {}, { PULLWAVE_MIGRATE_DIR: target });
+    }
+
+    function savedFolder(): unknown {
+        return (JSON.parse(readFileSync(join(session.userData, 'settings.json'), 'utf-8')) as Record<string, unknown>).animeDownloadDir;
+    }
+
+    test('copies everything to the new folder, checks it, points the library and the settings to it and removes the old files', async () => {
+        const { animeDir } = session;
+        await downloadFirstEpisode(session.page);
+        const target = join(workDir, 'migrated');
+        await relaunchToMigrateTo(target);
+        const { page } = session;
+
+        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
+
+        await expect(page.locator('.toast--info .toast__message')).toHaveText(`MIGRATION DONE: 1 EPISODES MOVED TO ${target}`);
+        await expect(page.getByLabel('Anime download folder')).toHaveValue(target);
+        await expect.poll(savedFolder).toBe(target);
+
+        const folder = join(target, 'Fake Anime', 'Season 1', 'Episode 1');
+        expect(readFileSync(join(folder, 'Fake Anime Episode 1.mp4'), 'utf-8')).toBe('FAKEVIDEO0123456789');
+        expect(readFileSync(join(folder, 'Fake Anime Episode 1.vtt'), 'utf-8')).toBe('WEBVTT\n');
+        expect(existsSync(join(folder, 'pullwave.json'))).toBe(true);
+        expect(existsSync(animeDir)).toBe(false);
+
+        await openAnimeTab(page);
+        await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await expect(page.getByText('1/1 DOWNLOADED')).toBeVisible();
+        await expect(page.locator('.missing-mark')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' })).toBeEnabled();
+    });
+
+    test('downloads the next episodes into the new folder', async () => {
+        await downloadFirstEpisode(session.page);
+        const target = join(workDir, 'migrated');
+        await relaunchToMigrateTo(target);
+        const { page } = session;
+        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
+        await expect(page.locator('.toast--info .toast__message')).toHaveText(`MIGRATION DONE: 1 EPISODES MOVED TO ${target}`);
+
+        await openAnimeTab(page);
+        await openFirstResult(page);
+        await page.getByRole('button', { name: 'EP 2', exact: true }).click();
+        await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
+        // The queue lives in memory: after the restart this is its only job.
+        await waitForDownloaded(page, 1);
+
+        expect(existsSync(join(target, 'Fake Anime', 'Season 1', 'Episode 2', 'Fake Anime Episode 2.mp4'))).toBe(true);
+        expect(existsSync(session.animeDir)).toBe(false);
+    });
+
+    test('says so and changes nothing when the folder chosen is the current one', async () => {
+        const { animeDir } = session;
+        await downloadFirstEpisode(session.page);
+        await relaunchToMigrateTo(animeDir);
+        const { page } = session;
+
+        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
+
+        await expect(page.locator('.toast--error .toast__message')).toHaveText('That is already the anime folder.');
+        await expect(page.getByLabel('Anime download folder')).toHaveValue(animeDir);
+        expect(savedFolder()).toBe(animeDir);
+        expect(existsSync(join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1', 'Fake Anime Episode 1.mp4'))).toBe(true);
+    });
+
+    test('says so and changes nothing when the folder chosen is inside the current one', async () => {
+        const { animeDir } = session;
+        await downloadFirstEpisode(session.page);
+        await relaunchToMigrateTo(join(animeDir, 'inner'));
+        const { page } = session;
+
+        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
+
+        await expect(page.locator('.toast--error .toast__message')).toHaveText('Choose a folder that is not inside the current anime folder.');
+        expect(savedFolder()).toBe(animeDir);
+        expect(existsSync(join(animeDir, 'inner'))).toBe(false);
+    });
+
+    test('says so and keeps both folders as they were when a file of the new folder is in the way', async () => {
+        const { animeDir } = session;
+        await downloadFirstEpisode(session.page);
+        const target = join(workDir, 'migrated');
+        const inTheWay = join(target, 'Fake Anime', 'Season 1', 'Episode 1', 'Fake Anime Episode 1.mp4');
+        mkdirSync(join(inTheWay, '..'), { recursive: true });
+        writeFileSync(inTheWay, 'someone else');
+        await relaunchToMigrateTo(target);
+        const { page } = session;
+
+        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
+
+        await expect(page.locator('.toast--error .toast__message')).toHaveText('The new folder already has files where the anime would be copied. Choose another folder.');
+        expect(readFileSync(inTheWay, 'utf-8')).toBe('someone else');
+        expect(readFileSync(join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1', 'Fake Anime Episode 1.mp4'), 'utf-8')).toBe('FAKEVIDEO0123456789');
+        expect(savedFolder()).toBe(animeDir);
+    });
+
+    test('only changes the folder when the library is empty', async () => {
+        const target = join(workDir, 'migrated');
+        await relaunchToMigrateTo(target);
+        const { page } = session;
+
+        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
+
+        await expect(page.locator('.toast--info .toast__message')).toHaveText(`MIGRATION DONE: 0 EPISODES MOVED TO ${target}`);
+        await expect(page.getByLabel('Anime download folder')).toHaveValue(target);
+        await expect.poll(savedFolder).toBe(target);
+    });
 });
 
 test.describe('watching without downloading', () => {

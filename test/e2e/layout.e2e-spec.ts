@@ -151,7 +151,7 @@ test('nothing is cut, misaligned or out of its box on any screen, at any size fr
         }
     };
 
-    // Downloads: some links, one finished, one failed
+    // Downloads: some links, one finished (it says so in a notice and leaves the queue)
     await resize(1366, 768);
     for (const [index, url] of ['https://example.com/ok1', 'https://example.com/ok2', 'https://example.com/ok3'].entries()) {
         if (index > 0) {
@@ -160,7 +160,7 @@ test('nothing is cut, misaligned or out of its box on any screen, at any size fr
         await page.getByLabel(`Link ${index + 1}`, { exact: true }).fill(url);
     }
     await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
-    await expect(page.locator('.badge', { hasText: 'COMPLETE' }).first()).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('.toast--info')).toBeVisible({ timeout: 20000 });
     await sweep('downloads');
     await page.getByRole('button', { name: 'HISTORY', exact: true }).click();
     await sweep('history');

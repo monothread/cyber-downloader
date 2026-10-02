@@ -16,7 +16,7 @@ const SUPPORTED = makeStatus();
 beforeEach(() => {
     mock = installMockApi();
     useAppStore.setState({ ...initialApp, settings: DEFAULT_SETTINGS, notice: null });
-    useAnimeStore.setState({ ...initialAnime, status: UNSUPPORTED_STATUS, updatingCli: false, view: 'search', returnView: 'search', jobs: [], library: [], search: INITIAL_SEARCH, selection: null, playing: null, streaming: null });
+    useAnimeStore.setState({ ...initialAnime, status: UNSUPPORTED_STATUS, updatingCli: false, view: 'search', returnView: 'search', jobs: [], library: [], migration: null, search: INITIAL_SEARCH, selection: null, playing: null, streaming: null });
 });
 
 describe('effectiveAudio', () => {
@@ -81,7 +81,7 @@ describe('init', () => {
         });
 
         dispose();
-        expect(mock.unsubscribers).toHaveLength(2);
+        expect(mock.unsubscribers).toHaveLength(3);
         mock.unsubscribers.forEach((unsubscribe) => {
             expect(unsubscribe).toHaveBeenCalledTimes(1);
         });
@@ -190,6 +190,57 @@ describe('simple setters', () => {
         expect(useAnimeStore.getState().playing).toEqual({ animeId: 3, episodeId: 7 });
         useAnimeStore.getState().closePlayer();
         expect(useAnimeStore.getState().playing).toBeNull();
+    });
+});
+
+describe('setQuery with an empty name', () => {
+    const ERROR = { code: 'NO_RESULTS' as const, raw: 'No results found!' };
+
+    it('clears the results of the last search', () => {
+        useAnimeStore.setState({ search: { ...INITIAL_SEARCH, query: 'naruto', status: 'done', results: [RESULT], searchedQuery: 'naruto', searchedAudio: 'dub' } });
+        useAnimeStore.getState().setQuery('');
+        expect(useAnimeStore.getState().search).toEqual({ ...INITIAL_SEARCH, query: '', status: 'idle', results: [], error: null, searchedQuery: 'naruto', searchedAudio: 'dub' });
+    });
+
+    it('clears the error of the last search', () => {
+        useAnimeStore.setState({ search: { ...INITIAL_SEARCH, query: 'zzz', status: 'error', error: ERROR } });
+        useAnimeStore.getState().setQuery('');
+        expect(useAnimeStore.getState().search).toMatchObject({ query: '', status: 'idle', results: [], error: null });
+    });
+
+    it('clears them for a name of spaces only', () => {
+        useAnimeStore.setState({ search: { ...INITIAL_SEARCH, query: 'naruto', status: 'done', results: [RESULT] } });
+        useAnimeStore.getState().setQuery('   ');
+        expect(useAnimeStore.getState().search).toMatchObject({ query: '   ', status: 'idle', results: [] });
+    });
+
+    it('keeps the audio that was picked', () => {
+        useAnimeStore.setState({ search: { ...INITIAL_SEARCH, query: 'naruto', audio: 'dub', status: 'done', results: [RESULT] } });
+        useAnimeStore.getState().setQuery('');
+        expect(useAnimeStore.getState().search.audio).toBe('dub');
+    });
+
+    it('keeps the results while the name is not empty', () => {
+        useAnimeStore.setState({ search: { ...INITIAL_SEARCH, query: 'naruto', status: 'done', results: [RESULT] } });
+        useAnimeStore.getState().setQuery('naru');
+        expect(useAnimeStore.getState().search).toMatchObject({ query: 'naru', status: 'done', results: [RESULT] });
+    });
+
+    it('does not show the answer of a search that was running when the name was emptied', async () => {
+        let answer: (response: { ok: true; results: typeof RESULT[] }) => void = () => {
+            return;
+        };
+        mock.api.searchAnime.mockReturnValue(
+            new Promise((resolve) => {
+                answer = resolve;
+            })
+        );
+        useAnimeStore.getState().setQuery('naruto');
+        const running = useAnimeStore.getState().runSearch();
+        useAnimeStore.getState().setQuery('');
+        answer({ ok: true, results: [RESULT] });
+        await running;
+        expect(useAnimeStore.getState().search).toMatchObject({ query: '', status: 'idle', results: [] });
     });
 });
 
@@ -387,6 +438,82 @@ describe('importLibrary', () => {
         await useAnimeStore.getState().importLibrary();
         expect(mock.api.listAnimeLibrary).not.toHaveBeenCalled();
         expect(useAppStore.getState().notice).toBeNull();
+    });
+
+    it('says the folder has to be inside the anime folder, and changes nothing, when it is outside', async () => {
+        mock.api.importAnimeLibrary.mockResolvedValue({ ok: false, reason: 'outside', folder: '/media/anime' });
+        await useAnimeStore.getState().importLibrary();
+        expect(mock.api.listAnimeLibrary).not.toHaveBeenCalled();
+        expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'Only folders inside the anime folder can be imported: /media/anime' });
+    });
+});
+
+describe('migrateFolder', () => {
+    it('asks the app to migrate, reads the library again and says how many episodes were moved', async () => {
+        const anime = makeAnime([makeEpisode({ id: 1 })]);
+        const moved = { ok: true as const, episodes: 5, files: 12, destination: '/new/anime' };
+        mock.api.migrateAnimeFolder.mockResolvedValue(moved);
+        mock.api.listAnimeLibrary.mockResolvedValue([anime]);
+
+        expect(await useAnimeStore.getState().migrateFolder()).toEqual(moved);
+
+        expect(mock.api.migrateAnimeFolder).toHaveBeenCalledTimes(1);
+        expect(useAnimeStore.getState().library).toEqual([anime]);
+        expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'MIGRATION DONE: 5 EPISODES MOVED TO /new/anime' });
+        expect(useAnimeStore.getState().migration).toBeNull();
+    });
+
+    it('shows the migration as running (from zero) while it waits for the answer, and not after', async () => {
+        let finish: (response: { ok: false; reason: 'cancelled' }) => void = () => {
+            return;
+        };
+        mock.api.migrateAnimeFolder.mockReturnValue(
+            new Promise((resolve) => {
+                finish = resolve;
+            })
+        );
+        const running = useAnimeStore.getState().migrateFolder();
+        expect(useAnimeStore.getState().migration).toEqual({ done: 0, total: 0 });
+        finish({ ok: false, reason: 'cancelled' });
+        await running;
+        expect(useAnimeStore.getState().migration).toBeNull();
+    });
+
+    it('follows the progress the app reports, once the store is listening', async () => {
+        mock.api.getAnimeStatus.mockResolvedValue(SUPPORTED);
+        await useAnimeStore.getState().init();
+        mock.emitAnimeMigrationProgress({ done: 2, total: 9 });
+        expect(useAnimeStore.getState().migration).toEqual({ done: 2, total: 9 });
+        mock.emitAnimeMigrationProgress({ done: 9, total: 9 });
+        expect(useAnimeStore.getState().migration).toEqual({ done: 9, total: 9 });
+    });
+
+    it('says nothing and does not read the library when the user gives up', async () => {
+        useAppStore.setState({ notice: null });
+        mock.api.migrateAnimeFolder.mockResolvedValue({ ok: false, reason: 'cancelled' });
+        expect(await useAnimeStore.getState().migrateFolder()).toEqual({ ok: false, reason: 'cancelled' });
+        expect(mock.api.listAnimeLibrary).not.toHaveBeenCalled();
+        expect(useAppStore.getState().notice).toBeNull();
+    });
+
+    it.each([
+        ['busy', 'A download or a migration is running. Wait for it to finish.'],
+        ['same', 'That is already the anime folder.'],
+        ['inside', 'Choose a folder that is not inside the current anime folder.'],
+        ['conflict', 'The new folder already has files where the anime would be copied. Choose another folder.'],
+        ['failed', 'The migration failed. What was copied was removed and nothing changed.']
+    ] as const)('says why it did not happen when the app answers %s', async (reason, message) => {
+        mock.api.migrateAnimeFolder.mockResolvedValue({ ok: false, reason });
+        expect(await useAnimeStore.getState().migrateFolder()).toEqual({ ok: false, reason });
+        expect(mock.api.listAnimeLibrary).not.toHaveBeenCalled();
+        expect(useAppStore.getState().notice).toEqual({ kind: 'error', message });
+        expect(useAnimeStore.getState().migration).toBeNull();
+    });
+
+    it('stops showing the migration as running when the app fails', async () => {
+        mock.api.migrateAnimeFolder.mockRejectedValue(new Error('boom'));
+        await expect(useAnimeStore.getState().migrateFolder()).rejects.toThrow('boom');
+        expect(useAnimeStore.getState().migration).toBeNull();
     });
 });
 

@@ -171,7 +171,23 @@ export interface AnimeImportSummary {
     ignored: number;
 }
 
-export type AnimeImportResponse = ({ ok: true } & AnimeImportSummary) | { ok: false; reason: 'cancelled' };
+// An anime that is not inside the folder of the settings is not accepted: `folder` is the one all the anime have to be in.
+export type AnimeImportResponse = ({ ok: true } & AnimeImportSummary) | { ok: false; reason: 'cancelled' } | { ok: false; reason: 'outside'; folder: string };
+
+// How far the copy of the files into the new folder is: the files that were copied out of all the ones that have to be.
+export interface AnimeMigrationProgress {
+    done: number;
+    total: number;
+}
+
+// Why the folder of the anime was not migrated: the user gave up, a download or another migration is running, the folder
+// chosen is the current one or is inside it, a file of the new folder is in the way, or something failed while copying (what was
+// copied is then removed and nothing changes).
+export type AnimeMigrationFailure = 'cancelled' | 'busy' | 'same' | 'inside' | 'conflict' | 'failed';
+
+export type AnimeMigrationResponse =
+    | { ok: true; episodes: number; files: number; destination: string }
+    | { ok: false; reason: AnimeMigrationFailure };
 
 export const MAX_SUBTITLE_BYTES = 5 * 1024 * 1024;
 

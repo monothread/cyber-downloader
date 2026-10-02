@@ -40,7 +40,7 @@ const JOB: DownloadJob = {
     id: 'j1', url: 'https://x.com/a', status: 'queued', title: null, percent: 0, speed: '', eta: '', filePath: null, error: null, createdAt: 1, pageUrl: null, live: false, elapsedSeconds: 0, downloadedBytes: 0, hasPartial: false, customized: false, waitingForLive: false, endCheck: null, merging: false, saving: false, postProcess: null
 };
 
-function setup() {
+function setup(animeFolderLocked?: () => boolean) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
     const ipcMain: IpcMainLike = {
         handle: (channel, listener) => {
@@ -99,7 +99,7 @@ function setup() {
         getCandidate: vi.fn()
     };
     const resolver = new BinaryResolver({ bundledDir: '/b', userBinDir: '/u' });
-    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, refreshTraySupport, browserCatalog: browserCatalog as unknown as BrowserCatalog, onSettingsSaved, streamFinder: streamFinder as unknown as StreamFinder, sendStreamProgress, chooseDirectory, showItemInFolder });
+    registerHandlers({ ipcMain, settingsStore, historyStore, queue: queue as unknown as QueueManager, resolver, appUpdates: appUpdates as unknown as AppUpdateService, refreshTraySupport, browserCatalog: browserCatalog as unknown as BrowserCatalog, onSettingsSaved, streamFinder: streamFinder as unknown as StreamFinder, sendStreamProgress, chooseDirectory, showItemInFolder, animeFolderLocked });
     const call = (channel: string, ...args: unknown[]): unknown => {
         const handler = handlers.get(channel);
         if (!handler) {
@@ -127,6 +127,60 @@ describe('registerHandlers', () => {
         expect(call(IPC.settingsGet)).toEqual(DEFAULT_SETTINGS);
         expect(call(IPC.settingsSave, { ...DEFAULT_SETTINGS, maxTitleLength: 5000 })).toEqual({ ...DEFAULT_SETTINGS, maxTitleLength: 200 });
         expect(call(IPC.settingsGet)).toEqual({ ...DEFAULT_SETTINGS, maxTitleLength: 200 });
+    });
+
+    describe('the folder of the anime', () => {
+        it('changes freely while it is not locked', () => {
+            const { call } = setup(() => {
+                return false;
+            });
+            expect((call(IPC.settingsSave, { ...DEFAULT_SETTINGS, animeDownloadDir: '/first' }) as { animeDownloadDir: string }).animeDownloadDir).toBe('/first');
+            expect((call(IPC.settingsSave, { ...DEFAULT_SETTINGS, animeDownloadDir: '/second' }) as { animeDownloadDir: string }).animeDownloadDir).toBe('/second');
+        });
+
+        it('changes freely where there is no anime section at all', () => {
+            const { call } = setup();
+            expect((call(IPC.settingsSave, { ...DEFAULT_SETTINGS, animeDownloadDir: '/first' }) as { animeDownloadDir: string }).animeDownloadDir).toBe('/first');
+        });
+
+        it('stays as it is while it is locked, and the rest of the settings is saved as usual', () => {
+            let locked = false;
+            const { call, settingsStore, onSettingsSaved } = setup(() => {
+                return locked;
+            });
+            call(IPC.settingsSave, { ...DEFAULT_SETTINGS, animeDownloadDir: '/library' });
+            locked = true;
+
+            const saved = call(IPC.settingsSave, { ...DEFAULT_SETTINGS, animeDownloadDir: '/elsewhere', closeToTray: true, animeQuality: '720p' });
+
+            expect(saved).toEqual({ ...DEFAULT_SETTINGS, animeDownloadDir: '/library', closeToTray: true, animeQuality: '720p' });
+            expect(settingsStore.get()).toEqual({ ...DEFAULT_SETTINGS, animeDownloadDir: '/library', closeToTray: true, animeQuality: '720p' });
+            expect(onSettingsSaved).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, animeDownloadDir: '/library', closeToTray: true, animeQuality: '720p' });
+        });
+
+        it('stays empty (the default folder) while it is locked', () => {
+            const { call } = setup(() => {
+                return true;
+            });
+            expect((call(IPC.settingsSave, { ...DEFAULT_SETTINGS, animeDownloadDir: '/elsewhere' }) as { animeDownloadDir: string }).animeDownloadDir).toBe('');
+        });
+
+        it('is read again every time, so it is free once the library is empty', () => {
+            let locked = true;
+            const { call } = setup(() => {
+                return locked;
+            });
+            expect((call(IPC.settingsSave, { ...DEFAULT_SETTINGS, animeDownloadDir: '/a' }) as { animeDownloadDir: string }).animeDownloadDir).toBe('');
+            locked = false;
+            expect((call(IPC.settingsSave, { ...DEFAULT_SETTINGS, animeDownloadDir: '/a' }) as { animeDownloadDir: string }).animeDownloadDir).toBe('/a');
+        });
+
+        it('ignores an input that is not an object, as it always did', () => {
+            const { call } = setup(() => {
+                return true;
+            });
+            expect(call(IPC.settingsSave, null)).toEqual(DEFAULT_SETTINGS);
+        });
     });
 
     it('notifies the app with the sanitized settings after saving', () => {

@@ -210,7 +210,7 @@ describe('App theme', () => {
         expect(window.localStorage.getItem('cyber-dl-theme')).toBe('cyberpunk');
     });
 
-    it('makes the neon follow the mouse only in the cyberpunk theme', async () => {
+    it('does not make a neon follow the mouse in the cyberpunk theme', async () => {
         mock.api.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS, theme: 'cyberpunk' });
         render(<App />);
         await screen.findByLabelText('Link 1');
@@ -220,9 +220,10 @@ describe('App theme', () => {
                 window.requestAnimationFrame(resolve);
             });
         });
-        expect(document.documentElement.style.getPropertyValue('--mx')).toBe('33px');
-        expect(document.documentElement.style.getPropertyValue('--my')).toBe('44px');
-        expect(document.documentElement.getAttribute('data-glow')).toBe('on');
+        expect(document.documentElement.dataset.theme).toBe('cyberpunk');
+        expect(document.documentElement.style.getPropertyValue('--mx')).toBe('');
+        expect(document.documentElement.style.getPropertyValue('--my')).toBe('');
+        expect(document.documentElement.getAttribute('data-glow')).toBeNull();
     });
 
     it('does not follow the mouse in the dark theme', async () => {
@@ -288,7 +289,7 @@ describe('App anime section', () => {
         const { unmount } = render(<App />);
         await screen.findByRole('button', { name: 'ANIME' });
         unmount();
-        expect(mock.unsubscribers).toHaveLength(7);
+        expect(mock.unsubscribers).toHaveLength(8);
         mock.unsubscribers.forEach((unsubscribe) => {
             expect(unsubscribe).toHaveBeenCalledTimes(1);
         });

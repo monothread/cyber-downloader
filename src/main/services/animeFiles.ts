@@ -95,6 +95,14 @@ export function seriesFolderOf(animeFolder: string, platform: NodeJS.Platform = 
     return new RegExp(`^${SEASON_FOLDER_PREFIX}\\d+$`).test(path.basename(animeFolder)) ? path.dirname(animeFolder) : null;
 }
 
+// Whether a path is the folder `parent` or something inside it (the paths follow the rules of the system the files are on).
+export function isInsideDirectory(child: string, parent: string, platform: NodeJS.Platform = process.platform): boolean {
+    const path = pathFor(platform);
+    const relative = path.relative(path.resolve(parent), path.resolve(child));
+    const leavesParent = relative === '..' || relative.startsWith(`..${path.sep}`);
+    return !leavesParent && !path.isAbsolute(relative);
+}
+
 // How long the folder of an anime may be so that its files (named after the whole title, which ani-cli decides, inside the
 // folder of the episode) stay inside the path limit of Windows. Elsewhere the limit is the usual one.
 export function folderNameBudget(baseDir: string, title: string, platform: NodeJS.Platform = process.platform, extraLevels = 0): number {

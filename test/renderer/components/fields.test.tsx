@@ -19,6 +19,16 @@ describe('TextField', () => {
         render(<TextField label="Folder" value="" onChange={vi.fn()} />);
         expect(document.querySelector('.field__hint')).toBeNull();
     });
+
+    it('is enabled by default and can be disabled, when it does not report changes', async () => {
+        const onChange = vi.fn();
+        const { rerender } = render(<TextField label="Folder" value="abc" onChange={onChange} />);
+        expect(screen.getByLabelText('Folder')).toBeEnabled();
+        rerender(<TextField label="Folder" value="abc" disabled onChange={onChange} />);
+        expect(screen.getByLabelText('Folder')).toBeDisabled();
+        await userEvent.setup().type(screen.getByLabelText('Folder'), 'd');
+        expect(onChange).not.toHaveBeenCalled();
+    });
 });
 
 describe('NumberField', () => {

@@ -40,6 +40,7 @@ export const IPC = {
     animeOpenFolder: 'anime:open-folder',
     animeSetSeries: 'anime:set-series',
     animeImportLibrary: 'anime:import-library',
+    animeMigrateFolder: 'anime:migrate-folder',
     animeProgress: 'anime:progress',
     animeSubtitles: 'anime:subtitles',
     animeSubtitleImport: 'anime:subtitle-import',
@@ -48,6 +49,7 @@ export const IPC = {
     animeStreamClose: 'anime:stream-close',
     eventAnimeJob: 'event:anime-job',
     eventAnimeLibrary: 'event:anime-library',
+    eventAnimeMigration: 'event:anime-migration',
     eventJobUpdate: 'event:job-update',
     eventJobRemoved: 'event:job-removed',
     eventHistoryChanged: 'event:history-changed',
@@ -68,8 +70,8 @@ export const MIN_TITLE_LENGTH = 20;
 export const MAX_TITLE_LENGTH = 200;
 export const MIN_LIVE_END_CHECK_SECONDS = 1;
 export const MAX_LIVE_END_CHECK_SECONDS = 120;
-export const MIN_CONCURRENT = 1;
-export const MAX_CONCURRENT = 5;
+// Downloads run one at a time: this is not a setting.
+export const CONCURRENT_DOWNLOADS = 1;
 
 export const DEFAULT_SETTINGS: Settings = {
     downloadDir: '',
@@ -90,7 +92,7 @@ export const DEFAULT_SETTINGS: Settings = {
     autoSubtitles: false,
     embedSubtitles: false,
     rateLimit: '',
-    maxConcurrent: 2,
+    maxConcurrent: CONCURRENT_DOWNLOADS,
     ytdlpPath: '',
     ffmpegPath: '',
     jsRuntime: '',

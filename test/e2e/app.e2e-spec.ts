@@ -80,6 +80,24 @@ async function submitUrl(page: Page, url: string): Promise<void> {
     await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
 }
 
+// A download that is complete says so for a few seconds and leaves the queue (it stays in the history): the history is what tells
+// how many have finished.
+async function expectDownloadsComplete(page: Page, count = 1, timeout = 20000): Promise<void> {
+    await expect
+        .poll(
+            async () => {
+                const history = await page.evaluate(() => {
+                    return (window as unknown as { api: { listHistory: () => Promise<Array<{ status: string }>> } }).api.listHistory();
+                });
+                return history.filter((entry) => {
+                    return entry.status === 'done';
+                }).length;
+            },
+            { timeout }
+        )
+        .toBeGreaterThanOrEqual(count);
+}
+
 function readSettings(userData: string): Record<string, unknown> {
     return JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf-8')) as Record<string, unknown>;
 }
@@ -122,7 +140,7 @@ test.describe('bundled binaries', () => {
     test('passes the bundled ffmpeg folder to yt-dlp and puts the bundled folder first in PATH', async () => {
         const { page, logPath } = session;
         await submitUrl(page, 'https://example.com/ok');
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(page);
         const args = readCalls(logPath).find((call) => {
             return call.includes('--no-playlist');
         }) ?? [];
@@ -131,15 +149,18 @@ test.describe('bundled binaries', () => {
     });
 });
 
-test('downloads a video, shows progress completion and records history', async () => {
+test('downloads a video, says it is complete for three seconds, removes its card and records history', async () => {
     const { page, downloadDir, logPath } = session;
     await submitUrl(page, 'https://example.com/watch?v=ok');
 
-    const card = page.getByTestId('job-card');
-    await expect(card.locator('.job__title')).toHaveText('Fake Video');
-    await expect(card.locator('.badge')).toHaveText('COMPLETE');
-    await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
-    await expect(card.getByRole('button', { name: 'SHOW FILE' })).toBeVisible();
+    const notice = page.locator('.toast--info .toast__message');
+    await expect(notice).toHaveText('Download complete: Fake Video');
+    await expect(page.locator('.toast--info')).toHaveAttribute('role', 'status');
+    await expect(page.getByTestId('job-card')).toHaveCount(0);
+    await expect(page.getByText('// NO ACTIVE DOWNLOADS. JACK IN A URL ABOVE.')).toBeVisible();
+    const shownAt = Date.now();
+    await expect(notice).toBeHidden({ timeout: 5000 });
+    expect(Date.now() - shownAt).toBeGreaterThan(1500);
 
     const calls = readCalls(logPath).filter((args) => {
         return !args.includes('--version');
@@ -157,6 +178,46 @@ test('downloads a video, shows progress completion and records history', async (
     await expect(item).toContainText('COMPLETE');
 });
 
+test('says each completion in turn, three seconds each, when downloads finish together', async () => {
+    const { page } = session;
+    await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/ok1');
+    await page.getByRole('button', { name: '+ ADD LINK' }).click();
+    await page.getByLabel('Link 2', { exact: true }).fill('https://example.com/ok2');
+    await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
+
+    const notice = page.locator('.toast--info .toast__message');
+    await expect(notice).toHaveText('Download complete: Fake Video');
+    const shownAt = Date.now();
+    await expectDownloadsComplete(page, 2);
+    await expect(page.getByTestId('job-card')).toHaveCount(0);
+    // One notice at a time: the second one waits for the first, so the two take about six seconds.
+    await expect(notice).toBeHidden({ timeout: 10000 });
+    expect(Date.now() - shownAt).toBeGreaterThan(4500);
+    await page.getByRole('button', { name: 'HISTORY' }).click();
+    await expect(page.locator('.history__item--done')).toHaveCount(2);
+});
+
+test('does not offer simultaneous downloads in the settings and always runs one at a time', async () => {
+    const stale = await launch({ settings: { maxConcurrent: 4 } });
+    try {
+        const { page, userData } = stale;
+        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await expect(page.locator('.settings legend', { hasText: 'ADVANCED' })).toBeVisible();
+        await expect(page.getByLabel('Simultaneous downloads')).toHaveCount(0);
+        await expect(page.getByText('Simultaneous downloads')).toHaveCount(0);
+
+        // Saving anything writes the fixed value, whatever the file had.
+        await page.getByLabel('Speed limit').fill('2M');
+        await expect.poll(() => {
+            return readSettings(userData).rateLimit;
+        }).toBe('2M');
+        expect(readSettings(userData).maxConcurrent).toBe(1);
+    } finally {
+        await stale.app.close();
+        rmSync(resolve(stale.userData, '..'), { recursive: true, force: true });
+    }
+});
+
 test('shows what yt-dlp is doing to the downloaded file until it is ready', async () => {
     const { page, logPath } = session;
     await submitUrl(page, 'https://example.com/convert');
@@ -168,10 +229,9 @@ test('shows what yt-dlp is doing to the downloaded file until it is ready', asyn
     await expect(card.getByRole('progressbar', { name: 'Processing the downloaded file' })).toBeVisible();
     await expect(card.getByRole('button')).toHaveCount(0);
     await expect(card.getByText('Moving the file to the folder')).toBeVisible();
-    await expect(card.locator('.badge')).toHaveText('COMPLETE');
-    await expect(card).not.toHaveClass(/job--processing/);
-    await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
-    await expect(card.getByRole('button', { name: 'SHOW FILE' })).toBeVisible();
+    await expectDownloadsComplete(page);
+    await expect(page.locator('.toast--info .toast__message')).toHaveText('Download complete: Fake Video');
+    await expect(card).toHaveCount(0);
 
     const args = lastYtdlpCall(logPath, 'convert');
     expect(args).toContain('postprocess:CYBERPP|%(progress.status)s|%(progress.postprocessor)s');
@@ -229,7 +289,7 @@ test('shows the error on the link row for an invalid URL, keeps it for editing a
     await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/ok');
     await expect(page.getByRole('alert')).toHaveCount(0);
     await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
-    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+    await expectDownloadsComplete(page);
 });
 
 test('explains an HTTP 403 in plain words, keeps the raw error on demand and does not offer FIND STREAM', async () => {
@@ -263,7 +323,7 @@ test('adds several links with the add button, queues them all and resets the row
     await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
 
     await expect(page.getByTestId('job-card')).toHaveCount(3);
-    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(3);
+    await expectDownloadsComplete(page, 3);
     await expect(page.getByLabel('Link 1', { exact: true })).toHaveValue('');
     await expect(page.getByLabel('Link 2', { exact: true })).toHaveCount(0);
 });
@@ -311,7 +371,7 @@ test('handles a very long link without resizing the field or overflowing the pag
     await expect(field).toHaveValue(longUrl);
 
     await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
-    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+    await expectDownloadsComplete(page);
     const after = await field.boundingBox();
     expect(after?.width).toBe(before?.width);
     expect(after?.height).toBe(before?.height);
@@ -373,7 +433,7 @@ test('persists edited settings to disk and passes them to yt-dlp', async () => {
 
     await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
     await submitUrl(page, 'https://example.com/ok');
-    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+    await expectDownloadsComplete(page);
     const args = readCalls(logPath).find((call) => {
         return call.includes('--yes-playlist');
     }) ?? [];
@@ -395,7 +455,7 @@ test('auto-generated subtitles are saved and passed to yt-dlp together with the 
 
     await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
     await submitUrl(page, 'https://example.com/ok');
-    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+    await expectDownloadsComplete(page);
     const args = readCalls(logPath).find((call) => {
         return call.includes('--write-auto-subs');
     }) ?? [];
@@ -416,7 +476,7 @@ test('embedding subtitles passes --embed-subs instead of --write-subs so no sepa
 
     await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
     await submitUrl(page, 'https://example.com/ok');
-    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+    await expectDownloadsComplete(page);
     const args = readCalls(logPath).find((call) => {
         return call.includes('--embed-subs');
     }) ?? [];
@@ -632,7 +692,7 @@ test.describe('browser detection', () => {
 
         await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
         await submitUrl(page, 'https://example.com/ok');
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(page);
         const args = readCalls(logPath).find((call) => {
             return call.includes('--cookies-from-browser');
         }) ?? [];
@@ -658,7 +718,7 @@ test.describe('browser detection', () => {
 
         await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
         await submitUrl(page, 'https://example.com/ok');
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(page);
         const args = readCalls(logPath).find((call) => {
             return call.includes('--cookies-from-browser');
         }) ?? [];
@@ -706,7 +766,7 @@ test.describe('browser detection', () => {
         const originDir = addChromiumBrowser(fakeHome, ORIGIN_FOLDER);
         own = await launchOnFakeHome({ useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: originDir, cookiesProfile: 'Default' });
         await submitUrl(own.page, 'https://example.com/ok');
-        await expect(own.page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(own.page);
         const args = readCalls(own.logPath).find((call) => {
             return call.includes('--cookies-from-browser');
         }) ?? [];
@@ -757,7 +817,7 @@ test('audio-only quick toggle switches to audio extraction', async () => {
     const { page, logPath } = session;
     await page.getByLabel('AUDIO ONLY').check();
     await submitUrl(page, 'https://example.com/ok');
-    await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+    await expectDownloadsComplete(page);
     const args = readCalls(logPath).find((call) => {
         return call.includes('-x');
     }) ?? [];
@@ -825,54 +885,32 @@ test.describe('themes', () => {
         }).toBe('dark');
     });
 
-    async function glowOf(page: Page): Promise<{ attribute: string | null; x: string; y: string; opacity: string; image: string }> {
+    // The layer that used to draw a neon glow after the mouse is gone: nothing marks the page, and the layer is not drawn.
+    async function glowOf(page: Page): Promise<{ attribute: string | null; x: string; y: string; layer: string; image: string }> {
         return page.evaluate(() => {
             const root = document.documentElement;
-            const glow = getComputedStyle(document.body, '::before');
+            const layer = getComputedStyle(document.body, '::before');
             return {
                 attribute: root.getAttribute('data-glow'),
                 x: root.style.getPropertyValue('--mx'),
                 y: root.style.getPropertyValue('--my'),
-                opacity: glow.opacity,
-                image: glow.backgroundImage
+                layer: layer.content,
+                image: layer.backgroundImage
             };
         });
     }
 
-    test('the cyberpunk theme has a neon glow that follows the mouse and the other themes do not', async () => {
+    test('no theme has a neon glow that follows the mouse, the cyberpunk one included', async () => {
         const { page } = session;
         await page.getByRole('button', { name: 'SETTINGS' }).click();
-        await page.getByLabel('Theme').selectOption('cyberpunk');
-        await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
-        expect(await glowOf(page)).toMatchObject({ attribute: null, opacity: '0' });
-
-        await page.mouse.move(300, 200);
-        await expect(page.locator('html')).toHaveAttribute('data-glow', 'on');
-        await expect.poll(() => {
-            return glowOf(page).then((glow) => {
-                return [glow.x, glow.y, glow.opacity];
-            });
-        }).toEqual(['300px', '200px', '1']);
-        const glow = await glowOf(page);
-        expect(glow.image).toContain('radial-gradient');
-        expect(glow.image).toContain('rgba(0, 240, 255, 0.2)');
-        expect(glow.image).toContain('rgba(255, 43, 214, 0.14)');
-
-        await page.mouse.move(640, 480);
-        await expect.poll(() => {
-            return glowOf(page).then((moved) => {
-                return [moved.x, moved.y];
-            });
-        }).toEqual(['640px', '480px']);
-
-        await page.getByLabel('Theme').selectOption('dark');
-        await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-        await page.mouse.move(100, 100);
-        await expect.poll(() => {
-            return glowOf(page).then((off) => {
-                return [off.attribute, off.x, off.opacity];
-            });
-        }).toEqual([null, '', '0']);
+        for (const theme of ['cyberpunk', 'dark', 'light']) {
+            await page.getByLabel('Theme').selectOption(theme);
+            await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+            await page.mouse.move(300, 200);
+            await page.mouse.move(640, 480);
+            await page.waitForTimeout(200);
+            expect(await glowOf(page)).toEqual({ attribute: null, x: '', y: '', layer: 'none', image: 'none' });
+        }
     });
 
     test('a fixed theme ignores the system mode', async () => {
@@ -1143,15 +1181,14 @@ test.describe('options for one download', () => {
         await expect(page.getByRole('button', { name: 'Options for link 1' })).toHaveClass(/btn--ghost/);
         await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
 
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(2);
+        await expectDownloadsComplete(page, 2);
         const plain = lastYtdlpCall(logPath, 'v=plain');
         const custom = lastYtdlpCall(logPath, 'v=custom');
         expect(formatOf(plain)).toBe('bv*+ba/b');
         expect(containerOf(plain)).toBe('mp4');
         expect(formatOf(custom)).toBe('bv*[height<=720]+ba/b[height<=720]');
         expect(containerOf(custom)).toBe('mkv');
-        await expect(page.getByTestId('job-card')).toHaveCount(2);
-        await expect(page.getByText('CUSTOM', { exact: true })).toHaveCount(1);
+        await expect(page.getByTestId('job-card')).toHaveCount(0);
         expect(readSettings(userData).maxResolution ?? 'best').toBe('best');
         expect(readSettings(userData).videoContainer ?? 'mp4').toBe('mp4');
         expect(readSettings(userData).audioOnly ?? false).toBe(false);
@@ -1168,7 +1205,7 @@ test.describe('options for one download', () => {
         await dialog.getByLabel('Audio format').selectOption('opus');
         await dialog.getByRole('button', { name: 'APPLY' }).click();
         await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(1);
+        await expectDownloadsComplete(page, 1);
         const args = lastYtdlpCall(logPath, 'v=music');
         expect(args).toEqual(expect.arrayContaining(['-x', '--audio-format', 'opus']));
         expect(args).not.toContain('--merge-output-format');
@@ -1182,7 +1219,7 @@ test.describe('options for one download', () => {
         await dialog.getByLabel('Video container').selectOption('mkv');
         await dialog.getByRole('button', { name: 'APPLY' }).click();
         await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(1);
+        await expectDownloadsComplete(page, 1);
         const args = lastYtdlpCall(logPath, 'v=follow');
         expect(formatOf(args)).toBe('bv*[height<=1080]+ba/b[height<=1080]');
         expect(containerOf(args)).toBe('mkv');
@@ -1229,7 +1266,7 @@ test.describe('options for one download', () => {
         expect(readSettings(userData).waitForLive ?? false).toBe(false);
         await expect(card.locator('.badge').filter({ hasText: 'RECORDING' })).toBeVisible({ timeout: 10000 });
         await card.getByRole('button', { name: 'STOP & SAVE' }).click();
-        await expect(card.locator('.badge').filter({ hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(page);
     });
 
     test('checks the end of one live stream with its own seconds while the settings keep the check off', async () => {
@@ -1246,7 +1283,7 @@ test.describe('options for one download', () => {
 
         const card = page.getByTestId('job-card');
         await expect(card.locator('.badge').filter({ hasText: 'VERIFYING END' })).toBeVisible();
-        await expect(card.locator('.badge').filter({ hasText: 'COMPLETE' })).toBeVisible({ timeout: 12000 });
+        await expectDownloadsComplete(page, 1, 12000);
         expect(readSettings(userData).verifyLiveEnd).toBe(false);
         expect(readSettings(userData).verifyLiveEndSeconds ?? 10).toBe(10);
     });
@@ -1298,7 +1335,7 @@ test.describe('folder for one download', () => {
         await expect(page.getByText(`Saving to: ${otherFolder}`)).toBeVisible();
         await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
 
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toHaveCount(2);
+        await expectDownloadsComplete(page, 2);
         const pathOf = (args: string[]): string => {
             return args[args.indexOf('-P') + 1] ?? '';
         };
@@ -1339,7 +1376,7 @@ test.describe('folder for one download', () => {
         await page.getByRole('button', { name: 'Choose folder for link 1' }).click();
         await expect(page.getByText(/Saving to:/)).toHaveCount(0);
         await page.getByRole('button', { name: 'DOWNLOAD', exact: true }).click();
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(page);
         const args = lastYtdlpCall(logPath, 'v=plain');
         expect(args[args.indexOf('-P') + 1]).toBe(downloadDir);
     });
@@ -1750,8 +1787,8 @@ test.describe('live streams', () => {
         await expect(card.getByText(/^\d\d:\d\d$/)).toBeVisible();
 
         await card.getByRole('button', { name: 'STOP & SAVE' }).click();
-        await expect(card.locator('.badge')).toHaveText('COMPLETE');
-        await expect(card.getByRole('button', { name: 'SHOW FILE' })).toBeVisible();
+        await expectDownloadsComplete(page);
+        await expect(card).toHaveCount(0);
         expect(existsSync(join(downloadDir, 'Live Show [abc].mp4'))).toBe(true);
         expect(existsSync(join(downloadDir, 'Live Show [abc].mp4.part'))).toBe(false);
 
@@ -1790,7 +1827,7 @@ test.describe('live streams', () => {
 
         await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
         await submitUrl(page, 'https://example.com/watch?v=live-settings');
-        await expect(page.getByTestId('job-card').locator('.badge')).toHaveText('COMPLETE');
+        await expectDownloadsComplete(page);
         const args = lastYtdlpCall(logPath, 'live-settings');
         expect(args).toContain('--wait-for-video');
         expect(args[args.indexOf('--wait-for-video') + 1]).toBe('30');
@@ -1800,7 +1837,7 @@ test.describe('live streams', () => {
     test('live options are not passed by default', async () => {
         const { page, logPath } = session;
         await submitUrl(page, 'https://example.com/watch?v=live-default');
-        await expect(page.getByTestId('job-card').locator('.badge')).toHaveText('COMPLETE');
+        await expectDownloadsComplete(page);
         const args = lastYtdlpCall(logPath, 'live-default');
         expect(args).not.toContain('--wait-for-video');
         expect(args).not.toContain('--live-from-start');
@@ -1849,8 +1886,8 @@ test.describe('end of live check and waiting for a live stream', () => {
         const { page, logPath } = session;
         await submitUrl(page, 'https://example.com/liveend');
         const card = page.getByTestId('job-card');
-        await expect(card.locator('.badge')).toHaveText('COMPLETE');
-        await expect(card.locator('.badge')).not.toHaveText('VERIFYING END');
+        await expectDownloadsComplete(page);
+        await expect(card).toHaveCount(0);
         expect(callsFor(logPath, 'liveend')).toHaveLength(1);
     });
 
@@ -1866,8 +1903,8 @@ test.describe('end of live check and waiting for a live stream', () => {
         await expect(card.getByRole('button', { name: 'FINISH NOW' })).toBeVisible();
         await expect(card.getByRole('button', { name: 'CANCEL' })).toHaveCount(0);
 
-        await expect(card.locator('.badge')).toHaveText('COMPLETE', { timeout: 15000 });
-        await expect(card).not.toHaveClass(/job--verifying/);
+        await expectDownloadsComplete(page, 1, 15000);
+        await expect(card).toHaveCount(0);
         expect(existsSync(join(downloadDir, 'Live End [abc].mp4'))).toBe(true);
         const calls = callsFor(logPath, 'liveend');
         expect(calls.length).toBeGreaterThanOrEqual(2);
@@ -1900,8 +1937,8 @@ test.describe('end of live check and waiting for a live stream', () => {
         await expect(card).toHaveClass(/job--merging/);
         await expect(card.getByText('Joining the parts of the recording into one file')).toBeVisible();
         await expect(card.getByRole('button')).toHaveCount(0);
-        await expect(card.locator('.badge')).toHaveText('COMPLETE');
-        await expect(card).not.toHaveClass(/job--merging/);
+        await expectDownloadsComplete(page);
+        await expect(card).toHaveCount(0);
         expect(readdirSync(downloadDir)).toEqual(['Live Back [abc].mp4']);
         expect(statSync(join(downloadDir, 'Live Back [abc].mp4')).size).toBeGreaterThan(2048);
         await page.getByRole('button', { name: 'HISTORY' }).click();
@@ -1916,7 +1953,7 @@ test.describe('end of live check and waiting for a live stream', () => {
         await expect(card.locator('.badge')).toHaveText('VERIFYING END');
         await expect(card.locator('.badge')).toHaveText('RECORDING', { timeout: 10000 });
         await card.getByRole('button', { name: 'STOP & SAVE' }).click();
-        await expect(card.locator('.badge')).toHaveText('COMPLETE');
+        await expectDownloadsComplete(page);
         expect(readdirSync(downloadDir).sort()).toEqual(['Live Back [abc] (part 2).mp4', 'Live Back [abc].mp4']);
         await page.getByRole('button', { name: 'HISTORY' }).click();
         await expect(page.locator('.history__item--done')).toHaveCount(1);
@@ -1929,7 +1966,7 @@ test.describe('end of live check and waiting for a live stream', () => {
         const card = page.getByTestId('job-card');
         await expect(card.locator('.badge')).toHaveText('VERIFYING END');
         await card.getByRole('button', { name: 'FINISH NOW' }).click();
-        await expect(card.locator('.badge')).toHaveText('COMPLETE', { timeout: 3000 });
+        await expectDownloadsComplete(page, 1, 3000);
         expect(existsSync(join(downloadDir, 'Live End [abc].mp4'))).toBe(true);
         const callsAfter = callsFor(logPath, 'liveend').length;
         await page.waitForTimeout(2500);
@@ -1942,7 +1979,7 @@ test.describe('end of live check and waiting for a live stream', () => {
         const card = page.getByTestId('job-card');
         await expect(card.locator('.badge')).toHaveText('RECORDING');
         await card.getByRole('button', { name: 'STOP & SAVE' }).click();
-        await expect(card.locator('.badge')).toHaveText('COMPLETE');
+        await expectDownloadsComplete(page);
         expect(callsFor(logPath, 'livestream')).toHaveLength(1);
     });
 
@@ -1961,7 +1998,7 @@ test.describe('end of live check and waiting for a live stream', () => {
         await expect(card.locator('.badge')).toHaveText('RECORDING', { timeout: 10000 });
         await expect(card).not.toHaveClass(/job--waiting/);
         await card.getByRole('button', { name: 'STOP & SAVE' }).click();
-        await expect(card.locator('.badge')).toHaveText('COMPLETE');
+        await expectDownloadsComplete(page);
         expect(existsSync(join(downloadDir, 'Live Wait [abc].mp4'))).toBe(true);
     });
 
@@ -2020,7 +2057,7 @@ test.describe('stopping and cancelling a recording whose ffmpeg is left behind',
         const pid = orphanPid();
 
         await card.getByRole('button', { name: 'STOP & SAVE' }).click();
-        await expect(card.locator('.badge')).toHaveText('COMPLETE', { timeout: 8000 });
+        await expectDownloadsComplete(page, 1, 8000);
         expect(existsSync(join(downloadDir, 'Live Orphan [abc].mp4'))).toBe(true);
         await expect.poll(() => {
             return isAlive(pid);
@@ -2096,7 +2133,7 @@ test.describe('find stream', () => {
         await panel().getByRole('button', { name: 'Download stream 1' }).click();
         await expect(panel()).toHaveCount(0);
         await expect(page.getByTestId('job-card')).toHaveCount(2);
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(page);
 
         const args = lastYtdlpCall(logPath, '/media/static-clip.mp4');
         expect(args.at(-1)).toBe(`${site.origin}/media/static-clip.mp4`);
@@ -2115,7 +2152,7 @@ test.describe('find stream', () => {
         await expect(item).toContainText('HLS');
         await expect(item).toContainText(`${site.origin}/media/inner-master.m3u8`);
         await panel().getByRole('button', { name: 'Download stream 1' }).click();
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(page);
         const args = lastYtdlpCall(logPath, '/media/inner-master.m3u8');
         expect(args[args.indexOf('--referer') + 1]).toBe(`${site.origin}/player/inner.html`);
         expect(args[args.indexOf('-o') + 1]).toBe('Embed Page [%(id)s].%(ext)s');
@@ -2133,7 +2170,7 @@ test.describe('find stream', () => {
         await expect(panel().getByRole('button', { name: 'NOT THE ONE? SEARCH DEEPER' })).toHaveCount(0);
 
         await panel().getByRole('button', { name: 'Download stream 1' }).click();
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(page);
         const args = lastYtdlpCall(logPath, '/media/dynamic.m3u8');
         expect(args[args.indexOf('--referer') + 1]).toMatch(new RegExp(`^${site.origin.replace(/[.:/]/g, '\\$&')}/`));
         expect(args[args.indexOf('-o') + 1]).toBe('Dynamic Episode [%(id)s].%(ext)s');
@@ -2151,7 +2188,7 @@ test.describe('find stream', () => {
         await expect(item).toContainText('seen on the network');
 
         await panel().getByRole('button', { name: 'Download stream 1' }).click();
-        await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+        await expectDownloadsComplete(page);
         const args = lastYtdlpCall(logPath, 'sig=AbC123');
         expect(args.at(-1)).toContain('/videoplayback?expire=1999999999&ip=203.0.113.9&id=7081&itag=18&mime=video%2Fmp4&sig=AbC123');
         expect(args[args.indexOf('--referer') + 1]).toMatch(/^http:\/\/localhost:\d+\//);
@@ -2170,7 +2207,7 @@ test.describe('find stream', () => {
                 await app.getByRole('button', { name: 'FIND STREAM' }).click();
                 await expect(panel().getByRole('listitem')).toHaveCount(1, { timeout: 40000 });
                 await panel().getByRole('button', { name: 'Download stream 1' }).click();
-                await expect(app.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+                await expectDownloadsComplete(app);
                 const args = lastYtdlpCall(logPath, `${SIGNED}&ip=${family === 'IPv4' ? '203.0.113.9' : '2001%3Adb8%3A%3A1'}`);
                 expect(args).toContain(flag);
                 expect(args).not.toContain(other);
@@ -2185,7 +2222,7 @@ test.describe('find stream', () => {
             await page.getByRole('button', { name: 'FIND STREAM' }).click();
             await expect(panel().getByRole('listitem')).toHaveCount(1);
             await panel().getByRole('button', { name: 'Download stream 1' }).click();
-            await expect(page.locator('.badge', { hasText: 'COMPLETE' })).toBeVisible();
+            await expectDownloadsComplete(page);
             const args = lastYtdlpCall(logPath, '/media/static-clip.mp4');
             expect(args).not.toContain('--force-ipv4');
             expect(args).not.toContain('--force-ipv6');

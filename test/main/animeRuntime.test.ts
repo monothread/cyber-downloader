@@ -291,7 +291,7 @@ describe('createAnimeRuntime', () => {
 
     describe('importing a folder of anime', () => {
         function folderOfAnime(root: string): string {
-            const folder = join(root, 'backup');
+            const folder = join(root, 'Downloads', 'Pullwave Anime', 'backup');
             mkdirSync(join(folder, 'Naruto', 'Episode 1'), { recursive: true });
             mkdirSync(join(folder, 'Naruto', 'Episode 2'), { recursive: true });
             writeFileSync(join(folder, 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 'abc');
@@ -356,6 +356,59 @@ describe('createAnimeRuntime', () => {
             });
         });
 
+        it('accepts the folder of the anime itself', async () => {
+            const { root, options: given } = options();
+            const folder = join(root, 'Downloads', 'Pullwave Anime');
+            mkdirSync(join(folder, 'Naruto', 'Episode 1'), { recursive: true });
+            writeFileSync(join(folder, 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 'abc');
+            const runtime = open({ ...given, chooseLibraryFolder: async () => { return folder; } });
+            expect(await runtime?.handlers.importLibrary()).toEqual({ ok: true, added: 1, relinked: 0, skipped: 0, ignored: 0 });
+        });
+
+        it('accepts a folder inside the anime folder of the settings', async () => {
+            const { root, options: given } = options();
+            const base = join(root, 'media');
+            mkdirSync(join(base, 'Naruto', 'Episode 1'), { recursive: true });
+            writeFileSync(join(base, 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 'abc');
+            const runtime = open({
+                ...given,
+                getSettings: () => {
+                    return { ...DEFAULT_SETTINGS, animeDownloadDir: base };
+                },
+                chooseLibraryFolder: async () => {
+                    return join(base, 'Naruto');
+                }
+            });
+            expect(await runtime?.handlers.importLibrary()).toEqual({ ok: true, added: 1, relinked: 0, skipped: 0, ignored: 0 });
+        });
+
+        it('refuses a folder that is outside the anime folder and adds nothing', async () => {
+            const { root, options: given } = options();
+            const outside = join(root, 'backup');
+            mkdirSync(join(outside, 'Naruto', 'Episode 1'), { recursive: true });
+            writeFileSync(join(outside, 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 'abc');
+            const runtime = open({ ...given, chooseLibraryFolder: async () => { return outside; } });
+
+            expect(await runtime?.handlers.importLibrary()).toEqual({ ok: false, reason: 'outside', folder: join(root, 'Downloads', 'Pullwave Anime') });
+            expect(runtime?.db.list()).toEqual([]);
+        });
+
+        it('refuses a folder beside the anime folder whose name starts the same', async () => {
+            const { root, options: given } = options();
+            const beside = join(root, 'Downloads', 'Pullwave Anime Old');
+            mkdirSync(join(beside, 'Naruto', 'Episode 1'), { recursive: true });
+            writeFileSync(join(beside, 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 'abc');
+            const runtime = open({ ...given, chooseLibraryFolder: async () => { return beside; } });
+            expect(await runtime?.handlers.importLibrary()).toEqual({ ok: false, reason: 'outside', folder: join(root, 'Downloads', 'Pullwave Anime') });
+            expect(runtime?.db.list()).toEqual([]);
+        });
+
+        it('refuses the folder above the anime folder', async () => {
+            const { root, options: given } = options();
+            const runtime = open({ ...given, chooseLibraryFolder: async () => { return join(root, 'Downloads'); } });
+            expect(await runtime?.handlers.importLibrary()).toEqual({ ok: false, reason: 'outside', folder: join(root, 'Downloads', 'Pullwave Anime') });
+        });
+
         it('does nothing when the user gives up or there is no way to ask', async () => {
             const { root, options: given } = options();
             folderOfAnime(root);
@@ -380,6 +433,132 @@ describe('createAnimeRuntime', () => {
             expect(runtime?.handlers.fileExists(join(folder, 'gone.mp4'))).toBe(false);
             runtime?.handlers.refreshMetadata(episode.id);
             expect(JSON.parse(readFileSync(join(folder, 'pullwave.json'), 'utf-8'))).toMatchObject({ title: 'Naruto', searchIndex: 1, number: '1' });
+        });
+    });
+
+    describe('migrating the folder of the anime', () => {
+        // One downloaded episode in the default folder of the anime.
+        function libraryWithOneEpisode(runtime: AnimeRuntime | null, root: string): { episodeId: number; video: string } {
+            const folder = join(root, 'Downloads', 'Pullwave Anime', 'Naruto', 'Episode 1');
+            mkdirSync(folder, { recursive: true });
+            const video = join(folder, 'Naruto Episode 1.mp4');
+            writeFileSync(video, 'abc');
+            const db = runtime?.db as AnimeDb;
+            const anime = db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' });
+            const episode = db.ensureEpisode(anime.id, '1');
+            db.markDone(episode.id, video, 3);
+            return { episodeId: episode.id, video };
+        }
+
+        it('asks for the new folder starting at the current one, moves the anime there and saves it in the settings', async () => {
+            const { root, send, options: given } = options();
+            const destination = join(root, 'elsewhere');
+            const chooseMigrationFolder = vi.fn(async () => {
+                return destination;
+            });
+            const saveAnimeDirectory = vi.fn();
+            const runtime = open({ ...given, chooseMigrationFolder, saveAnimeDirectory });
+            const { episodeId } = libraryWithOneEpisode(runtime, root);
+
+            const result = await runtime?.handlers.migrateFolder();
+
+            expect(result).toEqual({ ok: true, episodes: 1, files: 1, destination });
+            expect(chooseMigrationFolder).toHaveBeenCalledTimes(1);
+            expect(chooseMigrationFolder).toHaveBeenCalledWith(join(root, 'Downloads', 'Pullwave Anime'));
+            expect(saveAnimeDirectory).toHaveBeenCalledTimes(1);
+            expect(saveAnimeDirectory).toHaveBeenCalledWith(destination);
+            expect(runtime?.db.getEpisode(episodeId)?.filePath).toBe(join(destination, 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'));
+            expect(readFileSync(join(destination, 'Naruto', 'Episode 1', 'Naruto Episode 1.mp4'), 'utf-8')).toBe('abc');
+            expect(existsSync(join(root, 'Downloads', 'Pullwave Anime'))).toBe(false);
+            expect(send).toHaveBeenCalledWith(IPC.eventAnimeMigration, { done: 0, total: 1 });
+            expect(send).toHaveBeenCalledWith(IPC.eventAnimeMigration, { done: 1, total: 1 });
+        });
+
+        it('starts at the folder of the settings when it is not the default one', async () => {
+            const { root, options: given } = options();
+            const current = join(root, 'media');
+            const chooseMigrationFolder = vi.fn(async () => {
+                return null;
+            });
+            const runtime = open({
+                ...given,
+                getSettings: () => {
+                    return { ...DEFAULT_SETTINGS, animeDownloadDir: current };
+                },
+                chooseMigrationFolder
+            });
+            await runtime?.handlers.migrateFolder();
+            expect(chooseMigrationFolder).toHaveBeenCalledWith(current);
+        });
+
+        it('does nothing when the user gives up or there is no way to ask', async () => {
+            const { root, send, options: given } = options();
+            const saveAnimeDirectory = vi.fn();
+            const cancelled = open({ ...given, saveAnimeDirectory, chooseMigrationFolder: async () => { return null; } });
+            const { video, episodeId } = libraryWithOneEpisode(cancelled, root);
+
+            expect(await cancelled?.handlers.migrateFolder()).toEqual({ ok: false, reason: 'cancelled' });
+            expect(cancelled?.db.getEpisode(episodeId)?.filePath).toBe(video);
+            expect(existsSync(video)).toBe(true);
+            expect(saveAnimeDirectory).not.toHaveBeenCalled();
+            expect(send).not.toHaveBeenCalled();
+            expect(await open(options().options)?.handlers.migrateFolder()).toEqual({ ok: false, reason: 'cancelled' });
+        });
+
+        it('says why a folder was not accepted, changing nothing', async () => {
+            const { root, options: given } = options();
+            const saveAnimeDirectory = vi.fn();
+            const current = join(root, 'Downloads', 'Pullwave Anime');
+            const runtime = open({ ...given, saveAnimeDirectory, chooseMigrationFolder: async () => { return current; } });
+            const { video } = libraryWithOneEpisode(runtime, root);
+
+            expect(await runtime?.handlers.migrateFolder()).toEqual({ ok: false, reason: 'same' });
+            expect(existsSync(video)).toBe(true);
+            expect(saveAnimeDirectory).not.toHaveBeenCalled();
+        });
+
+        it('uses the way of copying given, and so can fail without changing anything', async () => {
+            const { root, options: given } = options();
+            const saveAnimeDirectory = vi.fn();
+            const destination = join(root, 'elsewhere');
+            const runtime = open({
+                ...given,
+                saveAnimeDirectory,
+                chooseMigrationFolder: async () => {
+                    return destination;
+                },
+                migrationFiles: {
+                    size: (path) => {
+                        return existsSync(path) ? 3 : null;
+                    },
+                    exists: existsSync,
+                    makeDirectory: (path) => {
+                        mkdirSync(path, { recursive: true });
+                    },
+                    copy: async () => {
+                        throw new Error('disk full');
+                    },
+                    removeFile: () => {
+                        return undefined;
+                    },
+                    removeEmptyDirectory: () => {
+                        return undefined;
+                    }
+                }
+            });
+            const { video, episodeId } = libraryWithOneEpisode(runtime, root);
+
+            expect(await runtime?.handlers.migrateFolder()).toEqual({ ok: false, reason: 'failed' });
+            expect(runtime?.db.getEpisode(episodeId)?.filePath).toBe(video);
+            expect(saveAnimeDirectory).not.toHaveBeenCalled();
+        });
+
+        it('copes with there being no way to save the setting', async () => {
+            const { root, options: given } = options();
+            const destination = join(root, 'elsewhere');
+            const runtime = open({ ...given, chooseMigrationFolder: async () => { return destination; } });
+            libraryWithOneEpisode(runtime, root);
+            expect(await runtime?.handlers.migrateFolder()).toEqual({ ok: true, episodes: 1, files: 1, destination });
         });
     });
 

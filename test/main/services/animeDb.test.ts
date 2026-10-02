@@ -361,6 +361,49 @@ describe('AnimeDb importing what was found on the disk', () => {
         expect(db.getEpisode(episode.id)).toMatchObject({ status: 'done', filePath: '/new/a.mp4', sizeBytes: 20, positionSeconds: 5, watched: true, downloadedAt: NOW });
     });
 
+    it('points several episodes to new files all together', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const first = db.ensureEpisode(anime.id, '1');
+        const second = db.ensureEpisode(anime.id, '2');
+        db.markDone(first.id, '/old/1.mp4', 10);
+        db.markDone(second.id, '/old/2.mp4', 20);
+        db.saveProgress({ episodeId: second.id, positionSeconds: 7, durationSeconds: 100, watched: true });
+
+        db.relinkEpisodes([
+            { episodeId: first.id, filePath: '/new/1.mp4', sizeBytes: 11 },
+            { episodeId: second.id, filePath: '/new/2.mp4', sizeBytes: null }
+        ]);
+
+        expect(db.getEpisode(first.id)).toMatchObject({ status: 'done', filePath: '/new/1.mp4', sizeBytes: 11 });
+        expect(db.getEpisode(second.id)).toMatchObject({ status: 'done', filePath: '/new/2.mp4', sizeBytes: null, positionSeconds: 7, watched: true });
+    });
+
+    it('changes none of the episodes when one of them cannot be pointed to a new file', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const first = db.ensureEpisode(anime.id, '1');
+        db.markDone(first.id, '/old/1.mp4', 10);
+
+        expect(() => {
+            db.relinkEpisodes([
+                { episodeId: first.id, filePath: '/new/1.mp4', sizeBytes: 11 },
+                { episodeId: 2, filePath: undefined as unknown as string, sizeBytes: 1 }
+            ]);
+        }).toThrow();
+
+        expect(db.getEpisode(first.id)).toMatchObject({ filePath: '/old/1.mp4', sizeBytes: 10 });
+        db.relinkEpisodes([{ episodeId: first.id, filePath: '/again/1.mp4', sizeBytes: 12 }]);
+        expect(db.getEpisode(first.id)).toMatchObject({ filePath: '/again/1.mp4', sizeBytes: 12 });
+    });
+
+    it('does nothing when there is no episode to point', () => {
+        const db = makeDb();
+        expect(() => {
+            db.relinkEpisodes([]);
+        }).not.toThrow();
+    });
+
     it('never says on its own that a file is missing', () => {
         const db = makeDb();
         const anime = db.upsertAnime(NARUTO);

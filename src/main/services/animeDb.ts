@@ -276,6 +276,20 @@ export class AnimeDb {
         this.run('UPDATE episode SET file_path = ?, size_bytes = ? WHERE id = ?', filePath, sizeBytes, episodeId);
     }
 
+    // Points several episodes to new files all together: either all of them change or none does.
+    relinkEpisodes(updates: ReadonlyArray<{ episodeId: number; filePath: string; sizeBytes: number | null }>): void {
+        this.db.exec('BEGIN');
+        try {
+            updates.forEach((update) => {
+                this.relinkEpisode(update.episodeId, update.filePath, update.sizeBytes);
+            });
+            this.db.exec('COMMIT');
+        } catch (error) {
+            this.db.exec('ROLLBACK');
+            throw error;
+        }
+    }
+
     // A new episode is queued. One that is already downloaded stays as it is; any other one is queued again.
     ensureEpisode(animeId: number, number: string): AnimeEpisodeRecord {
         const row = this.one(

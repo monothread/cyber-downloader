@@ -42,7 +42,8 @@ src/
       animeFiles.ts             # file/folder names (anime folder, `Episode N` folder), what is removed with an episode or an anime
       subtitleFiles.ts          # subtitles next to a video (default, source, imported), .srt to .vtt, importing a file
       episodeMetadata.ts        # `pullwave.json` next to each video: what the library needs to recognize it again
-      libraryScan.ts / libraryImport.ts   # IMPORT LIBRARY: scan a folder, add / skip / point episodes to their new file
+      libraryScan.ts / libraryImport.ts   # IMPORT LIBRARY: scan a folder (inside the anime folder only), add / skip / point episodes to their new file
+      animeMigration.ts         # MIGRATE FOLDER: copy, check, point the library and the settings, remove the old files
     shared/series.ts            # suggestSeries, series names (shared by the screen and the main process), season limits
       mediaProtocol.ts          # pullwave-media:// (downloaded files, byte ranges)
       streamProxy.ts            # pullwave-stream:// (HLS streams fetched with the referer, playlists rewritten)

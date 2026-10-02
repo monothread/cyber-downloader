@@ -60,6 +60,22 @@ describe('AnimeSearch form', () => {
         expect(await screen.findByText('2 RESULTS')).toBeInTheDocument();
     });
 
+    it('clears the results when the name is emptied', async () => {
+        const user = userEvent.setup();
+        mock.api.searchAnime.mockResolvedValue({ ok: true, results: RESULTS });
+        render(<AnimeSearch />);
+
+        await user.type(screen.getByLabelText('Anime name'), 'cyberpunk{Enter}');
+        expect(await screen.findByText('2 RESULTS')).toBeInTheDocument();
+
+        await user.clear(screen.getByLabelText('Anime name'));
+
+        expect(screen.queryByText('2 RESULTS')).not.toBeInTheDocument();
+        expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+        expect(screen.getByLabelText('Anime name')).toHaveValue('');
+        expect(screen.getByRole('button', { name: 'SEARCH' })).toBeDisabled();
+    });
+
     it('searches with Enter', async () => {
         const user = userEvent.setup();
         mock.api.searchAnime.mockResolvedValue({ ok: true, results: [] });

@@ -1,10 +1,8 @@
 import {
     AUDIO_FORMATS,
     LANGUAGE_SETTINGS,
-    MAX_CONCURRENT,
     MAX_LIVE_END_CHECK_SECONDS,
     MAX_TITLE_LENGTH,
-    MIN_CONCURRENT,
     MIN_LIVE_END_CHECK_SECONDS,
     MIN_TITLE_LENGTH,
     RESOLUTIONS,
@@ -139,6 +137,15 @@ export function SettingsPanel() {
     const updateAniCli = useAnimeStore((state) => {
         return state.updateCli;
     });
+    const library = useAnimeStore((state) => {
+        return state.library;
+    });
+    const migration = useAnimeStore((state) => {
+        return state.migration;
+    });
+    const migrateFolder = useAnimeStore((state) => {
+        return state.migrateFolder;
+    });
     const { draft, status, change, edit, changeMany } = useAutoSaveSettings(stored, saveSettings);
     const detectedBrowsers = browsers ?? [];
     const chosenBrowser = findChosenBrowser(detectedBrowsers, draft);
@@ -170,6 +177,17 @@ export function SettingsPanel() {
         const directory = await chooseDirectory();
         if (directory) {
             change('animeDownloadDir', directory);
+        }
+    }
+
+    // With anime in the library the folder changes only by a migration, which moves the files too.
+    const animeFolderLocked = library.length > 0;
+    const migrating = migration !== null;
+
+    async function handleMigrateAnimeFolder(): Promise<void> {
+        const response = await migrateFolder();
+        if (response.ok) {
+            change('animeDownloadDir', response.destination);
         }
     }
 
@@ -276,6 +294,8 @@ export function SettingsPanel() {
                             label={t('settings.animeDownloadDir')}
                             value={draft.animeDownloadDir}
                             placeholder={t('settings.animeDownloadDir.placeholder')}
+                            hint={animeFolderLocked ? t('settings.animeDownloadDir.locked') : undefined}
+                            disabled={animeFolderLocked}
                             onChange={(value) => {
                                 edit('animeDownloadDir', value);
                             }}
@@ -283,11 +303,23 @@ export function SettingsPanel() {
                         <button
                             type="button"
                             className="btn btn--small"
+                            disabled={animeFolderLocked}
                             onClick={() => {
                                 void handleChooseAnimeDirectory();
                             }}
                         >
                             {t('settings.browse')}
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn--small btn--primary"
+                            title={t('settings.animeMigrate.hint')}
+                            disabled={migrating}
+                            onClick={() => {
+                                void handleMigrateAnimeFolder();
+                            }}
+                        >
+                            {migrating ? t('settings.animeMigrate.running', { done: migration.done, total: migration.total }) : t('settings.animeMigrate')}
                         </button>
                     </div>
                     <SelectField
@@ -587,15 +619,6 @@ export function SettingsPanel() {
 
             <fieldset className="panel panel--wide">
                 <legend>{t('settings.advanced')}</legend>
-                <NumberField
-                    label={t('settings.maxConcurrent')}
-                    value={draft.maxConcurrent}
-                    min={MIN_CONCURRENT}
-                    max={MAX_CONCURRENT}
-                    onChange={(value) => {
-                        edit('maxConcurrent', value);
-                    }}
-                />
                 <TextField
                     label={t('settings.rateLimit')}
                     value={draft.rateLimit}

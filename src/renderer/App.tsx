@@ -8,7 +8,6 @@ import { Toast } from './components/Toast';
 import { UpdateBanner } from './components/UpdateBanner';
 import { UrlInput } from './components/UrlInput';
 import type { MessageKey } from '@shared/i18n';
-import { useCursorGlow } from './hooks/useCursorGlow';
 import { useAppLanguage, useTranslator } from './i18n/useTranslator';
 import { useAnimeStore } from './store/animeStore';
 import { useAppStore, type Tab } from './store/appStore';
@@ -50,8 +49,6 @@ export function App() {
     const theme = useAppStore((state) => {
         return state.settings.theme;
     });
-
-    useCursorGlow(theme === 'cyberpunk');
 
     useEffect(() => {
         applyTheme(theme);

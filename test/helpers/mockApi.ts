@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { AnimeImportResponse, AnimeSeriesResponse, AnimeJob, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
+import type { AnimeImportResponse, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 export interface MockApiHandle {
@@ -11,6 +11,7 @@ export interface MockApiHandle {
     emitStreamProgress: (progress: StreamFindProgress) => void;
     emitAnimeJob: (job: AnimeJob) => void;
     emitAnimeLibraryChanged: () => void;
+    emitAnimeMigrationProgress: (progress: AnimeMigrationProgress) => void;
     unsubscribers: Array<ReturnType<typeof vi.fn>>;
 }
 
@@ -24,6 +25,7 @@ export function createMockApi(): MockApiHandle {
     const streamProgressListeners: Array<(progress: StreamFindProgress) => void> = [];
     const animeJobListeners: Array<(job: AnimeJob) => void> = [];
     const animeLibraryListeners: Array<() => void> = [];
+    const animeMigrationListeners: Array<(progress: AnimeMigrationProgress) => void> = [];
     const unsubscribers: Array<ReturnType<typeof vi.fn>> = [];
 
     function subscribe<T>(listeners: T[], listener: T): () => void {
@@ -154,6 +156,9 @@ export function createMockApi(): MockApiHandle {
         importAnimeLibrary: vi.fn(async (): Promise<AnimeImportResponse> => {
             return { ok: false, reason: 'cancelled' };
         }),
+        migrateAnimeFolder: vi.fn(async (): Promise<AnimeMigrationResponse> => {
+            return { ok: false, reason: 'cancelled' };
+        }),
         saveAnimeProgress: vi.fn(async () => {
             return undefined;
         }),
@@ -177,6 +182,9 @@ export function createMockApi(): MockApiHandle {
         }),
         onAnimeLibraryChanged: vi.fn((listener: () => void) => {
             return subscribe(animeLibraryListeners, listener);
+        }),
+        onAnimeMigrationProgress: vi.fn((listener: (progress: AnimeMigrationProgress) => void) => {
+            return subscribe(animeMigrationListeners, listener);
         }),
         onJobUpdate: vi.fn((listener: (job: DownloadJob) => void) => {
             return subscribe(jobListeners, listener);
@@ -216,6 +224,11 @@ export function createMockApi(): MockApiHandle {
         emitAnimeJob: (job) => {
             animeJobListeners.forEach((listener) => {
                 listener(job);
+            });
+        },
+        emitAnimeMigrationProgress: (progress) => {
+            animeMigrationListeners.forEach((listener) => {
+                listener(progress);
             });
         },
         emitAnimeLibraryChanged: () => {

@@ -41,13 +41,18 @@ export interface AppState {
     settings: Settings;
     binaries: BinariesStatus | null;
     notice: Notice | null;
+    // Notices that wait for the one on the screen to go away (one is shown at a time).
+    noticeQueue: Notice[];
     updating: boolean;
     appUpdate: AppUpdateState;
     traySupport: TraySupport | null;
     browsers: DetectedBrowser[] | null;
     streamSearches: Record<string, StreamSearchState>;
     setTab: (tab: Tab) => void;
+    // Shows a notice, or puts it in the queue when another one is on the screen. Passing null takes the one on the screen away and
+    // shows the next one in the queue.
     setNotice: (notice: Notice | null) => void;
+    queueNotice: (notice: Notice) => void;
     init: () => Promise<() => void>;
     addUrls: (links: LinkRequest[]) => Promise<AddJobResult[]>;
     cancelJob: (id: string) => Promise<void>;
@@ -114,6 +119,7 @@ export const useAppStore = create<AppState>((set, get) => {
         settings: DEFAULT_SETTINGS,
         binaries: null,
         notice: null,
+        noticeQueue: [],
         updating: false,
         appUpdate: INITIAL_APP_UPDATE,
         traySupport: null,
@@ -125,7 +131,23 @@ export const useAppStore = create<AppState>((set, get) => {
         },
 
         setNotice: (notice) => {
-            set({ notice });
+            if (notice !== null) {
+                set({ notice });
+                return;
+            }
+            set((state) => {
+                const [next = null, ...rest] = state.noticeQueue;
+                return { notice: next, noticeQueue: rest };
+            });
+        },
+
+        queueNotice: (notice) => {
+            set((state) => {
+                if (state.notice === null) {
+                    return { notice };
+                }
+                return { noticeQueue: [...state.noticeQueue, notice] };
+            });
         },
 
         init: async () => {
@@ -140,9 +162,17 @@ export const useAppStore = create<AppState>((set, get) => {
             set({ settings, jobs, history, binaries, appUpdate });
             const unsubscribers = [
                 api.onJobUpdate((job) => {
+                    const finishedNow = job.status === 'done' && get().jobs.find((candidate) => {
+                        return candidate.id === job.id;
+                    })?.status !== 'done';
                     set((state) => {
                         return { jobs: upsertJob(state.jobs, job) };
                     });
+                    if (finishedNow) {
+                        // A download that is complete says so for a few seconds and leaves the queue (it stays in the history).
+                        get().queueNotice({ kind: 'info', message: translateNow(get().settings, 'notice.downloadDone', { title: job.title ?? job.url }) });
+                        void get().removeJob(job.id);
+                    }
                 }),
                 api.onJobRemoved((id) => {
                     set((state) => {

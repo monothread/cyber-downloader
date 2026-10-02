@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AniError, AnimeAudio, AnimeSeriesResponse, AnimeJob, AnimeProgressUpdate, AnimeSearchResult, AnimeStatus, AnimeStream, LibraryAnime } from '@shared/anime';
+import type { AniError, AnimeAudio, AnimeMigrationFailure, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeProgressUpdate, AnimeSearchResult, AnimeStatus, AnimeStream, LibraryAnime } from '@shared/anime';
 import { cleanSeasonName, cleanSeriesName, isValidSeason, type SeriesChoice } from '@shared/series';
 import { createTranslator, type MessageKey, type MessageParams } from '@shared/i18n';
 import { resolveAppLanguage } from '../i18n/language';
@@ -48,6 +48,8 @@ export interface AnimeState {
     status: AnimeStatus;
     // ani-cli is being updated.
     updatingCli: boolean;
+    // How far the migration of the anime folder is, or null when none is running.
+    migration: AnimeMigrationProgress | null;
     view: AnimeView;
     // Where BACK goes from the downloads screen.
     returnView: AnimeBrowseView;
@@ -72,6 +74,8 @@ export interface AnimeState {
     openLibraryAnime: (anime: LibraryAnime) => Promise<void>;
     // Asks for a folder of anime and puts what is in it into the library, then says what it did.
     importLibrary: () => Promise<void>;
+    // Moves all the anime to a folder the user chooses, then says how it went. Returns what the migration answered.
+    migrateFolder: () => Promise<AnimeMigrationResponse>;
     // Goes to the library, to the anime that was being looked at in the search.
     showInLibrary: (animeId: number) => void;
     closeResult: () => void;
@@ -119,6 +123,14 @@ function notify(kind: 'error' | 'info', message: string): void {
     useAppStore.getState().setNotice({ kind, message });
 }
 
+const MIGRATION_ERRORS: Record<Exclude<AnimeMigrationFailure, 'cancelled'>, MessageKey> = {
+    busy: 'anime.migrate.error.busy',
+    same: 'anime.migrate.error.same',
+    inside: 'anime.migrate.error.inside',
+    conflict: 'anime.migrate.error.conflict',
+    failed: 'anime.migrate.error.failed'
+};
+
 function upsertAnimeJob(jobs: AnimeJob[], job: AnimeJob): AnimeJob[] {
     const exists = jobs.some((candidate) => {
         return candidate.episodeId === job.episodeId;
@@ -135,6 +147,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
     return {
         status: UNSUPPORTED_STATUS,
         updatingCli: false,
+        migration: null,
         view: 'search',
         returnView: 'search',
         jobs: [],
@@ -164,6 +177,9 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
                 }),
                 api.onAnimeLibraryChanged(() => {
                     void get().refreshLibrary();
+                }),
+                api.onAnimeMigrationProgress((migration) => {
+                    set({ migration });
                 })
             ];
             return (): void => {
@@ -202,6 +218,10 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
 
         setQuery: (query) => {
             set((state) => {
+                // An empty name leaves nothing to show: the results (and the error) of the last search go away.
+                if (query.trim().length === 0) {
+                    return { search: { ...state.search, query, status: 'idle', results: [], error: null } };
+                }
                 return { search: { ...state.search, query } };
             });
         },
@@ -224,6 +244,10 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
             });
             const response = await window.api.searchAnime(query, audio);
             set((state) => {
+                // The name was emptied while the search ran: its answer is not shown.
+                if (state.search.query.trim().length === 0) {
+                    return state;
+                }
                 if (response.ok) {
                     return { search: { ...state.search, status: 'done', results: response.results, searchedQuery: query, searchedAudio: audio } };
                 }
@@ -258,10 +282,29 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
         importLibrary: async () => {
             const response = await window.api.importAnimeLibrary();
             if (!response.ok) {
+                if (response.reason === 'outside') {
+                    notify('error', translateNow('anime.import.outside', { folder: response.folder }));
+                }
                 return;
             }
             set({ library: await window.api.listAnimeLibrary() });
             notify('info', translateNow('anime.import.done', { added: response.added, relinked: response.relinked, skipped: response.skipped, ignored: response.ignored }));
+        },
+
+        migrateFolder: async () => {
+            set({ migration: { done: 0, total: 0 } });
+            try {
+                const response = await window.api.migrateAnimeFolder();
+                if (response.ok) {
+                    set({ library: await window.api.listAnimeLibrary() });
+                    notify('info', translateNow('anime.migrate.done', { episodes: response.episodes, folder: response.destination }));
+                } else if (response.reason !== 'cancelled') {
+                    notify('error', translateNow(MIGRATION_ERRORS[response.reason]));
+                }
+                return response;
+            } finally {
+                set({ migration: null });
+            }
         },
 
         openLibraryAnime: async (anime) => {

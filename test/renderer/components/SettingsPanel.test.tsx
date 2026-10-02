@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS } from '@shared/constants';
 import { SettingsPanel } from '@renderer/components/SettingsPanel';
 import { UNSUPPORTED_STATUS, useAnimeStore } from '@renderer/store/animeStore';
 import { INITIAL_APP_UPDATE, useAppStore } from '@renderer/store/appStore';
-import { ANI_CLI_INFO, makeStatus } from '../../helpers/animeFixtures';
+import { ANI_CLI_INFO, makeAnime, makeEpisode, makeStatus } from '../../helpers/animeFixtures';
 import { APP_UPDATE_IDLE, installMockApi, type MockApiHandle } from '../../helpers/mockApi';
 
 let mock: MockApiHandle;
@@ -14,7 +14,7 @@ const initial = useAppStore.getState();
 beforeEach(() => {
     vi.useFakeTimers();
     mock = installMockApi();
-    useAnimeStore.setState({ status: UNSUPPORTED_STATUS });
+    useAnimeStore.setState({ status: UNSUPPORTED_STATUS, library: [], migration: null });
     useAppStore.setState({ ...initial, settings: DEFAULT_SETTINGS, notice: null, appUpdate: INITIAL_APP_UPDATE, traySupport: null, browsers: null });
 });
 
@@ -52,7 +52,8 @@ describe('SettingsPanel layout', () => {
         expect(screen.getByLabelText('Audio format')).toHaveValue('mp3');
         expect(screen.getByLabelText('Use cookies from my browser')).not.toBeChecked();
         expect(screen.getByLabelText('Browser')).toHaveValue('');
-        expect(screen.getByLabelText('Simultaneous downloads')).toHaveValue(2);
+        expect(screen.queryByLabelText('Simultaneous downloads')).not.toBeInTheDocument();
+        expect(screen.queryByText('Simultaneous downloads')).not.toBeInTheDocument();
     });
 
     it('has no save button and explains that changes are saved automatically', () => {
@@ -198,7 +199,6 @@ describe('SettingsPanel auto-save of text and number fields (2 s after typing)',
         ['Max title length (characters)', '60', 'maxTitleLength', 60],
         ['Browser profile (optional)', 'Profile 1', 'cookiesProfile', 'Profile 1'],
         ['Subtitle languages', 'fr', 'subtitleLangs', 'fr'],
-        ['Simultaneous downloads', '4', 'maxConcurrent', 4],
         ['Speed limit', '2M', 'rateLimit', '2M'],
         ['yt-dlp path', '/opt/yt-dlp', 'ytdlpPath', '/opt/yt-dlp'],
         ['ffmpeg path', '/opt/ffmpeg', 'ffmpegPath', '/opt/ffmpeg'],
@@ -837,6 +837,96 @@ describe('SettingsPanel anime section', () => {
             await flushPromises();
             expect(mock.api.chooseDirectory).toHaveBeenCalledTimes(1);
             expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, animeDownloadDir: '/picked/anime' });
+        });
+
+        it('has the MIGRATE FOLDER button, with what it does as its hint', () => {
+            render(<SettingsPanel />);
+            const button = screen.getByRole('button', { name: 'MIGRATE FOLDER' });
+            expect(button).toBeEnabled();
+            expect(button).toHaveAttribute('title', 'Choose a new folder: the app copies all the anime there, checks the copies and then removes the old files');
+        });
+
+        it('leaves the folder free to edit while the library is empty', () => {
+            render(<SettingsPanel />);
+            expect(screen.getByLabelText('Anime download folder')).toBeEnabled();
+            expect(screen.getAllByRole('button', { name: 'BROWSE' })[1]).toBeEnabled();
+            expect(screen.queryByText('With anime in the library, the folder only changes through MIGRATE FOLDER, which moves the files too.')).not.toBeInTheDocument();
+        });
+
+        describe('with anime in the library', () => {
+            beforeEach(() => {
+                useAnimeStore.setState({ library: [makeAnime([makeEpisode({ id: 1, status: 'done' })])] });
+                useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, animeDownloadDir: '/media/anime' } });
+            });
+
+            it('fixes the folder: it cannot be typed nor browsed, and the hint says to use MIGRATE FOLDER', () => {
+                render(<SettingsPanel />);
+                expect(screen.getByLabelText('Anime download folder')).toBeDisabled();
+                expect(screen.getByLabelText('Anime download folder')).toHaveValue('/media/anime');
+                expect(screen.getAllByRole('button', { name: 'BROWSE' })[1]).toBeDisabled();
+                expect(screen.getByText('With anime in the library, the folder only changes through MIGRATE FOLDER, which moves the files too.')).toBeInTheDocument();
+                expect(screen.getByRole('button', { name: 'MIGRATE FOLDER' })).toBeEnabled();
+            });
+
+            it('migrates, then shows and saves the new folder', async () => {
+                mock.api.migrateAnimeFolder.mockResolvedValue({ ok: true, episodes: 1, files: 2, destination: '/new/anime' });
+                render(<SettingsPanel />);
+                fireEvent.click(screen.getByRole('button', { name: 'MIGRATE FOLDER' }));
+                await flushPromises();
+
+                expect(mock.api.migrateAnimeFolder).toHaveBeenCalledTimes(1);
+                expect(screen.getByLabelText('Anime download folder')).toHaveValue('/new/anime');
+                expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, animeDownloadDir: '/new/anime' });
+                expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'MIGRATION DONE: 1 EPISODES MOVED TO /new/anime' });
+            });
+
+            it.each([
+                ['cancelled', null],
+                ['busy', 'A download or a migration is running. Wait for it to finish.'],
+                ['same', 'That is already the anime folder.'],
+                ['inside', 'Choose a folder that is not inside the current anime folder.'],
+                ['conflict', 'The new folder already has files where the anime would be copied. Choose another folder.'],
+                ['failed', 'The migration failed. What was copied was removed and nothing changed.']
+            ] as const)('keeps the folder when the migration answers %s', async (reason, message) => {
+                mock.api.migrateAnimeFolder.mockResolvedValue({ ok: false, reason });
+                render(<SettingsPanel />);
+                fireEvent.click(screen.getByRole('button', { name: 'MIGRATE FOLDER' }));
+                await flushPromises();
+                await advance(AUTOSAVE_DELAY_MS);
+
+                expect(screen.getByLabelText('Anime download folder')).toHaveValue('/media/anime');
+                expect(mock.api.saveSettings).not.toHaveBeenCalled();
+                expect(useAppStore.getState().notice).toEqual(message === null ? null : { kind: 'error', message });
+            });
+
+            it('shows how far the migration is and disables the button meanwhile', async () => {
+                let finish: (response: { ok: false; reason: 'cancelled' }) => void = () => {
+                    return;
+                };
+                mock.api.migrateAnimeFolder.mockReturnValue(
+                    new Promise((resolve) => {
+                        finish = resolve;
+                    })
+                );
+                mock.api.getAnimeStatus.mockResolvedValue(makeStatus());
+                mock.api.listAnimeLibrary.mockResolvedValue([makeAnime([makeEpisode({ id: 1, status: 'done' })])]);
+                await useAnimeStore.getState().init();
+                render(<SettingsPanel />);
+                fireEvent.click(screen.getByRole('button', { name: 'MIGRATE FOLDER' }));
+                await flushPromises();
+                expect(screen.getByRole('button', { name: 'MIGRATING 0/0…' })).toBeDisabled();
+
+                act(() => {
+                    mock.emitAnimeMigrationProgress({ done: 3, total: 8 });
+                });
+                expect(screen.getByRole('button', { name: 'MIGRATING 3/8…' })).toBeDisabled();
+
+                await act(async () => {
+                    finish({ ok: false, reason: 'cancelled' });
+                    await vi.advanceTimersByTimeAsync(0);
+                });
+                expect(screen.getByRole('button', { name: 'MIGRATE FOLDER' })).toBeEnabled();
+            });
         });
 
         it('keeps the folder when the dialog is cancelled', async () => {
