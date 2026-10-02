@@ -533,3 +533,120 @@ describe('defaultMigrationFileSystem', () => {
         expect(existsSync(join(root, 'a'))).toBe(false);
     });
 });
+
+describe('migrateAnimeFolder with the paths of Windows', () => {
+    // A disk in memory, so the paths of Windows can be used wherever the tests run.
+    function memoryDisk(initial: Record<string, number>) {
+        const key = (path: string): string => {
+            return path.replace(/\//g, '\\').toLowerCase();
+        };
+        const sizes = new Map<string, number>(
+            Object.entries(initial).map(([path, size]) => {
+                return [key(path), size];
+            })
+        );
+        const folders = new Set<string>();
+        const copies: Array<[string, string]> = [];
+        const removed: string[] = [];
+        const files: MigrationFileSystem = {
+            size: (path) => {
+                return sizes.get(key(path)) ?? null;
+            },
+            exists: (path) => {
+                return sizes.has(key(path)) || folders.has(key(path));
+            },
+            makeDirectory: (path) => {
+                folders.add(key(path));
+            },
+            copy: async (from, to) => {
+                copies.push([from, to]);
+                sizes.set(key(to), sizes.get(key(from)) ?? 0);
+            },
+            removeFile: (path) => {
+                removed.push(path);
+                sizes.delete(key(path));
+            },
+            removeEmptyDirectory: () => {
+                return undefined;
+            }
+        };
+        return { files, copies, removed };
+    }
+
+    function windowsLibrary() {
+        const db = new AnimeDb(':memory:', () => {
+            return 5;
+        });
+        const anime = db.upsertAnime({ title: 'Fake Anime', query: 'fake', searchIndex: 1, audio: 'sub' });
+        db.setSeries(anime.id, 'Fake Anime', 1, null);
+        const episode = db.ensureEpisode(anime.id, '1');
+        // As ani-cli reports it on Windows: the folders with slashes.
+        const video = 'C:/Anime/Fake Anime/Season 1/Episode 1/Fake Anime Episode 1.mp4';
+        db.markDone(episode.id, video, 10);
+        return { db, episode, video };
+    }
+
+    function run(disk: ReturnType<typeof memoryDisk>, db: AnimeDb, filesOf: (video: string) => string[]) {
+        const saved: string[] = [];
+        return migrateAnimeFolder({
+            db,
+            files: disk.files,
+            filesOf,
+            platform: 'win32',
+            currentDirectory: 'C:\\Anime',
+            newDirectory: 'D:\\Library',
+            saveDirectory: (directory) => {
+                saved.push(directory);
+            },
+            onProgress: () => {
+                return undefined;
+            }
+        }).then((outcome) => {
+            return { outcome, saved };
+        });
+    }
+
+    it('moves a file once when it is given two ways, with slashes and with backslashes, and does not call it a conflict', async () => {
+        const { db, episode, video } = windowsLibrary();
+        const disk = memoryDisk({
+            [video]: 10,
+            'C:/Anime/Fake Anime/Season 1/Episode 1/Fake Anime Episode 1.vtt': 6,
+            'C:/Anime/Fake Anime/Season 1/Episode 1/pullwave.json': 20
+        });
+
+        const { outcome, saved } = await run(disk, db, (path) => {
+            return [path, 'C:/Anime/Fake Anime/Season 1/Episode 1/Fake Anime Episode 1.vtt', 'C:\\Anime\\Fake Anime\\Season 1\\Episode 1\\Fake Anime Episode 1.vtt', 'C:\\Anime\\Fake Anime\\Season 1\\Episode 1\\pullwave.json', 'C:/Anime/Fake Anime/Season 1/Episode 1/pullwave.json'];
+        });
+
+        expect(outcome).toEqual({ ok: true, episodes: 1, files: 3 });
+        expect(disk.copies.map(([, to]) => {
+            return to;
+        })).toEqual([
+            'D:\\Library\\Fake Anime\\Season 1\\Episode 1\\Fake Anime Episode 1.mp4',
+            'D:\\Library\\Fake Anime\\Season 1\\Episode 1\\Fake Anime Episode 1.vtt',
+            'D:\\Library\\Fake Anime\\Season 1\\Episode 1\\pullwave.json'
+        ]);
+        expect(db.getEpisode(episode.id)?.filePath).toBe('D:\\Library\\Fake Anime\\Season 1\\Episode 1\\Fake Anime Episode 1.mp4');
+        expect(saved).toEqual(['D:\\Library']);
+        expect(disk.removed).toHaveLength(3);
+    });
+
+    it('does not tell capitals apart for the same file', async () => {
+        const { db, video } = windowsLibrary();
+        const disk = memoryDisk({ [video]: 10, 'C:/Anime/Fake Anime/Season 1/Episode 1/Fake Anime Episode 1.vtt': 6 });
+        const { outcome } = await run(disk, db, (path) => {
+            return [path, 'C:/Anime/Fake Anime/Season 1/Episode 1/Fake Anime Episode 1.vtt', 'C:/Anime/Fake Anime/Season 1/Episode 1/FAKE ANIME EPISODE 1.VTT'];
+        });
+        expect(outcome).toEqual({ ok: true, episodes: 1, files: 2 });
+    });
+
+    it('still refuses a file that is really in the way', async () => {
+        const { db, video } = windowsLibrary();
+        const disk = memoryDisk({ [video]: 10, 'D:/Library/Fake Anime/Season 1/Episode 1/Fake Anime Episode 1.mp4': 3 });
+        const { outcome } = await run(disk, db, (path) => {
+            return [path];
+        });
+        expect(outcome).toEqual({ ok: false, reason: 'conflict' });
+        expect(disk.copies).toEqual([]);
+    });
+});

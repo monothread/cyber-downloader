@@ -107,6 +107,20 @@ function newEpisodeFolder(anime: LibraryAnime, number: string, newDirectory: str
     return episodeDownloadDirectory(folder, number, platform);
 }
 
+// The files of an episode are all in one folder, so two with the same destination are the same file written two ways (the video can
+// be given with slashes and the subtitles found with backslashes, and Windows does not tell capitals apart): it is moved once.
+function withoutRepeats(planned: readonly PlannedFile[], platform: NodeJS.Platform): PlannedFile[] {
+    const seen = new Set<string>();
+    return planned.filter((file) => {
+        const key = platform === 'win32' ? file.to.toLowerCase() : file.to;
+        if (seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+}
+
 // What has to be moved: every downloaded episode whose video is on the disk, with its files. An episode whose video is gone has
 // nothing to move and stays as it is.
 function planEpisodes(library: readonly LibraryAnime[], dependencies: MigrationDependencies, files: MigrationFileSystem): PlannedEpisode[] {
@@ -119,13 +133,16 @@ function planEpisodes(library: readonly LibraryAnime[], dependencies: MigrationD
                 return [];
             }
             const folder = newEpisodeFolder(anime, episode.number, newDirectory, platform);
-            const planned = filesOf(episode.filePath)
-                .filter((file) => {
-                    return files.exists(file);
-                })
-                .map((file) => {
-                    return { from: file, to: path.join(folder, path.basename(file)) };
-                });
+            const planned = withoutRepeats(
+                filesOf(episode.filePath)
+                    .filter((file) => {
+                        return files.exists(file);
+                    })
+                    .map((file) => {
+                        return { from: file, to: path.join(folder, path.basename(file)) };
+                    }),
+                platform
+            );
             return [
                 {
                     episodeId: episode.id,

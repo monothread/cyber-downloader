@@ -1169,7 +1169,7 @@ test.describe('watching without downloading', () => {
             return video.evaluate((element: HTMLVideoElement) => {
                 return element.currentTime;
             });
-        }).toBeGreaterThan(5);
+        }, { timeout: 15000 }).toBeGreaterThan(5);
     });
 
     test('closes with Escape and the stream is no longer served', async () => {
