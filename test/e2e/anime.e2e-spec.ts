@@ -705,8 +705,13 @@ test.describe('watching without downloading', () => {
             });
         }, { timeout: 20000 }).toBeGreaterThanOrEqual(3);
 
-        await expect(page.getByRole('dialog').getByRole('slider', { name: 'Seek' })).toBeVisible();
-        await page.getByRole('dialog').getByRole('slider', { name: 'Seek' }).fill('5');
+        // The bar knows the length of the episode a moment after the video does: a slider that is still empty would take any
+        // position back to the start.
+        const seek = page.getByRole('dialog').getByRole('slider', { name: 'Seek' });
+        await expect.poll(async () => {
+            return Number(await seek.getAttribute('max'));
+        }).toBeGreaterThan(5);
+        await seek.fill('5');
         await expect.poll(() => {
             return seen.some((request) => {
                 return request.path === '/seg2.ts' || request.path === '/seg3.ts';
