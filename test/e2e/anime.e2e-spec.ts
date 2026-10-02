@@ -935,7 +935,8 @@ test.describe('migrating the folder of the anime', () => {
         await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
         await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
 
-        await expect(page.locator('.toast--info .toast__message')).toHaveText(`MIGRATION DONE: 1 EPISODES MOVED TO ${target}`);
+        await expect(page.locator('.toast .toast__message')).toHaveText(`MIGRATION DONE: 1 EPISODES MOVED TO ${target}`);
+        await expect(page.locator('.toast')).toHaveClass(/toast--info/);
         await expect(page.getByLabel('Anime download folder')).toHaveValue(target);
         await expect.poll(savedFolder).toBe(target);
 
@@ -960,7 +961,8 @@ test.describe('migrating the folder of the anime', () => {
         const { page } = session;
         await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
         await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
-        await expect(page.locator('.toast--info .toast__message')).toHaveText(`MIGRATION DONE: 1 EPISODES MOVED TO ${target}`);
+        await expect(page.locator('.toast .toast__message')).toHaveText(`MIGRATION DONE: 1 EPISODES MOVED TO ${target}`);
+        await expect(page.locator('.toast')).toHaveClass(/toast--info/);
 
         await openAnimeTab(page);
         await openFirstResult(page);
