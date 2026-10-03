@@ -3,7 +3,7 @@ import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 
 // An information notice goes away by itself; an error stays until it is dismissed.
-export const INFO_NOTICE_MS = 3000;
+export const INFO_NOTICE_MS = 5000;
 
 export function Toast() {
     const t = useTranslator();

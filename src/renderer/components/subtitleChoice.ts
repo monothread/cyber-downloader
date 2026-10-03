@@ -1,5 +1,7 @@
 import type { AnimeSubtitleImportResponse, AnimeSubtitleTrack } from '@shared/anime';
 import type { MessageKey } from '@shared/i18n';
+import type { LanguageCode } from '@shared/types';
+import { subtitleDisplayNames } from './subtitleName';
 import type { SubtitleOption } from './VideoControls';
 
 const STORAGE_PREFIX = 'pullwave-subtitle-';
@@ -24,9 +26,19 @@ export function optionIdOf(track: AnimeSubtitleTrack): string {
     return track.id.length > 0 ? track.id : DEFAULT_OPTION_ID;
 }
 
-export function optionsOf(tracks: readonly AnimeSubtitleTrack[]): SubtitleOption[] {
-    return tracks.map((track) => {
-        return { id: optionIdOf(track), label: track.label };
+// The options of the menu of subtitles. With a language, the names of the subtitles of the source are written in it (see
+// subtitleName.ts); the ones the user loaded keep the name of their file.
+export function optionsOf(tracks: readonly AnimeSubtitleTrack[], language?: LanguageCode): SubtitleOption[] {
+    const labels = language === undefined ? tracks.map((track) => {
+        return track.label;
+    }) : subtitleDisplayNames(
+        tracks.map((track) => {
+            return track.label;
+        }),
+        language
+    );
+    return tracks.map((track, position) => {
+        return { id: optionIdOf(track), label: track.kind === 'imported' ? track.label : (labels[position] as string) };
     });
 }
 

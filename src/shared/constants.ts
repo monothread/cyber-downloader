@@ -44,6 +44,7 @@ export const IPC = {
     animeProgress: 'anime:progress',
     animeSubtitles: 'anime:subtitles',
     animeSubtitleImport: 'anime:subtitle-import',
+    animeSubtitlesCheck: 'anime:subtitles-check',
     animeHistoryList: 'anime:history-list',
     animeHistoryRecord: 'anime:history-record',
     animeHistoryRemove: 'anime:history-remove',

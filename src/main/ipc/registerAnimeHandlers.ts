@@ -12,6 +12,7 @@ import {
     type AnimeProgressUpdate,
     type AnimeSeriesResponse,
     type AnimeStreamResponse,
+    type AnimeSubtitleCheckResponse,
     type AnimeSubtitleImportResponse,
     type AnimeSubtitleTrack
 } from '@shared/anime';
@@ -57,10 +58,12 @@ export interface AnimeHandlerDependencies {
     // The system the files are on (decides the rules of folder names); this one by default.
     platform?: NodeJS.Platform;
     onLibraryChanged: () => void;
-    // The subtitle files of a downloaded episode: the ones it has and loading one the user chooses.
+    // The subtitle files of a downloaded episode: the ones it has, loading one the user chooses and looking for the ones the source
+    // offers that it does not have yet.
     subtitles: {
         list: (episodeId: number) => AnimeSubtitleTrack[];
         import: (episodeId: number) => Promise<AnimeSubtitleImportResponse>;
+        check: (episodeId: number) => Promise<AnimeSubtitleCheckResponse>;
     };
 }
 
@@ -236,6 +239,9 @@ function registerUnsupported(ipcMain: IpcMainLike): void {
         return [];
     });
     ipcMain.handle(IPC.animeSubtitleImport, (): AnimeSubtitleImportResponse => {
+        return { ok: false, reason: 'missing' };
+    });
+    ipcMain.handle(IPC.animeSubtitlesCheck, (): AnimeSubtitleCheckResponse => {
         return { ok: false, reason: 'missing' };
     });
     [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose, IPC.animeHistoryRecord, IPC.animeHistoryRemove, IPC.animeHistoryClear].forEach((channel) => {
@@ -487,6 +493,18 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
     ipcMain.handle(IPC.animeSubtitleImport, async (_event, episodeId): Promise<AnimeSubtitleImportResponse> => {
         const id = asId(episodeId);
         return id === null ? { ok: false, reason: 'missing' } : deps.subtitles.import(id);
+    });
+    // What the source offers that the episode does not have is saved next to its video; what is kept beside the video is written again.
+    ipcMain.handle(IPC.animeSubtitlesCheck, async (_event, episodeId): Promise<AnimeSubtitleCheckResponse> => {
+        const id = asId(episodeId);
+        if (id === null) {
+            return { ok: false, reason: 'missing' };
+        }
+        const result = await deps.subtitles.check(id);
+        if (result.ok && result.added.length > 0) {
+            deps.refreshMetadata(id);
+        }
+        return result;
     });
     ipcMain.handle(IPC.animeProgress, (_event, input): void => {
         const update = parseProgress(input);

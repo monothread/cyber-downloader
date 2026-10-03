@@ -40,8 +40,8 @@ describe('Toast', () => {
             vi.useRealTimers();
         });
 
-        it('removes an info notice after three seconds', () => {
-            expect(INFO_NOTICE_MS).toBe(3000);
+        it('removes an info notice after five seconds', () => {
+            expect(INFO_NOTICE_MS).toBe(5000);
             useAppStore.setState({ notice: { kind: 'info', message: 'Queued' } });
             render(<Toast />);
 
@@ -67,17 +67,17 @@ describe('Toast', () => {
             expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'Boom' });
         });
 
-        it('counts the three seconds again when a new notice replaces the old one', () => {
+        it('counts the five seconds again when a new notice replaces the old one', () => {
             useAppStore.setState({ notice: { kind: 'info', message: 'First' } });
             render(<Toast />);
             act(() => {
-                vi.advanceTimersByTime(2000);
+                vi.advanceTimersByTime(INFO_NOTICE_MS - 1000);
             });
             act(() => {
                 useAppStore.setState({ notice: { kind: 'info', message: 'Second' } });
             });
             act(() => {
-                vi.advanceTimersByTime(2000);
+                vi.advanceTimersByTime(INFO_NOTICE_MS - 1000);
             });
             expect(screen.getByText('Second')).toBeInTheDocument();
             act(() => {
@@ -86,7 +86,7 @@ describe('Toast', () => {
             expect(screen.queryByText('Second')).not.toBeInTheDocument();
         });
 
-        it('shows the queued notices one after the other, three seconds each', () => {
+        it('shows the queued notices one after the other, five seconds each', () => {
             render(<Toast />);
             act(() => {
                 useAppStore.getState().queueNotice({ kind: 'info', message: 'One' });

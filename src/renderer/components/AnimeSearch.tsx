@@ -6,6 +6,7 @@ import { effectiveAudio, useAnimeStore } from '../store/animeStore';
 import { animeErrorKey, downloadedAnime, libraryEntry, seasonLabel } from './animeText';
 import { AnimeDetail } from './AnimeDetail';
 import { SelectField, TextField } from './fields';
+import { RowLink } from './RowLink';
 
 function audioLabel(audio: AnimeAudio, t: Translator): string {
     return audio === 'dub' ? t('anime.audio.dub') : t('anime.audio.sub');
@@ -83,10 +84,18 @@ export function AnimeSearch() {
                             const saved = downloadedAnime(library, result.title, search.searchedAudio);
                             const joined = libraryEntry(library, result.title, search.searchedAudio);
                             return (
-                                <li key={result.index} className="history__item">
+                                <li key={result.index} className="history__item row--link">
                                     <div className="history__main">
-                                        <span className="history__title" title={result.title}>
-                                            {result.title}
+                                        <span className="history__title">
+                                            <RowLink
+                                                label={`${t('anime.open')}: ${result.title}`}
+                                                title={result.title}
+                                                onClick={() => {
+                                                    void openResult(result);
+                                                }}
+                                            >
+                                                {result.title}
+                                            </RowLink>
                                         </span>
                                         {joined?.series != null && joined.season !== null && (
                                             <span className="history__meta">{t('anime.series.tag', { series: joined.series, label: seasonLabel(joined, t) })}</span>
@@ -104,16 +113,6 @@ export function AnimeSearch() {
                                             {t('anime.library.view')}
                                         </button>
                                     )}
-                                    <button
-                                        type="button"
-                                        className="btn btn--small"
-                                        aria-label={`${t('anime.open')}: ${result.title}`}
-                                        onClick={() => {
-                                            void openResult(result);
-                                        }}
-                                    >
-                                        {t('anime.open')}
-                                    </button>
                                 </li>
                             );
                         })}

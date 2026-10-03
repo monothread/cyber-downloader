@@ -172,7 +172,8 @@ body::after {
 .tab:hover { color: var(--cyan); }
 
 /* The settings tabs are a gear at the right end of their bar. */
-.tab--icon { margin-left: auto; padding: 8px 14px; font-size: 18px; line-height: 1; letter-spacing: 0; }
+/* The gear is bigger than the words, and takes less room above and below, so the bar is no taller than with only words. */
+.tab--icon { margin-left: auto; padding: 4px 14px; font-size: 24px; line-height: 1; letter-spacing: 0; }
 
 .tab--active {
     color: var(--cyan);
@@ -710,6 +711,32 @@ body::after {
 .modal__actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 
 /* Anime section */
+/* A row or a card that opens by clicking anywhere on it (see RowLink): its title is a real button whose area is stretched over the
+   row, and the other buttons of the row stay above it. */
+.row--link { position: relative; cursor: pointer; }
+.row--link:hover { background: color-mix(in srgb, var(--cyan) 8%, transparent); }
+.row--link:has(.row-link:focus-visible) { outline: 2px solid var(--yellow); outline-offset: 2px; }
+.row--link :is(button, a, input, select):not(.row-link) { position: relative; z-index: 1; }
+
+.row-link {
+    display: block;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: left;
+    text-transform: inherit;
+    cursor: pointer;
+}
+
+.row-link::after { content: ''; position: absolute; inset: 0; }
+.row-link:focus-visible { outline: none; }
+.row-link__text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* The video downloader keeps the spacing its parts had when they were direct children of the page. */
 .downloads { display: flex; flex-direction: column; gap: 18px; }
 .downloads > .tabs { margin-top: 0; }
@@ -886,13 +913,42 @@ html[data-theme='cyberpunk'] .player__stage:fullscreen .player__button {
 
 html[data-theme='cyberpunk'] .player__stage:fullscreen .player__select { background: transparent; border-color: var(--cyan); }
 
-/* The wave runs even when the video is paused; it only stands still then. */
+/* The wave and the glow are only on the part of the timeline already watched. The wave is a layer as wide as the progress (its flow is
+   the phase of the gradient, a registered property that can be animated), the rest is a plain faint track, and the glow is a
+   drop shadow of what is painted: strong around the watched part, almost none around the faint track. Even when the video is paused
+   the wave is there; it only stands still then. */
+@property --wave-phase {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 0px;
+}
+
+@keyframes player-wave-phase {
+    from { --wave-phase: 0px; }
+    to { --wave-phase: 160px; }
+}
+
+@keyframes player-wave-glow-filter {
+    0%, 100% { filter: drop-shadow(0 0 4px rgba(0, 240, 255, 0.75)); }
+    50% { filter: drop-shadow(0 0 8px rgba(255, 43, 214, 0.85)); }
+}
+
 html[data-theme='cyberpunk'] .player__stage:fullscreen .player__controls .player__seek {
     background:
-        linear-gradient(to right, transparent var(--progress), rgba(255, 255, 255, 0.16) var(--progress)),
-        repeating-linear-gradient(90deg, var(--cyan) 0, var(--magenta) 40px, var(--cyan) 80px, #ffffff 100px, var(--cyan) 120px, var(--magenta) 160px);
-    background-size: 100% 100%, 160px 100%;
-    animation: player-wave 1.6s linear infinite, player-wave-glow 2.4s ease-in-out infinite;
+        repeating-linear-gradient(
+            90deg,
+            var(--cyan) var(--wave-phase),
+            var(--magenta) calc(var(--wave-phase) + 40px),
+            var(--cyan) calc(var(--wave-phase) + 80px),
+            #ffffff calc(var(--wave-phase) + 100px),
+            var(--cyan) calc(var(--wave-phase) + 120px),
+            var(--magenta) calc(var(--wave-phase) + 160px)
+        )
+        0 0 / var(--progress) 100% no-repeat,
+        rgba(255, 255, 255, 0.16);
+    border-color: transparent;
+    box-shadow: none;
+    animation: player-wave-phase 1.6s linear infinite, player-wave-glow-filter 2.4s ease-in-out infinite;
     animation-play-state: paused;
 }
 

@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AniRunResult, AnimeImportResponse, AnimeMigrationResponse, AnimeSearchResult, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
+import type { AniRunResult, AnimeImportResponse, AnimeMigrationResponse, AnimeSearchResult, AnimeSubtitleCheckResponse, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { ResolvedStream } from '@main/services/aniStream';
 import { IPC } from '@shared/constants';
 import { MAX_EPISODES_PER_REQUEST, MAX_TEXT_LENGTH, parseDownloadRequest, parseHistoryRequest, parseProgress, registerAnimeHandlers, type AnimeHandlerDependencies } from '@main/ipc/registerAnimeHandlers';
@@ -60,6 +60,7 @@ const ANIME_CHANNELS = [
     IPC.animeStreamOpen,
     IPC.animeSubtitleImport,
     IPC.animeSubtitles,
+    IPC.animeSubtitlesCheck,
     IPC.animeUpdateCli
 ].sort();
 
@@ -122,6 +123,9 @@ function setup(available = true) {
         }),
         import: vi.fn(async (): Promise<AnimeSubtitleImportResponse> => {
             return { ok: false, reason: 'cancelled' };
+        }),
+        check: vi.fn(async (): Promise<AnimeSubtitleCheckResponse> => {
+            return { ok: true, added: [], tracks: [] };
         })
     };
     const deps = {
@@ -378,6 +382,50 @@ describe('registerAnimeHandlers', () => {
             const { call, subtitles } = setup();
             expect(await call(IPC.animeSubtitleImport, episodeId)).toEqual({ ok: false, reason: 'missing' });
             expect(subtitles.import).not.toHaveBeenCalled();
+        });
+
+        describe('checking for the ones the source offers', () => {
+            const added: AnimeSubtitleCheckResponse = {
+                ok: true,
+                added: ['Portuguese'],
+                tracks: [
+                    { id: 'subtitle-English', label: 'English', kind: 'source' },
+                    { id: 'subtitle-Portuguese', label: 'Portuguese', kind: 'source' }
+                ]
+            };
+
+            it('asks for the episode and gives the answer as it is', async () => {
+                const { call, subtitles } = setup();
+                subtitles.check.mockResolvedValueOnce(added);
+                expect(await call(IPC.animeSubtitlesCheck, 4)).toEqual(added);
+                expect(subtitles.check).toHaveBeenCalledTimes(1);
+                expect(subtitles.check).toHaveBeenCalledWith(4);
+            });
+
+            it('writes again what is kept beside the video when subtitles were added', async () => {
+                const { call, subtitles, refreshMetadata } = setup();
+                subtitles.check.mockResolvedValueOnce(added);
+                await call(IPC.animeSubtitlesCheck, 4);
+                expect(refreshMetadata).toHaveBeenCalledTimes(1);
+                expect(refreshMetadata).toHaveBeenCalledWith(4);
+            });
+
+            it.each([
+                ['none were added', { ok: true, added: [], tracks: [] } as AnimeSubtitleCheckResponse],
+                ['the episode is missing', { ok: false, reason: 'missing' } as AnimeSubtitleCheckResponse],
+                ['the check failed', { ok: false, reason: 'failed', error: { code: 'NETWORK', raw: 'timeout' } } as AnimeSubtitleCheckResponse]
+            ])('leaves what is kept beside the video alone when %s', async (_name, answer) => {
+                const { call, subtitles, refreshMetadata } = setup();
+                subtitles.check.mockResolvedValueOnce(answer);
+                expect(await call(IPC.animeSubtitlesCheck, 4)).toEqual(answer);
+                expect(refreshMetadata).not.toHaveBeenCalled();
+            });
+
+            it.each([['4'], [0], [-1], [1.5], [null], [undefined]])('does not check the invalid episode %s', async (episodeId) => {
+                const { call, subtitles } = setup();
+                expect(await call(IPC.animeSubtitlesCheck, episodeId)).toEqual({ ok: false, reason: 'missing' });
+                expect(subtitles.check).not.toHaveBeenCalled();
+            });
         });
     });
 
@@ -898,6 +946,7 @@ describe('registerAnimeHandlers where the section does not exist', () => {
         expect(ipc.call(IPC.animeSetSeries, 1, 'Frieren', 1)).toEqual({ ok: false, reason: 'invalid' });
         expect(ipc.call(IPC.animeSubtitles, 1)).toEqual([]);
         expect(ipc.call(IPC.animeSubtitleImport, 1)).toEqual({ ok: false, reason: 'missing' });
+        expect(ipc.call(IPC.animeSubtitlesCheck, 1)).toEqual({ ok: false, reason: 'missing' });
         [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose, IPC.animeHistoryRecord, IPC.animeHistoryRemove, IPC.animeHistoryClear].forEach((channel) => {
             expect(ipc.call(channel, 1)).toBeUndefined();
         });

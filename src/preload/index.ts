@@ -152,6 +152,9 @@ const api: CyberApi = {
     listAnimeSubtitles: (episodeId) => {
         return ipcRenderer.invoke(IPC.animeSubtitles, episodeId);
     },
+    checkAnimeSubtitles: (episodeId) => {
+        return ipcRenderer.invoke(IPC.animeSubtitlesCheck, episodeId);
+    },
     importAnimeSubtitle: (episodeId) => {
         return ipcRenderer.invoke(IPC.animeSubtitleImport, episodeId);
     },

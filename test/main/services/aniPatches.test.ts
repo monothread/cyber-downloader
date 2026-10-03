@@ -19,6 +19,13 @@ describe('patchAniCli', () => {
         expect(patched).toContain('Referer:\\n%s\\n');
     });
 
+    it('makes the debug output carry the subtitles the patch kept, and works without that patch', () => {
+        const withList = patchAniCli(`${SUBTITLES}\n${ALL_SUBTITLES}\n${DEBUG}`) as string;
+        expect(withList).toContain('pullwave_all_subs=');
+        expect(withList).toContain('Subtitle list:\\n%s\\n" "$links" "$video_link" "$sub_link" "$refr" "${pullwave_all_subs:-}"');
+        expect(patchAniCli(DEBUG)).toContain('"${pullwave_all_subs:-}"');
+    });
+
     it('applies the one that fits when the other does not', () => {
         expect(patchAniCli(SUBTITLES)).toContain('pullwave_pick_subtitle "$_json"');
         expect(patchAniCli(SUBTITLES)).not.toContain('Referer:');

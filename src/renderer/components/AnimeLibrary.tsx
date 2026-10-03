@@ -9,6 +9,7 @@ import { cleanSeasonName, cleanSeriesName, isValidSeason, suggestSeries } from '
 import { TextField } from './fields';
 import { SeriesFields } from './SeriesFields';
 import { formatBytes, formatDuration } from './jobStatus';
+import { RowLink } from './RowLink';
 
 interface EpisodeRowProps {
     anime: LibraryAnime;
@@ -42,11 +43,12 @@ function EpisodeRow({ anime, episode, t }: EpisodeRowProps) {
         return state.setWatched;
     });
     const label = t('anime.episode', { number: episode.number });
-    const playable = !episode.fileMissing;
+    // A downloaded episode whose file is there is played by clicking on its row.
+    const openable = episode.status === 'done' && !episode.fileMissing;
 
     return (
         <li
-            className={`history__item${episode.status === 'error' || episode.fileMissing ? ' history__item--error' : ''}${episode.watched ? ' history__item--watched' : ''}`}
+            className={`history__item${episode.status === 'error' || episode.fileMissing ? ' history__item--error' : ''}${episode.watched ? ' history__item--watched' : ''}${openable ? ' row--link' : ''}`}
             data-testid="anime-episode"
         >
             <div className="history__main">
@@ -56,7 +58,18 @@ function EpisodeRow({ anime, episode, t }: EpisodeRowProps) {
                             ✓
                         </span>
                     )}
-                    {label}
+                    {openable ? (
+                        <RowLink
+                            label={`${t('anime.play')}: ${anime.title} ${label}`}
+                            onClick={() => {
+                                play(anime.id, episode.id);
+                            }}
+                        >
+                            {label}
+                        </RowLink>
+                    ) : (
+                        label
+                    )}
                     {episode.fileMissing && (
                         <span className="missing-mark" role="img" aria-label={t('anime.fileMissing')} title={t('anime.fileMissing.hint')}>
                             !
@@ -73,17 +86,6 @@ function EpisodeRow({ anime, episode, t }: EpisodeRowProps) {
             <span className="anime__actions">
                 {episode.status === 'done' && (
                     <>
-                        <button
-                            type="button"
-                            className="btn btn--small btn--primary"
-                            disabled={!playable}
-                            aria-label={`${t('anime.play')}: ${anime.title} ${label}`}
-                            onClick={() => {
-                                play(anime.id, episode.id);
-                            }}
-                        >
-                            {t('anime.play')}
-                        </button>
                         <button
                             type="button"
                             className="btn btn--small"
@@ -227,18 +229,6 @@ function AnimeEntry({ anime, t, startExpanded = false }: { anime: LibraryAnime; 
 
     const audio = <span className="badge">{anime.audio === 'dub' ? t('anime.audio.dub') : t('anime.audio.sub')}</span>;
     const progress = t('anime.library.progress', { done: downloadedCount(anime), total: anime.episodes.length });
-    const toggle = (
-        <button
-            type="button"
-            className="btn btn--small"
-            aria-expanded={expanded}
-            onClick={() => {
-                setExpanded(!expanded);
-            }}
-        >
-            {expanded ? t('anime.library.hide') : t('anime.library.show')}
-        </button>
-    );
     const more = (
         <button
             type="button"
@@ -304,19 +294,25 @@ function AnimeEntry({ anime, t, startExpanded = false }: { anime: LibraryAnime; 
 
     return (
         <section ref={card} className="series__season" data-testid="anime-season">
-            <div className="season__row">
+            <div className="season__row row--link">
                 <span className="season__chip" title={seasonLabel(anime, t)}>
                     {seasonLabel(anime, t)}
                 </span>
-                <h4 className="season__title" title={anime.title}>
-                    {anime.title}
+                <h4 className="season__title">
+                    <RowLink
+                        label={`${expanded ? t('anime.library.hide') : t('anime.library.show')}: ${anime.title}`}
+                        expanded={expanded}
+                        title={anime.title}
+                        onClick={() => {
+                            setExpanded(!expanded);
+                        }}
+                    >
+                        {anime.title}
+                    </RowLink>
                 </h4>
                 <span className="season__meta">{progress}</span>
                 {audio}
-                <span className="season__actions">
-                    {toggle}
-                    {more}
-                </span>
+                <span className="season__actions">{more}</span>
             </div>
             {expanded && (
                 <div className="season__panel">
@@ -346,19 +342,18 @@ function SeriesCard({ group, t, onOpen }: { group: LibraryGroup; t: Translator; 
     const name = group.series;
 
     return (
-        <article className="job job--done series library__card" data-testid="anime-card" aria-label={name}>
+        <article className="job job--done series library__card row--link" data-testid="anime-card" aria-label={name}>
             <header className="job__head">
-                <h3 className="series__title" title={name}>
-                    {name}
+                <h3 className="series__title">
+                    <RowLink label={`${t('anime.series.open')}: ${name}`} title={name} onClick={onOpen}>
+                        {name}
+                    </RowLink>
                 </h3>
                 <span className="job__badges">
                     <span className="badge">{seasonsText(group, t)}</span>
                 </span>
             </header>
             <div className="job__actions library__footer">
-                <button type="button" className="btn btn--small btn--primary" aria-label={`${t('anime.series.open')}: ${name}`} onClick={onOpen}>
-                    {t('anime.series.open')}
-                </button>
                 <AnimeRemove
                     label={t('anime.series.remove')}
                     ariaLabel={`${t('anime.series.remove')}: ${name}`}

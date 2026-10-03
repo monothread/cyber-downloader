@@ -217,6 +217,13 @@ export type AnimeSubtitleImportResponse =
     | { ok: true; tracks: AnimeSubtitleTrack[]; imported: AnimeSubtitleTrack }
     | { ok: false; reason: 'cancelled' | 'unsupported' | 'too-large' | 'unreadable' | 'missing' };
 
+// What checking an episode for subtitles it does not have yet came to: the labels of the ones that were added (none when the source
+// offers no others), and the subtitles the episode has now.
+export type AnimeSubtitleCheckResponse =
+    | { ok: true; added: string[]; tracks: AnimeSubtitleTrack[] }
+    | { ok: false; reason: 'missing' }
+    | { ok: false; reason: 'failed'; error: AniError };
+
 export const ANIME_STREAM_SCHEME = 'pullwave-stream';
 
 export interface AnimeStreamRequest {

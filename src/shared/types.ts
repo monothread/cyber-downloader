@@ -12,6 +12,7 @@ import type {
     AnimeSeriesResponse,
     AnimeSearchResponse,
     AnimeStatus,
+    AnimeSubtitleCheckResponse,
     AnimeSubtitleImportResponse,
     AnimeSubtitleTrack,
     AnimeStreamRequest,
@@ -317,6 +318,7 @@ export interface CyberApi {
     saveAnimeProgress: (update: AnimeProgressUpdate) => Promise<void>;
     listAnimeSubtitles: (episodeId: number) => Promise<AnimeSubtitleTrack[]>;
     importAnimeSubtitle: (episodeId: number) => Promise<AnimeSubtitleImportResponse>;
+    checkAnimeSubtitles: (episodeId: number) => Promise<AnimeSubtitleCheckResponse>;
     updateAniCli: () => Promise<UpdateResult>;
     openAnimeStream: (request: AnimeStreamRequest) => Promise<AnimeStreamResponse>;
     closeAnimeStream: (sessionId: string) => Promise<void>;

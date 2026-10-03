@@ -1,4 +1,4 @@
-import { expect, test, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { expect, test, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -153,6 +153,116 @@ test('the history of the anime survives closing the app and can be cleared', asy
     await expect(reopened.getByText('// NOTHING OPENED YET. SEARCH AN ANIME OR PLAY AN EPISODE.')).toBeVisible();
 });
 
+// A real click on a point of a row that is not its title, as a user would: the area of the title button is stretched over the row.
+async function clickOnRow(page: Page, part: Locator): Promise<void> {
+    const box = await part.boundingBox();
+    if (box === null) {
+        throw new Error('The part of the row is not on the screen');
+    }
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
+test('opens an anime from the search by clicking anywhere on its card', async () => {
+    const { page } = session;
+    await openAnimeTab(page);
+    await search(page, 'fake');
+    await expect(page.getByText('2 RESULTS')).toBeVisible();
+    // No OPEN button on the cards: the whole card is the way in.
+    await expect(page.getByRole('button', { name: 'OPEN', exact: true })).toHaveCount(0);
+
+    const card = page.locator('li.history__item').filter({ hasText: 'Fake Anime 2' });
+    const box = await card.boundingBox();
+    await page.mouse.click((box?.x ?? 0) + (box?.width ?? 0) - 24, (box?.y ?? 0) + (box?.height ?? 0) / 2);
+
+    await expect(page.getByRole('button', { name: 'EP 3', exact: true })).toBeVisible();
+    expect(calls().some((line) => {
+        return line.startsWith('sub | -S 2 ');
+    })).toBe(true);
+});
+
+test('opens a series, shows its episodes and plays one by clicking on the rows, and the buttons of a row do not trigger it', async () => {
+    const { page } = session;
+    await downloadFirstEpisode(page);
+    await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+
+    // The card of the series: its badge, and not its title, is clicked.
+    await expect(page.getByRole('button', { name: 'OPEN SERIES', exact: true })).toHaveCount(0);
+    await clickOnRow(page, page.getByTestId('anime-card').locator('.badge'));
+    await expect(page.getByTestId('series-view')).toBeVisible();
+
+    // The season starts open (it is the only one); a click on its row hides the episodes and another shows them again.
+    const season = page.getByTestId('anime-season');
+    await expect(season.getByTestId('anime-episode')).toHaveCount(1);
+    await clickOnRow(page, season.locator('.season__meta'));
+    await expect(season.getByTestId('anime-episode')).toHaveCount(0);
+    await expect(season.getByRole('button', { name: /^SHOW EPISODES: / })).toHaveAttribute('aria-expanded', 'false');
+    await clickOnRow(page, season.locator('.season__meta'));
+    await expect(season.getByTestId('anime-episode')).toHaveCount(1);
+
+    // A button of the row works on its own: it does not close the season, nor play the episode.
+    await page.getByRole('button', { name: 'MARK AS WATCHED: Fake Anime EP 1' }).click();
+    await expect(page.getByRole('button', { name: 'MARK AS UNWATCHED: Fake Anime EP 1' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(season.getByTestId('anime-episode')).toHaveCount(1);
+
+    // A click on the row of the episode (its meta line) plays it.
+    await expect(page.getByRole('button', { name: 'PLAY', exact: true })).toHaveCount(0);
+    await clickOnRow(page, season.getByTestId('anime-episode').locator('.history__meta').first());
+    await expect(page.getByRole('dialog', { name: 'Fake Anime · EP 1' })).toBeVisible();
+});
+
+test('in fullscreen, in the cyberpunk theme, only the part of the timeline already watched has the wave and the glow', async () => {
+    await session.app.close();
+    session = await launch(join(workDir, 'user-data'), { theme: 'cyberpunk' });
+    const { page } = session;
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
+    await downloadFirstEpisode(page);
+    await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+    await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+    await page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Fake Anime · EP 1' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Fullscreen' }).click();
+    await expect.poll(() => {
+        return page.evaluate(() => {
+            return document.fullscreenElement !== null;
+        });
+    }).toBe(true);
+
+    // The fake video has no length, so the position is set by hand: 40% of the timeline watched, the video playing and then paused.
+    const timeline = async (playing: 'true' | 'false') => {
+        await page.mouse.move(300, 300);
+        await page.mouse.move(320, 320);
+        return page.evaluate((state) => {
+            const seek = document.querySelector('.player__seek') as HTMLElement;
+            seek.style.setProperty('--progress', '40%');
+            (document.querySelector('.player__controls') as HTMLElement).setAttribute('data-playing', state);
+            const style = getComputedStyle(seek);
+            return {
+                backgroundSize: style.backgroundSize,
+                boxShadow: style.boxShadow,
+                borderColor: style.borderTopColor,
+                animationName: style.animationName,
+                animationPlayState: style.animationPlayState,
+                filter: style.filter
+            };
+        }, playing);
+    };
+
+    const playing = await timeline('true');
+    // The wave is a layer as wide as what was watched; the rest of the timeline is a plain track, and nothing glows around the whole bar.
+    expect(playing.backgroundSize).toBe('40% 100%, auto');
+    expect(playing.boxShadow).toBe('none');
+    expect(playing.borderColor).toBe('rgba(0, 0, 0, 0)');
+    expect(playing.animationName).toBe('player-wave-phase, player-wave-glow-filter');
+    expect(playing.animationPlayState).toBe('running');
+    expect(playing.filter).toMatch(/^drop-shadow\(/);
+
+    const paused = await timeline('false');
+    expect(paused.backgroundSize).toBe('40% 100%, auto');
+    expect(paused.animationPlayState).toBe('paused');
+});
+
 test('searches an anime, lists the results and reports when nothing is found', async () => {
     const { page } = session;
     await openAnimeTab(page);
@@ -212,7 +322,7 @@ test('opens an anime and lists its episodes', async () => {
     await expect(page.getByText('2 RESULTS')).toBeVisible();
 });
 
-test('shows the confirmation of a download and takes it away by itself after three seconds', async () => {
+test('shows the confirmation of a download and takes it away by itself after five seconds', async () => {
     const { page } = session;
     await openAnimeTab(page);
     await openFirstResult(page);
@@ -221,7 +331,7 @@ test('shows the confirmation of a download and takes it away by itself after thr
 
     const notice = page.getByText('Queued 1 episode(s) of Fake Anime.');
     await expect(notice).toBeVisible();
-    await expect(notice).toBeHidden({ timeout: 6000 });
+    await expect(notice).toBeHidden({ timeout: 8000 });
 });
 
 test('downloads an episode with the quality of the settings and shows it in the library', async () => {
@@ -604,7 +714,9 @@ test.describe('library and folder in sync', () => {
         await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
         await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
         await expect(page.getByRole('img', { name: 'FILE NOT FOUND' })).toHaveCount(1);
-        await expect(page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' })).toBeDisabled();
+        // An episode whose file is gone cannot be played: its row is not a way into the player.
+        await expect(page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' })).toHaveCount(0);
+        await expect(page.getByTestId('anime-episode')).not.toHaveClass(/row--link/);
 
         // The import is on the cards: the screen of the anime has a way back.
         await page.getByRole('button', { name: 'BACK' }).click();
@@ -614,9 +726,10 @@ test.describe('library and folder in sync', () => {
         await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
         await expect(page.getByRole('img', { name: 'FILE NOT FOUND' })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' })).toBeEnabled();
+        await expect(page.getByTestId('anime-episode')).toHaveClass(/row--link/);
     });
 
-    test('shows the mark and disables the player for an episode whose file was removed from the disk', async () => {
+    test('shows the mark and does not offer the player for an episode whose file was removed from the disk', async () => {
         const { page, animeDir } = session;
         await downloadFirstEpisode(page);
         rmSync(join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1', 'Fake Anime Episode 1.mp4'));
@@ -628,7 +741,10 @@ test.describe('library and folder in sync', () => {
             'title',
             'The file of this episode is not on the disk. Use IMPORT LIBRARY to point it to its new place.'
         );
-        await expect(row.getByRole('button', { name: 'PLAY: Fake Anime EP 1' })).toBeDisabled();
+        await expect(row.getByRole('button', { name: 'PLAY: Fake Anime EP 1' })).toHaveCount(0);
+        // Clicking the row does not start the player.
+        await row.locator('.history__meta').first().click({ force: true });
+        await expect(page.getByRole('dialog')).toHaveCount(0);
     });
 
     test('downloads a new episode into the folder the anime was renamed to, once the library knows about it', async () => {
@@ -685,7 +801,7 @@ test.describe('series and seasons', () => {
         await expect(page.getByText('1 ANIMES')).toBeVisible();
         // The card only has the two buttons and the count of seasons.
         await expect(card.locator('.season__chip')).toHaveCount(0);
-        await expect(card.getByRole('button')).toHaveText(['OPEN SERIES', 'REMOVE SERIES']);
+        await expect(card.getByRole('button')).toHaveText(['Fake Anime', 'REMOVE SERIES']);
         // Its own screen has the seasons with their buttons, and a way back.
         await card.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
         await expect(page.locator('.season__chip')).toHaveText(['SEASON 1', 'SEASON 2']);
@@ -875,8 +991,8 @@ test.describe('layout for every size of window', () => {
 
         const row = page.getByTestId('anime-episode').first();
         const title = await row.locator('.history__title').boundingBox();
-        const play = await row.getByRole('button', { name: /^PLAY/ }).boundingBox();
-        expect(play?.y).toBeGreaterThan((title?.y ?? 0) + (title?.height ?? 0));
+        const marked = await row.getByRole('button', { name: /^MARK AS/ }).boundingBox();
+        expect(marked?.y).toBeGreaterThan((title?.y ?? 0) + (title?.height ?? 0));
         expect(await page.locator('.tabs').first().evaluate((tabs) => { return getComputedStyle(tabs).overflowX; })).toBe('auto');
     });
 });
@@ -1110,6 +1226,8 @@ test.describe('watching without downloading', () => {
             ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=duration=8:size=160x120:rate=10', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=8', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-force_key_frames', 'expr:gte(t,n_forced*2)', '-c:a', 'aac', '-f', 'hls', '-hls_time', '2', '-hls_playlist_type', 'vod', '-hls_segment_filename', join(hlsDir, 'seg%d.ts'), join(hlsDir, 'index.m3u8')]
         );
         writeFileSync(join(hlsDir, 'en.vtt'), 'WEBVTT\n\n00:00.000 --> 00:08.000\nHello from the stream\n');
+        writeFileSync(join(hlsDir, 'pt.vtt'), 'WEBVTT\n\n00:00.000 --> 00:08.000\nOla do stream\n');
+        writeFileSync(join(hlsDir, 'es.vtt'), 'WEBVTT\n\n00:00.000 --> 00:08.000\nHola del stream\n');
         seen = [];
         server = createServer((request, response) => {
             const path = (request.url ?? '/').split('?')[0] ?? '/';
@@ -1153,6 +1271,102 @@ test.describe('watching without downloading', () => {
         await page.getByRole('button', { name: `EP ${episode}`, exact: true }).click();
         await page.getByRole('button', { name: 'WATCH', exact: true }).click();
     }
+
+    test('checks a downloaded episode for subtitles the source offers and saves only the ones it does not have', async () => {
+        const { page, animeDir, userData } = session;
+        await downloadFirstEpisode(page);
+        const folder = join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1');
+        // The download saved only the one ani-cli picked; the source offers three languages.
+        writeFileSync(
+            join(userData, 'anime', 'history', 'stream-subtitle-list'),
+            [
+                `{"lang":"en","label":"English","src":"${baseUrl}/en.vtt","default":true}`,
+                `{"lang":"pt","label":"Portuguese","src":"${baseUrl}/pt.vtt"}`,
+                `{"lang":"es","label":"Spanish","src":"${baseUrl}/es.vtt"}`
+            ].join('\n')
+        );
+        await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Fake Anime · EP 1' });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole('combobox', { name: 'Subtitles' })).toBeVisible();
+
+        await dialog.getByRole('button', { name: 'CHECK SUBTITLES' }).click();
+        await expect(page.locator('.toast--info .toast__message')).toHaveText('NEW SUBTITLES ADDED (3): English, Portuguese, Spanish');
+        await expect(dialog.getByRole('button', { name: 'CHECK SUBTITLES' })).toBeEnabled();
+        expect(readFileSync(join(folder, 'Fake Anime Episode 1.subtitle-English.vtt'), 'utf-8')).toContain('Hello from the stream');
+        expect(readFileSync(join(folder, 'Fake Anime Episode 1.subtitle-Portuguese.vtt'), 'utf-8')).toContain('Ola do stream');
+        expect(readFileSync(join(folder, 'Fake Anime Episode 1.subtitle-Spanish.vtt'), 'utf-8')).toContain('Hola del stream');
+        // The source asked for them the way ani-cli does: with the site that embeds the player.
+        expect(
+            seen.filter((entry) => {
+                return entry.path.endsWith('.vtt');
+            }).map((entry) => {
+                return [entry.path, entry.referer];
+            })
+        ).toEqual([
+            ['/en.vtt', REFERER],
+            ['/pt.vtt', REFERER],
+            ['/es.vtt', REFERER]
+        ]);
+        // The player offers them at once.
+        const options = await dialog.getByRole('combobox', { name: 'Subtitles' }).locator('option').allTextContents();
+        expect(options).toEqual(expect.arrayContaining(['English', 'Portuguese', 'Spanish']));
+
+        // Asking again finds nothing new and downloads nothing.
+        const asked = seen.length;
+        await dialog.getByRole('button', { name: 'CHECK SUBTITLES' }).click();
+        await expect(page.locator('.toast--info .toast__message')).toHaveText('NO NEW SUBTITLES: THE SOURCE OFFERS NO OTHERS.');
+        expect(
+            seen.slice(asked).filter((entry) => {
+                return entry.path.endsWith('.vtt');
+            })
+        ).toEqual([]);
+    });
+
+    test('shows the names of the subtitles clean, and keeps the names of their files as the source wrote them', async () => {
+        const { page, animeDir, userData } = session;
+        await downloadFirstEpisode(page);
+        const folder = join(animeDir, 'Fake Anime', 'Season 1', 'Episode 1');
+        writeFileSync(
+            join(userData, 'anime', 'history', 'stream-subtitle-list'),
+            [
+                `{"lang":"pt","label":"Portuguese (- Portuguese(Brazil))","src":"${baseUrl}/pt.vtt"}`,
+                `{"lang":"es","label":"Spanish (- Spanish(Latin America))","src":"${baseUrl}/es.vtt"}`
+            ].join('\n')
+        );
+        await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Fake Anime · EP 1' });
+        await dialog.getByRole('button', { name: 'CHECK SUBTITLES' }).click();
+
+        await expect(page.locator('.toast--info .toast__message')).toHaveText('NEW SUBTITLES ADDED (2): Portuguese (Brazil), Spanish (Latin America)');
+        const options = await dialog.getByRole('combobox', { name: 'Subtitles' }).locator('option').allTextContents();
+        expect(options).toEqual(expect.arrayContaining(['Portuguese (Brazil)', 'Spanish (Latin America)']));
+        expect(options.some((name) => {
+            return name.includes('(- ');
+        })).toBe(false);
+        // The files keep the name the source gave, which is also what tells the subtitles apart.
+        expect(existsSync(join(folder, 'Fake Anime Episode 1.subtitle-Portuguese (- Portuguese(Brazil)).vtt'))).toBe(true);
+        expect(existsSync(join(folder, 'Fake Anime Episode 1.subtitle-Spanish (- Spanish(Latin America)).vtt'))).toBe(true);
+    });
+
+    test('says so when the source offers no subtitles for the episode that was checked', async () => {
+        const { page } = session;
+        await downloadFirstEpisode(page);
+        await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
+        await page.getByRole('button', { name: 'OPEN SERIES: Fake Anime' }).click();
+        await page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Fake Anime · EP 1' });
+        await dialog.getByRole('button', { name: 'CHECK SUBTITLES' }).click();
+        // The message is the notice of the app, in the corner of the screen and not above the video, and it goes away by itself.
+        const toast = page.locator('.toast--info');
+        await expect(toast.locator('.toast__message')).toHaveText('NO NEW SUBTITLES: THE SOURCE OFFERS NO OTHERS.');
+        expect(await dialog.locator('.toast').count()).toBe(0);
+        await expect(toast).toBeHidden({ timeout: 8000 });
+    });
 
     test('plays the episode without downloading it, through the app', async () => {
         const { page, animeDir, userData } = session;

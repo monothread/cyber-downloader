@@ -10,6 +10,9 @@ import {
     listSubtitleFiles,
     listSubtitleTracks,
     resolveSubtitlePath,
+    sourceLabelKey,
+    sourceLabelOf,
+    sourceSubtitlePath,
     subtitleFilesOf,
     toWebVtt,
     type SubtitleFileSystem
@@ -345,3 +348,34 @@ describe('defaultSubtitleFileSystem', () => {
         expect(defaultSubtitleFileSystem.list(join(dir, 'missing'))).toEqual([]);
     });
 });
+
+describe('the labels of the subtitles of the source', () => {
+    it('turns what a file name does not accept into "_" and drops the spaces at the end, as the patch of ani-cli does', () => {
+        expect(sourceLabelOf('English')).toBe('English');
+        expect(sourceLabelOf('Portuguese - Brazil (CC)')).toBe('Portuguese - Brazil (CC)');
+        expect(sourceLabelOf('English / SDH: 2')).toBe('English _ SDH_ 2');
+        expect(sourceLabelOf('English   ')).toBe('English');
+        expect(sourceLabelOf('日本語')).toBe('___');
+        expect(sourceLabelOf('a.b_c-d')).toBe('a.b_c-d');
+    });
+
+    it('tells two labels apart by their name, not by the case nor by how many "_" the same name has', () => {
+        expect(sourceLabelKey('English')).toBe(sourceLabelKey('english'));
+        expect(sourceLabelKey('日本語')).toBe(sourceLabelKey('日本'));
+        expect(sourceLabelKey('English')).not.toBe(sourceLabelKey('Spanish'));
+        expect(sourceLabelKey('English  ')).toBe(sourceLabelKey('English'));
+    });
+
+    it('names the file after the video, with the prefix of the source and the cleaned label', () => {
+        expect(sourceSubtitlePath(VIDEO, 'Portuguese - Brazil')).toBe(join(DIR, 'Naruto Episode 1.subtitle-Portuguese - Brazil.vtt'));
+        expect(sourceSubtitlePath(VIDEO, 'a/b')).toBe(join(DIR, 'Naruto Episode 1.subtitle-a_b.vtt'));
+        expect(sourceSubtitlePath(VIDEO, '../../x')).toBe(join(DIR, 'Naruto Episode 1.subtitle-.._.._x.vtt'));
+    });
+
+    it('is a path that the list of the subtitles of the episode finds again, under the same label', () => {
+        const path = sourceSubtitlePath(VIDEO, 'Portuguese - Brazil');
+        const files = memory({ [path]: 'WEBVTT' });
+        expect(listSubtitleTracks(VIDEO, files)).toEqual([{ id: 'subtitle-Portuguese - Brazil', label: 'Portuguese - Brazil', kind: 'source' }]);
+    });
+});
+

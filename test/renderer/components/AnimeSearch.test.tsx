@@ -103,8 +103,21 @@ describe('AnimeSearch results', () => {
         useAnimeStore.setState({ search: { ...INITIAL_SEARCH, status: 'done', results: RESULTS, searchedQuery: 'cyberpunk' } });
         render(<AnimeSearch />);
         expect(screen.getByText('2 RESULTS')).toBeInTheDocument();
-        expect(screen.getByText('Cyberpunk: Edgerunners')).toHaveAttribute('title', 'Cyberpunk: Edgerunners');
-        expect(screen.getByRole('button', { name: 'OPEN: Cyberpunk: Edgerunners 2' })).toBeInTheDocument();
+        const open = screen.getByRole('button', { name: 'OPEN: Cyberpunk: Edgerunners 2' });
+        expect(open).toHaveAttribute('title', 'Cyberpunk: Edgerunners 2');
+        expect(open).toHaveTextContent('Cyberpunk: Edgerunners 2');
+        expect(open).toHaveClass('row-link');
+        expect(screen.getByText('Cyberpunk: Edgerunners')).toBeInTheDocument();
+    });
+
+    it('opens a result from its card: the title is the button and the card is a link row, with no OPEN button of its own', () => {
+        useAnimeStore.setState({ search: { ...INITIAL_SEARCH, status: 'done', results: RESULTS, searchedQuery: 'cyberpunk' } });
+        render(<AnimeSearch />);
+        screen.getAllByRole('listitem').forEach((card) => {
+            expect(card).toHaveClass('history__item', 'row--link');
+        });
+        expect(screen.queryByText('OPEN')).not.toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: /^OPEN: / })).toHaveLength(RESULTS.length);
     });
 
     it('has a button to the library on the results that are already downloaded, and only on them', async () => {

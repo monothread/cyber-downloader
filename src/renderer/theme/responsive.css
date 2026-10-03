@@ -124,6 +124,12 @@
         letter-spacing: 1px;
     }
 
+    /* The gear keeps its small room above and below here too, so the bar does not grow. */
+    .tab--icon {
+        padding: 4px 12px;
+        letter-spacing: 0;
+    }
+
     .anime__bar {
         flex-wrap: wrap;
         align-items: center;

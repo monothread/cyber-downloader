@@ -150,6 +150,22 @@ export function importedLabel(fileName: string): string {
     return cleaned.length > 0 ? cleaned : 'subtitle';
 }
 
+// The label of a subtitle of the source as the patch of ani-cli writes it in a file name (see aniSubtitles.ts): what a file name
+// does not accept becomes "_", and the spaces at the end go.
+export function sourceLabelOf(label: string): string {
+    return label.replace(/[^A-Za-z0-9 ._()-]/g, '_').replace(/ +$/, '');
+}
+
+// What tells two labels of the same language apart or together: where the source writes the same name with other characters a
+// run of "_" can have another length, so it counts as one.
+export function sourceLabelKey(label: string): string {
+    return sourceLabelOf(label).replace(/_+/g, '_').toLowerCase();
+}
+
+export function sourceSubtitlePath(videoPath: string, label: string): string {
+    return join(dirname(videoPath), `${baseNameOf(videoPath)}.${SOURCE_SUBTITLE_PREFIX}${sourceLabelOf(label)}.vtt`);
+}
+
 export function importedSubtitlePath(videoPath: string, fileName: string): string {
     return join(dirname(videoPath), `${baseNameOf(videoPath)}.${IMPORTED_SUBTITLE_PREFIX}${importedLabel(fileName)}.vtt`);
 }

@@ -41,6 +41,57 @@ describe('optionIdOf and optionsOf', () => {
         ]);
         expect(optionsOf([])).toEqual([]);
     });
+
+    describe('with the language of the app', () => {
+        const TRACKS = [
+            { id: '', label: 'English', kind: 'default' as const },
+            { id: 'subtitle-Portuguese (- Portuguese(Brazil))', label: 'Portuguese (- Portuguese(Brazil))', kind: 'source' as const },
+            { id: 'subtitle-Spanish', label: 'Spanish', kind: 'source' as const },
+            { id: 'import-English', label: 'English', kind: 'imported' as const }
+        ];
+
+        it('writes the names of the subtitles of the source in it, and keeps the ids', () => {
+            expect(optionsOf(TRACKS, 'pt')).toEqual([
+                { id: 'default', label: 'Inglês' },
+                { id: 'subtitle-Portuguese (- Portuguese(Brazil))', label: 'Português (Brasil)' },
+                { id: 'subtitle-Spanish', label: 'Espanhol' },
+                { id: 'import-English', label: 'English' }
+            ]);
+        });
+
+        it('does not touch the name of a subtitle the user loaded, even when it is written like a language', () => {
+            expect(optionsOf([{ id: 'import-Spanish', label: 'Spanish', kind: 'imported' }], 'pt')).toEqual([{ id: 'import-Spanish', label: 'Spanish' }]);
+        });
+
+        it('keeps the name the placeholder of the player and the default subtitle have when they are not a language', () => {
+            expect(
+                optionsOf(
+                    [
+                        { id: '', label: 'Subtitles', kind: 'default' },
+                        { id: '', label: 'Default', kind: 'default' }
+                    ],
+                    'es'
+                )
+            ).toEqual([
+                { id: 'default', label: 'Subtitles' },
+                { id: 'default', label: 'Default' }
+            ]);
+        });
+
+        it('tells two subtitles apart that would be written the same', () => {
+            expect(
+                optionsOf(
+                    [
+                        { id: 'subtitle-Portuguese (- Portuguese(Brazil))', label: 'Portuguese (- Portuguese(Brazil))', kind: 'source' },
+                        { id: 'subtitle-Portuguese (Brazil)', label: 'Portuguese (Brazil)', kind: 'source' }
+                    ],
+                    'pt'
+                ).map((option) => {
+                    return option.label;
+                })
+            ).toEqual(['Português (Brasil)', 'Portuguese (Brazil)']);
+        });
+    });
 });
 
 describe('importFailureKey', () => {

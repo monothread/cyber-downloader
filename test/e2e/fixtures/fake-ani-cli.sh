@@ -4,7 +4,7 @@ version_number="0.0.0-fake"
 # menu program and environment ani-cli would get.
 #   search:    <words>                       lists "1 Fake Anime" and "2 Fake Anime 2" (words with "zzz": nothing found)
 #   episodes:  -S <n> <words>                lists episodes 1 to 3 (words with "single": the one episode is picked silently)
-#   stream:    -S <n> -e <ep> -q <q> ...     (with the debug player) prints the address of the episode
+#   stream:    -S <n> -e <ep> -q <q> ...     (with the debug player) prints the address of the episode, the subtitle and the list of subtitles
 #   download:  -d -S <n> -e <ep> -q <q> ...  writes "<title> Episode <ep>.mp4" and ".vtt" (words with "fail": no sources, "slow": five seconds before the file exists)
 # Every call is appended to $ANI_CLI_HIST_DIR/calls.log as "<mode> | <arguments>", and the subtitle languages it was
 # asked to try to subtitle-labels.log.
@@ -68,7 +68,9 @@ if [ "$ANI_CLI_PLAYER" = debug ] && [ -n "$index" ] && [ -n "$episode" ]; then
     esac
     url="$(cat "$ANI_CLI_HIST_DIR/stream-url")"
     subtitles="$(cat "$ANI_CLI_HIST_DIR/stream-subtitles" 2>/dev/null)"
-    printf 'All links:\n1080 >%s\nSelected link:\n%s\nSubtitles:\n%s\nReferer:\nhttps://embed.example/\n' "$url" "$url" "$subtitles"
+    # Every subtitle the source offers, one per line as it writes them (the patched ani-cli prints them after the referer).
+    list="$(cat "$ANI_CLI_HIST_DIR/stream-subtitle-list" 2>/dev/null)"
+    printf 'All links:\n1080 >%s\nSelected link:\n%s\nSubtitles:\n%s\nReferer:\nhttps://embed.example/\nSubtitle list:\n%s\n' "$url" "$url" "$subtitles" "$list"
     exit 0
 fi
 

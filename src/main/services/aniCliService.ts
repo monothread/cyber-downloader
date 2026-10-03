@@ -9,7 +9,7 @@ import {
     validateDownloadRequest,
     type AniDownloadRequest
 } from './aniArgsBuilder';
-import { buildStreamArgs, parseStreamOutput, type ResolvedStream } from './aniStream';
+import { buildStreamArgs, parseStreamOutput, parseSubtitleList, type ResolvedStream, type ResolvedSubtitles } from './aniStream';
 import { ANIME_PROMPT, EPISODE_PROMPT, mapAniError, parseAnimeChoice } from './aniOutputParser';
 import { asDownloadResult, runAniCli, type AniRunHandle, type AniRunOptions, type AniRunOutcome, type MenuChoice } from './aniCliRunner';
 
@@ -157,8 +157,9 @@ export class AniCliService {
         return { status: 'error', error: mapAniError(outcome.value.output, outcome.value.exitCode) };
     }
 
-    // The address of an episode to watch it without downloading it. ani-cli prints it instead of playing it.
-    async resolveStream(request: AniStreamOptions): Promise<AniRunResult<ResolvedStream>> {
+    // What ani-cli prints about an episode instead of playing it (the "debug" player), read by `parse`; null from `parse` is the
+    // error ani-cli reported.
+    private async askAboutEpisode<T>(request: AniStreamOptions, parse: (output: string) => T | null): Promise<AniRunResult<T>> {
         const invalid = validateDownloadRequest(request);
         if (invalid !== null) {
             return failure(invalid);
@@ -171,11 +172,24 @@ export class AniCliService {
         if (outcome.status !== 'done') {
             return outcome;
         }
-        const stream = outcome.value.exitCode === 0 ? parseStreamOutput(outcome.value.output) : null;
-        if (stream === null) {
+        const answer = outcome.value.exitCode === 0 ? parse(outcome.value.output) : null;
+        if (answer === null) {
             return { status: 'error', error: mapAniError(outcome.value.output, outcome.value.exitCode) };
         }
-        return { status: 'done', value: stream };
+        return { status: 'done', value: answer };
+    }
+
+    // The address of an episode to watch it without downloading it. ani-cli prints it instead of playing it.
+    async resolveStream(request: AniStreamOptions): Promise<AniRunResult<ResolvedStream>> {
+        return this.askAboutEpisode(request, parseStreamOutput);
+    }
+
+    // The subtitles the source offers for an episode, asked the same way (they are empty when this copy of ani-cli does not report
+    // them). An episode the source cannot play is an error, as it is for watching it.
+    async resolveSubtitles(request: AniStreamOptions): Promise<AniRunResult<ResolvedSubtitles>> {
+        return this.askAboutEpisode(request, (output) => {
+            return parseStreamOutput(output) === null ? null : parseSubtitleList(output);
+        });
     }
 
     download(options: AniDownloadOptions): AniDownloadHandle {

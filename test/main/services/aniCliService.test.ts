@@ -136,6 +136,69 @@ describe('AniCliService subtitles', () => {
     });
 });
 
+describe('AniCliService.resolveSubtitles', () => {
+    const LINK = 'https://hls.example.top/v/abc/1080/index.m3u8';
+    const request = { query: 'naruto', index: 2, episode: '4', quality: '720p', audio: 'dub' as const };
+    const ENGLISH = '{"label":"English","src":"https://s/en.vtt","default":true}';
+    const PORTUGUESE = '{"label":"Portuguese","src":"https://s/pt.vtt"}';
+    const printed = ['All links:', `1080 >${LINK}`, 'Selected link:', LINK, 'Subtitles:', 'https://s/en.vtt', 'Referer:', 'https://embed.example/', 'Subtitle list:', ENGLISH, PORTUGUESE].join('\n');
+
+    it('asks ani-cli the way it does to watch, and reads the subtitles and the referer', async () => {
+        const { service, callsOf } = setup([done(outcome({ exitCode: 0, output: printed }))]);
+        expect(await service.resolveSubtitles(request)).toEqual({
+            status: 'done',
+            value: {
+                referer: 'https://embed.example/',
+                subtitles: [
+                    { label: 'English', src: 'https://s/en.vtt' },
+                    { label: 'Portuguese', src: 'https://s/pt.vtt' }
+                ]
+            }
+        });
+        const [call] = callsOf();
+        expect(call?.args).toEqual(['sh', RUNNER, SCRIPT, '-S', '2', '-e', '4', '-q', '720p', 'naruto']);
+        expect(call?.env).toMatchObject({ ANI_CLI_PLAYER: 'debug', ANI_CLI_MODE: 'dub', ANI_CLI_DOWNLOAD_DIR: '.' });
+    });
+
+    it('gives an empty list when the script reports no subtitles', async () => {
+        const output = ['Selected link:', LINK, 'Subtitles:', 'Referer:', 'https://embed.example/'].join('\n');
+        const { service } = setup([done(outcome({ exitCode: 0, output }))]);
+        expect(await service.resolveSubtitles(request)).toEqual({ status: 'done', value: { referer: 'https://embed.example/', subtitles: [] } });
+    });
+
+    it('maps what ani-cli reports when the episode cannot be played', async () => {
+        const { service } = setup([done(outcome({ exitCode: 1, output: 'No sources found for dub!\n' }))]);
+        expect(await service.resolveSubtitles(request)).toEqual({ status: 'error', error: { code: 'NO_SOURCES', raw: 'No sources found for dub!' } });
+    });
+
+    it('does not trust a list when ani-cli failed, nor one that comes without a stream', async () => {
+        expect((await setup([done(outcome({ exitCode: 1, output: printed }))]).service.resolveSubtitles(request)).status).toBe('error');
+        const noStream = ['Subtitle list:', ENGLISH].join('\n');
+        expect(await setup([done(outcome({ exitCode: 0, output: noStream }))]).service.resolveSubtitles(request)).toEqual({
+            status: 'error',
+            error: { code: 'UNKNOWN', raw: noStream }
+        });
+    });
+
+    it('rejects an invalid request without running anything, and reports a missing ani-cli', async () => {
+        const invalid = setup([]);
+        expect(await invalid.service.resolveSubtitles({ ...request, episode: '1; rm -rf /' })).toEqual({ status: 'error', error: { code: 'UNKNOWN', raw: 'Invalid episode: 1; rm -rf /' } });
+        expect(invalid.run).not.toHaveBeenCalled();
+        const missing = setup([], [false]);
+        expect(await missing.service.resolveSubtitles(request)).toEqual({
+            status: 'error',
+            error: { code: 'UNKNOWN', raw: 'ani-cli was not found: the copy that ships with the app is missing.' }
+        });
+        expect(missing.run).not.toHaveBeenCalled();
+    });
+
+    it('passes on a failure to start and on a cancellation', async () => {
+        const failure: AniRunResult<AniRunOutcome> = { status: 'error', error: { code: 'BINARY_MISSING', raw: 'spawn ENOENT' } };
+        expect(await setup([failure]).service.resolveSubtitles(request)).toEqual(failure);
+        expect(await setup([{ status: 'cancelled' }]).service.resolveSubtitles(request)).toEqual({ status: 'cancelled' });
+    });
+});
+
 describe('AniCliService.resolveStream', () => {
     const LINK = 'https://hls.example.top/v/abc/1080/index.m3u8';
     const request = { query: 'naruto', index: 2, episode: '4', quality: '720p', audio: 'dub' as const };

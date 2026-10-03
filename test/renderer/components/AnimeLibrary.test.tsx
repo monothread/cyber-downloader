@@ -214,10 +214,10 @@ describe('AnimeLibrary', () => {
             const [first, second] = screen.getAllByTestId('anime-season');
 
             expect(within(second as HTMLElement).queryByRole('button', { name: 'OPEN FOLDER: Frieren Season 2' })).not.toBeInTheDocument();
-            await user.click(within(second as HTMLElement).getByRole('button', { name: 'SHOW EPISODES' }));
+            await user.click(within(second as HTMLElement).getByRole('button', { name: /^SHOW EPISODES: / }));
             await user.click(within(second as HTMLElement).getByRole('button', { name: 'OPEN FOLDER: Frieren Season 2' }));
             expect(mock.api.openAnimeFolder).toHaveBeenCalledWith(40);
-            await user.click(within(first as HTMLElement).getByRole('button', { name: 'SHOW EPISODES' }));
+            await user.click(within(first as HTMLElement).getByRole('button', { name: /^SHOW EPISODES: / }));
             expect(within(first as HTMLElement).getAllByTestId('anime-episode')).toHaveLength(1);
             expect(within(second as HTMLElement).getAllByTestId('anime-episode')).toHaveLength(2);
         });
@@ -229,7 +229,7 @@ describe('AnimeLibrary', () => {
             await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Frieren' }));
             const [first] = screen.getAllByTestId('anime-season');
             expect(within(first as HTMLElement).getByRole('button', { name: 'GET MORE EPISODES: Frieren' })).toBeInTheDocument();
-            expect(within(first as HTMLElement).getByRole('button', { name: 'SHOW EPISODES' })).toBeInTheDocument();
+            expect(within(first as HTMLElement).getByRole('button', { name: /^SHOW EPISODES: / })).toBeInTheDocument();
             expect(within(first as HTMLElement).queryByRole('button', { name: /^EDIT SERIES/ })).not.toBeInTheDocument();
             expect(within(first as HTMLElement).queryByRole('button', { name: /^REMOVE ANIME/ })).not.toBeInTheDocument();
         });
@@ -300,7 +300,7 @@ describe('AnimeLibrary', () => {
             useAnimeStore.setState({ library: named, setSeries });
             render(<AnimeLibrary />);
             await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Bleach' }));
-            await user.click(within(screen.getAllByTestId('anime-season')[0] as HTMLElement).getByRole('button', { name: 'SHOW EPISODES' }));
+            await user.click(within(screen.getAllByTestId('anime-season')[0] as HTMLElement).getByRole('button', { name: /^SHOW EPISODES: / }));
             await user.click(screen.getByRole('button', { name: 'EDIT SERIES: Bleach' }));
             const editor = screen.getByRole('group', { name: 'EDIT SERIES: Bleach' });
             expect(within(editor).getByRole('textbox', { name: 'Name shown' })).toHaveValue('The Start');
@@ -334,7 +334,7 @@ describe('AnimeLibrary', () => {
             render(<AnimeLibrary />);
 
             await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Frieren' }));
-            await user.click(within(screen.getAllByTestId('anime-season')[1] as HTMLElement).getByRole('button', { name: 'SHOW EPISODES' }));
+            await user.click(within(screen.getAllByTestId('anime-season')[1] as HTMLElement).getByRole('button', { name: /^SHOW EPISODES: / }));
             await user.click(screen.getByRole('button', { name: 'EDIT SERIES: Frieren Season 2' }));
             const editor = screen.getByRole('group', { name: 'EDIT SERIES: Frieren Season 2' });
             expect(within(editor).getByRole('textbox', { name: 'Series' })).toHaveValue('Frieren');
@@ -447,7 +447,7 @@ describe('AnimeLibrary', () => {
             render(<AnimeLibrary />);
 
             await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Frieren' }));
-            await user.click(within(screen.getAllByTestId('anime-season')[1] as HTMLElement).getByRole('button', { name: 'SHOW EPISODES' }));
+            await user.click(within(screen.getAllByTestId('anime-season')[1] as HTMLElement).getByRole('button', { name: /^SHOW EPISODES: / }));
             await user.click(screen.getByRole('button', { name: 'REMOVE ANIME: Frieren Season 2' }));
             await user.click(screen.getByRole('button', { name: 'CONFIRM' }));
             expect(removeAnime.mock.calls).toEqual([[40]]);
@@ -505,11 +505,13 @@ describe('AnimeLibrary', () => {
             expect(mark).toHaveClass('missing-mark');
             expect(mark).toHaveAttribute('title', 'The file of this episode is not on the disk. Use IMPORT LIBRARY to point it to its new place.');
             expect(gone).toHaveClass('history__item--error');
-            expect(within(gone as HTMLElement).getByRole('button', { name: 'PLAY: Naruto EP 1' })).toBeDisabled();
+            expect(within(gone as HTMLElement).queryByRole('button', { name: 'PLAY: Naruto EP 1' })).not.toBeInTheDocument();
+            expect(gone).not.toHaveClass('row--link');
 
             expect(within(fine as HTMLElement).queryByRole('img', { name: 'FILE NOT FOUND' })).not.toBeInTheDocument();
             expect(fine).not.toHaveClass('history__item--error');
             expect(within(fine as HTMLElement).getByRole('button', { name: 'PLAY: Naruto EP 2' })).toBeEnabled();
+            expect(fine).toHaveClass('row--link');
         });
 
         it('does not start the player', async () => {
@@ -517,7 +519,8 @@ describe('AnimeLibrary', () => {
             useAnimeStore.setState({ library: [GONE] });
             render(<AnimeLibrary />);
             await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Naruto' }));
-            await user.click(screen.getByRole('button', { name: 'PLAY: Naruto EP 1' }));
+            expect(screen.queryByRole('button', { name: 'PLAY: Naruto EP 1' })).not.toBeInTheDocument();
+            await user.click(screen.getByText('EP 1'));
             expect(useAnimeStore.getState().playing).toBeNull();
         });
     });
@@ -659,7 +662,7 @@ describe('AnimeLibrary', () => {
             expect(screen.getByTestId('series-view')).toBeInTheDocument();
             expect(screen.getByRole('heading', { level: 3, name: 'Naruto' })).toBeInTheDocument();
             expect(screen.getAllByTestId('anime-episode')).toHaveLength(6);
-            expect(screen.getByRole('button', { name: 'HIDE EPISODES' })).toHaveAttribute('aria-expanded', 'true');
+            expect(screen.getByRole('button', { name: /^HIDE EPISODES: / })).toHaveAttribute('aria-expanded', 'true');
             expect(screen.getByRole('button', { name: 'BACK' })).toBeInTheDocument();
             expect(scrollIntoView).toHaveBeenCalledTimes(1);
             expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
@@ -771,9 +774,9 @@ describe('AnimeLibrary', () => {
         expect(screen.queryByTestId('anime-episode')).not.toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Naruto' }));
         expect(screen.getAllByTestId('anime-episode')).toHaveLength(6);
-        expect(screen.getByRole('button', { name: 'HIDE EPISODES' })).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByRole('button', { name: /^HIDE EPISODES: / })).toHaveAttribute('aria-expanded', 'true');
 
-        await user.click(screen.getByRole('button', { name: 'HIDE EPISODES' }));
+        await user.click(screen.getByRole('button', { name: /^HIDE EPISODES: / }));
         expect(screen.queryByTestId('anime-episode')).not.toBeInTheDocument();
     });
 
@@ -880,4 +883,102 @@ describe('AnimeLibrary', () => {
         await user.click(screen.getByRole('button', { name: 'CONFIRM' }));
         expect(mock.api.removeAnime).toHaveBeenCalledWith(10);
     });
+
+    describe('rows and cards that open by clicking on them', () => {
+        it('opens a series from its card: the name is the button, the card is a link row and the only other button is REMOVE SERIES', async () => {
+            const user = userEvent.setup();
+            useAnimeStore.setState({ library: [LIBRARY[0] as (typeof LIBRARY)[number]] });
+            render(<AnimeLibrary />);
+            const card = screen.getByTestId('anime-card');
+            expect(card).toHaveClass('row--link');
+            const open = within(card).getByRole('button', { name: 'OPEN SERIES: Naruto' });
+            expect(open).toHaveClass('row-link');
+            expect(open).toHaveAttribute('title', 'Naruto');
+            expect(open).toHaveTextContent('Naruto');
+            expect(within(card).queryByText('OPEN SERIES')).not.toBeInTheDocument();
+            expect(within(card).getByRole('button', { name: 'REMOVE SERIES: Naruto' })).toBeInTheDocument();
+            expect(within(card).getAllByRole('button')).toHaveLength(2);
+
+            await user.click(open);
+            expect(screen.getByTestId('series-view')).toBeInTheDocument();
+        });
+
+        it('shows and hides the episodes of a season from its row, with no SHOW EPISODES button of its own', async () => {
+            const user = userEvent.setup();
+            useAnimeStore.setState({ library: [LIBRARY[0] as (typeof LIBRARY)[number]] });
+            render(<AnimeLibrary />);
+            await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Naruto' }));
+            const season = screen.getByTestId('anime-season');
+            const row = season.querySelector('.season__row') as HTMLElement;
+            expect(row).toHaveClass('row--link');
+            expect(within(season).queryByText('SHOW EPISODES')).not.toBeInTheDocument();
+            expect(within(season).queryByText('HIDE EPISODES')).not.toBeInTheDocument();
+
+            // The only season of a series starts open.
+            const toggle = within(row).getByRole('button', { name: 'HIDE EPISODES: Naruto' });
+            expect(toggle).toHaveAttribute('aria-expanded', 'true');
+            expect(toggle).toHaveClass('row-link');
+            expect(toggle).toHaveTextContent('Naruto');
+            expect(within(season).getAllByTestId('anime-episode')).toHaveLength(6);
+
+            await user.click(toggle);
+            expect(within(row).getByRole('button', { name: 'SHOW EPISODES: Naruto' })).toHaveAttribute('aria-expanded', 'false');
+            expect(within(season).queryByTestId('anime-episode')).not.toBeInTheDocument();
+
+            await user.click(within(row).getByRole('button', { name: 'SHOW EPISODES: Naruto' }));
+            expect(within(row).getByRole('button', { name: 'HIDE EPISODES: Naruto' })).toHaveAttribute('aria-expanded', 'true');
+            expect(within(season).getAllByTestId('anime-episode')).toHaveLength(6);
+        });
+
+        it('keeps GET MORE EPISODES on the row of a season without opening it', async () => {
+            const user = userEvent.setup();
+            const openLibraryAnime = vi.fn();
+            useAnimeStore.setState({ library: [LIBRARY[0] as (typeof LIBRARY)[number]], openLibraryAnime });
+            render(<AnimeLibrary />);
+            await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Naruto' }));
+            await user.click(screen.getByRole('button', { name: 'GET MORE EPISODES: Naruto' }));
+            expect(openLibraryAnime).toHaveBeenCalledTimes(1);
+            expect(openLibraryAnime).toHaveBeenCalledWith(LIBRARY[0]);
+            expect(screen.getAllByTestId('anime-episode')).toHaveLength(6);
+        });
+
+        it('plays a downloaded episode from its row, and only that kind of episode has a link row', async () => {
+            const user = userEvent.setup();
+            const play = vi.fn();
+            useAnimeStore.setState({ library: [LIBRARY[0] as (typeof LIBRARY)[number]], play });
+            render(<AnimeLibrary />);
+            await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Naruto' }));
+            const rows = screen.getAllByTestId('anime-episode');
+
+            // Downloaded: episodes 1 to 3 are links, with the title as the button and no PLAY button of its own.
+            [0, 1, 2].forEach((index) => {
+                expect(rows[index]).toHaveClass('row--link');
+                expect(within(rows[index] as HTMLElement).getByRole('button', { name: `PLAY: Naruto EP ${index + 1}` })).toHaveClass('row-link');
+                expect(within(rows[index] as HTMLElement).queryByText('PLAY')).not.toBeInTheDocument();
+            });
+            // Error, cancelled and queued ones cannot be played.
+            [3, 4, 5].forEach((index) => {
+                expect(rows[index]).not.toHaveClass('row--link');
+                expect(within(rows[index] as HTMLElement).queryByRole('button', { name: /^PLAY: / })).not.toBeInTheDocument();
+            });
+
+            await user.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'PLAY: Naruto EP 2' }));
+            expect(play).toHaveBeenCalledTimes(1);
+            expect(play).toHaveBeenCalledWith(10, 2);
+        });
+
+        it('keeps MARK WATCHED, RETRY and REMOVE on the row of an episode without playing it', async () => {
+            const user = userEvent.setup();
+            const play = vi.fn();
+            useAnimeStore.setState({ library: [LIBRARY[0] as (typeof LIBRARY)[number]], play });
+            render(<AnimeLibrary />);
+            await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Naruto' }));
+            await user.click(screen.getByRole('button', { name: 'RETRY: Naruto EP 4' }));
+            expect(mock.api.retryAnimeJob).toHaveBeenCalledWith(4);
+            await user.click(screen.getByRole('button', { name: 'MARK AS WATCHED: Naruto EP 1' }));
+            expect(mock.api.saveAnimeProgress).toHaveBeenCalledTimes(1);
+            expect(play).not.toHaveBeenCalled();
+        });
+    });
 });
+

@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AnimeJob } from '@shared/anime';
 import { DEFAULT_SETTINGS, IPC } from '@shared/constants';
-import { createAnimeRuntime, REMOVE_RETRY_MS, type AnimeRuntime, type AnimeRuntimeOptions } from '@main/animeRuntime';
+import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { createAnimeRuntime, fetchSubtitleText, REMOVE_RETRY_MS, SUBTITLE_FETCH_TIMEOUT_MS, type AnimeRuntime, type AnimeRuntimeOptions } from '@main/animeRuntime';
 import { AnimeDb } from '@main/services/animeDb';
 import { BinaryResolver } from '@main/services/binaryResolver';
 import { cleanTempDirs, makeTempDir } from '../helpers/tempDir';
@@ -162,6 +164,15 @@ describe('createAnimeRuntime', () => {
             });
             expect(chooseSubtitleFile).toHaveBeenCalledTimes(1);
             expect(readFileSync(join(folder, 'Naruto Episode 1.import-ja.vtt'), 'utf-8')).toBe('WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nHi\n');
+        });
+
+        it('says an episode is missing when it is not downloaded or does not exist, without asking the source', async () => {
+            const { given } = downloaded();
+            const runtime = open(given);
+            const db = runtime?.db as AnimeDb;
+            const waiting = db.ensureEpisode(db.upsertAnime({ title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' }).id, '2');
+            expect(await runtime?.handlers.subtitles.check(waiting.id)).toEqual({ ok: false, reason: 'missing' });
+            expect(await runtime?.handlers.subtitles.check(99)).toEqual({ ok: false, reason: 'missing' });
         });
 
         it('does not load anything when no file picker is given, and for an episode that is not downloaded', async () => {
@@ -667,3 +678,67 @@ describe('createAnimeRuntime', () => {
         expect(send).toHaveBeenCalledWith(IPC.eventAnimeLibrary);
     });
 });
+
+describe('fetchSubtitleText', () => {
+    let server: Server;
+    let origin = '';
+    let lastHeaders: IncomingHttpHeaders = {};
+
+    beforeEach(async () => {
+        lastHeaders = {};
+        server = createServer((request, response) => {
+            lastHeaders = request.headers;
+            if (request.url === '/ok.vtt') {
+                response.writeHead(200, { 'Content-Type': 'text/vtt' });
+                response.end('WEBVTT\n');
+            } else if (request.url === '/slow.vtt') {
+                // Never answers: the request has to give up by itself.
+                return;
+            } else {
+                response.writeHead(404);
+                response.end('nope');
+            }
+        });
+        await new Promise<void>((resolve) => {
+            server.listen(0, '127.0.0.1', resolve);
+        });
+        origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    });
+
+    afterEach(async () => {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        });
+    });
+
+    it('reads the text, asking the way a browser does and with the site the source expects', async () => {
+        expect(await fetchSubtitleText(`${origin}/ok.vtt`, 'https://embed.example/')).toBe('WEBVTT\n');
+        expect(lastHeaders['user-agent']).toMatch(/^Mozilla\/5\.0 .*Chrome\//);
+        expect(lastHeaders.referer).toBe('https://embed.example/');
+    });
+
+    it('asks without a referer when the source gave none', async () => {
+        expect(await fetchSubtitleText(`${origin}/ok.vtt`, null)).toBe('WEBVTT\n');
+        expect(lastHeaders.referer).toBeUndefined();
+    });
+
+    it('gives null for an answer that is not a success, for an address that does not answer and for one that is not an address', async () => {
+        expect(await fetchSubtitleText(`${origin}/missing.vtt`, null)).toBeNull();
+        expect(await fetchSubtitleText('http://127.0.0.1:1/x.vtt', null)).toBeNull();
+        expect(await fetchSubtitleText('not an address', null)).toBeNull();
+    });
+
+    it('waits ten seconds for a subtitle by default', () => {
+        expect(SUBTITLE_FETCH_TIMEOUT_MS).toBe(10000);
+    });
+
+    it('gives up on an address that never answers, after the time it is given', async () => {
+        const started = Date.now();
+        expect(await fetchSubtitleText(`${origin}/slow.vtt`, null, 100)).toBeNull();
+        expect(Date.now() - started).toBeLessThan(3000);
+    });
+});
+

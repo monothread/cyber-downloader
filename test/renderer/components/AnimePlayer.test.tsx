@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { AnimeSubtitleTrack } from '@shared/anime';
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import { AnimePlayer, SAVE_INTERVAL_SECONDS } from '@renderer/components/AnimePlayer';
+import { INFO_NOTICE_MS, Toast } from '@renderer/components/Toast';
 import { INITIAL_SEARCH, UNSUPPORTED_STATUS, useAnimeStore } from '@renderer/store/animeStore';
 import { useAppStore } from '@renderer/store/appStore';
 import { makeAnime, makeEpisode } from '../../helpers/animeFixtures';
@@ -462,6 +463,211 @@ describe('AnimePlayer', () => {
             await user.click(screen.getByRole('button', { name: 'LOAD SUBTITLE' }));
             await screen.findByRole('option', { name: 'aula' });
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('checking for subtitles the source offers', () => {
+        const PORTUGUESE: AnimeSubtitleTrack = { id: 'subtitle-Portuguese', label: 'Portuguese', kind: 'source' };
+
+        async function ready() {
+            const user = userEvent.setup();
+            render(<AnimePlayer />);
+            await screen.findByRole('combobox', { name: 'Subtitles' });
+            return user;
+        }
+
+        it('has a button next to LOAD SUBTITLE', async () => {
+            await ready();
+            expect(screen.getByRole('button', { name: 'CHECK SUBTITLES' })).toBeEnabled();
+            expect(screen.getByRole('button', { name: 'LOAD SUBTITLE' })).toBeInTheDocument();
+            expect(mock.api.checkAnimeSubtitles).not.toHaveBeenCalled();
+        });
+
+        it('asks about the episode that is playing and shows the subtitles that came in its list', async () => {
+            mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: true, added: ['Portuguese'], tracks: [ENGLISH, PORTUGUESE] });
+            const user = await ready();
+
+            await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+
+            expect(mock.api.checkAnimeSubtitles).toHaveBeenCalledTimes(1);
+            expect(mock.api.checkAnimeSubtitles).toHaveBeenCalledWith(1);
+            expect(await screen.findByRole('option', { name: 'Portuguese' })).toBeInTheDocument();
+            expect(document.querySelector('track[id="subtitle-Portuguese"]')).toHaveAttribute('src', 'pullwave-media://subtitle/1/subtitle-Portuguese');
+            // What the viewer was watching with stays as it was.
+            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('default');
+        });
+
+        it('says which subtitles came with a notice of the app, not with a message in the player', async () => {
+            mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: true, added: ['Portuguese'], tracks: [ENGLISH, PORTUGUESE] });
+            const user = await ready();
+            await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+            await screen.findByRole('option', { name: 'Portuguese' });
+
+            expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'NEW SUBTITLES ADDED (1): Portuguese' });
+            expect(screen.queryByRole('status')).not.toBeInTheDocument();
+            expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        });
+
+        it('lists the names of every subtitle that came', async () => {
+            mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: true, added: ['Portuguese', 'Spanish'], tracks: [ENGLISH, PORTUGUESE, { id: 'subtitle-Spanish', label: 'Spanish', kind: 'source' }] });
+            const user = await ready();
+            await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+            await screen.findByRole('option', { name: 'Spanish' });
+            expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'NEW SUBTITLES ADDED (2): Portuguese, Spanish' });
+        });
+
+        it('says there is nothing new when the source offers no others, and keeps the list', async () => {
+            mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: true, added: [], tracks: [ENGLISH, JAPANESE] });
+            const user = await ready();
+            await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+            await vi.waitFor(() => {
+                expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'NO NEW SUBTITLES: THE SOURCE OFFERS NO OTHERS.' });
+            });
+            expect(screen.getByRole('option', { name: 'Japanese' })).toBeInTheDocument();
+        });
+
+        it('shows that it is checking, with the button off, until the answer comes', async () => {
+            let answer: (value: { ok: true; added: string[]; tracks: AnimeSubtitleTrack[] }) => void = () => {
+                return undefined;
+            };
+            mock.api.checkAnimeSubtitles.mockReturnValue(
+                new Promise((resolve) => {
+                    answer = resolve;
+                })
+            );
+            const user = await ready();
+            await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+            expect(screen.getByRole('button', { name: 'CHECKING…' })).toBeDisabled();
+            expect(useAppStore.getState().notice).toBeNull();
+
+            await act(async () => {
+                answer({ ok: true, added: [], tracks: [ENGLISH] });
+            });
+            expect(screen.getByRole('button', { name: 'CHECK SUBTITLES' })).toBeEnabled();
+            expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'NO NEW SUBTITLES: THE SOURCE OFFERS NO OTHERS.' });
+        });
+
+        it('says why it could not check, as an error notice in the words used for the errors of the section', async () => {
+            mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: false, reason: 'failed', error: { code: 'BLOCKED', raw: '403' } });
+            const user = await ready();
+            await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+            await vi.waitFor(() => {
+                expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'Could not check the subtitles. The source blocked the request. Try again later.' });
+            });
+            expect(screen.getByRole('button', { name: 'CHECK SUBTITLES' })).toBeEnabled();
+            expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        });
+
+        it('says when the video of the episode is not on the disk', async () => {
+            mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: false, reason: 'missing' });
+            const user = await ready();
+            await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+            await vi.waitFor(() => {
+                expect(useAppStore.getState().notice).toEqual({ kind: 'error', message: 'The video of this episode is not on the disk, so there is nothing to add subtitles to.' });
+            });
+        });
+
+        it('puts the message of a new check in place of the last one', async () => {
+            mock.api.checkAnimeSubtitles.mockResolvedValueOnce({ ok: false, reason: 'missing' });
+            mock.api.checkAnimeSubtitles.mockResolvedValueOnce({ ok: true, added: [], tracks: [ENGLISH] });
+            const user = await ready();
+            await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+            await vi.waitFor(() => {
+                expect(useAppStore.getState().notice?.kind).toBe('error');
+            });
+            await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+            await vi.waitFor(() => {
+                expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'NO NEW SUBTITLES: THE SOURCE OFFERS NO OTHERS.' });
+            });
+            expect(useAppStore.getState().noticeQueue).toEqual([]);
+        });
+
+        describe('in another language', () => {
+            const BRAZIL: AnimeSubtitleTrack = { id: 'subtitle-Portuguese (- Portuguese(Brazil))', label: 'Portuguese (- Portuguese(Brazil))', kind: 'source' };
+            const LATIN: AnimeSubtitleTrack = { id: 'subtitle-Spanish (- Spanish(Latin America))', label: 'Spanish (- Spanish(Latin America))', kind: 'source' };
+
+            beforeEach(() => {
+                useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'pt' } });
+            });
+
+            it('writes the names of the subtitles of the source in the language of the app, in the menu of the player', async () => {
+                mock.api.listAnimeSubtitles.mockResolvedValue([ENGLISH, BRAZIL, LATIN, IMPORTED]);
+                render(<AnimePlayer />);
+                const menu = await screen.findByRole('combobox');
+                expect(Array.from(menu.querySelectorAll('option')).map((option) => {
+                    return option.textContent;
+                })).toEqual(expect.arrayContaining(['Inglês', 'Português (Brasil)', 'Espanhol (América Latina)', 'aula']));
+                expect(screen.queryByRole('option', { name: 'Portuguese (- Portuguese(Brazil))' })).not.toBeInTheDocument();
+            });
+
+            it('keeps the name the file has in the <track> and writes the new ones with the same names in the notice', async () => {
+                mock.api.listAnimeSubtitles.mockResolvedValue([ENGLISH]);
+                mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: true, added: ['Portuguese (- Portuguese(Brazil))', 'Spanish (- Spanish(Latin America))'], tracks: [ENGLISH, BRAZIL, LATIN] });
+                const user = userEvent.setup();
+                render(<AnimePlayer />);
+                await screen.findByRole('combobox');
+                await user.click(screen.getByRole('button', { name: 'VERIFICAR LEGENDAS' }));
+
+                await vi.waitFor(() => {
+                    expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'NOVAS LEGENDAS ADICIONADAS (2): Português (Brasil), Espanhol (América Latina)' });
+                });
+                // What the player asks the app for is the file, by its id, not by the name that is shown.
+                expect(document.querySelector('track[id="subtitle-Portuguese (- Portuguese(Brazil))"]')).toHaveAttribute('label', 'Portuguese (- Portuguese(Brazil))');
+                expect(document.querySelector('track[id="subtitle-Portuguese (- Portuguese(Brazil))"]')).toHaveAttribute(
+                    'src',
+                    'pullwave-media://subtitle/1/subtitle-Portuguese%20(-%20Portuguese(Brazil))'
+                );
+            });
+        });
+
+        describe('how long the notice stays on the screen', () => {
+            afterEach(() => {
+                vi.useRealTimers();
+            });
+
+            async function checkWithToast(response: Parameters<typeof mock.api.checkAnimeSubtitles.mockResolvedValue>[0]) {
+                mock.api.checkAnimeSubtitles.mockResolvedValue(response);
+                render(
+                    <>
+                        <AnimePlayer />
+                        <Toast />
+                    </>
+                );
+                await screen.findByRole('combobox', { name: 'Subtitles' });
+                vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+                await act(async () => {
+                    fireEvent.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
+                });
+            }
+
+            it('is the toast of the app, and an information goes away by itself after 5 seconds', async () => {
+                expect(INFO_NOTICE_MS).toBe(5000);
+                await checkWithToast({ ok: true, added: [], tracks: [ENGLISH] });
+                const toast = screen.getByRole('status');
+                expect(toast).toHaveClass('toast', 'toast--info');
+                expect(toast).toHaveTextContent('NO NEW SUBTITLES: THE SOURCE OFFERS NO OTHERS.');
+                act(() => {
+                    vi.advanceTimersByTime(INFO_NOTICE_MS - 1);
+                });
+                expect(screen.getByRole('status')).toBeInTheDocument();
+                act(() => {
+                    vi.advanceTimersByTime(1);
+                });
+                expect(screen.queryByRole('status')).not.toBeInTheDocument();
+                expect(useAppStore.getState().notice).toBeNull();
+            });
+
+            it('keeps an error until it is dismissed', async () => {
+                await checkWithToast({ ok: false, reason: 'missing' });
+                act(() => {
+                    vi.advanceTimersByTime(INFO_NOTICE_MS * 10);
+                });
+                const toast = screen.getByRole('alert');
+                expect(toast).toHaveClass('toast', 'toast--error');
+                expect(toast).toHaveTextContent('The video of this episode is not on the disk, so there is nothing to add subtitles to.');
+                fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
+                expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+            });
         });
     });
 });

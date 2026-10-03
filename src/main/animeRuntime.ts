@@ -15,11 +15,12 @@ import { animeBaseDirectory, isInsideDirectory, removeDirectories, removeEmptyDi
 import { migrateAnimeFolder, type MigrationFileSystem } from './services/animeMigration';
 import type { BinaryResolver } from './services/binaryResolver';
 import type { MediaSource } from './services/mediaProtocol';
-import { createStreamHandler, StreamSessions } from './services/streamProxy';
+import { createStreamHandler, STREAM_USER_AGENT, StreamSessions } from './services/streamProxy';
 import { removeFiles } from './services/partialFiles';
 import { refreshEpisodeMetadata } from './services/episodeMetadata';
 import { importLibrary } from './services/libraryImport';
 import { scanLibraryFolder, type ScanFileSystem } from './services/libraryScan';
+import { checkSubtitles } from './services/subtitleCheck';
 import { defaultSubtitleFileSystem, importSubtitle, listSubtitleTracks, resolveSubtitlePath, type SubtitleFileSystem } from './services/subtitleFiles';
 
 // A file the player has just let go of can still be held for a moment (Windows will not delete it then): what is left is
@@ -64,6 +65,9 @@ export interface AnimeRuntimeOptions {
     chooseSubtitleFile?: () => Promise<string | null>;
     // How the files next to a video are read and written (the tests replace it).
     subtitleFiles?: SubtitleFileSystem;
+    // How the text at an address is fetched when the subtitles of an episode are checked; null when it could not be (the tests
+    // replace it).
+    fetchSubtitleText?: (url: string, referer: string | null) => Promise<string | null>;
     send: (channel: string, payload?: unknown) => void;
 }
 
@@ -80,6 +84,23 @@ function fileSize(path: string): number | null {
     try {
         const stats = statSync(path);
         return stats.isFile() ? stats.size : null;
+    } catch {
+        return null;
+    }
+}
+
+// How long a subtitle may take to arrive.
+export const SUBTITLE_FETCH_TIMEOUT_MS = 10000;
+
+// The text at an address, asked for with the site the source expects (as ani-cli asks for the subtitle it saves).
+export async function fetchSubtitleText(url: string, referer: string | null, timeoutMs: number = SUBTITLE_FETCH_TIMEOUT_MS): Promise<string | null> {
+    try {
+        const headers: Record<string, string> = { 'User-Agent': STREAM_USER_AGENT };
+        if (referer !== null) {
+            headers.Referer = referer;
+        }
+        const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+        return response.ok ? await response.text() : null;
     } catch {
         return null;
     }
@@ -272,6 +293,26 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
                         chooseFile: options.chooseSubtitleFile ?? ((): Promise<string | null> => {
                             return Promise.resolve(null);
                         }),
+                        files: options.subtitleFiles
+                    });
+                },
+                check: async (episodeId) => {
+                    const episode = db.getEpisode(episodeId);
+                    const anime = episode ? db.getAnime(episode.animeId) : null;
+                    if (!episode || !anime) {
+                        return { ok: false, reason: 'missing' };
+                    }
+                    return checkSubtitles(anime, episode, {
+                        resolveSubtitles: (request) => {
+                            return service.resolveSubtitles(request);
+                        },
+                        search: (query, audio) => {
+                            return service.search(query, audio);
+                        },
+                        quality: () => {
+                            return options.getSettings().animeQuality;
+                        },
+                        fetchText: options.fetchSubtitleText ?? fetchSubtitleText,
                         files: options.subtitleFiles
                     });
                 }

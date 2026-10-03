@@ -160,7 +160,7 @@ test.describe('bundled binaries', () => {
     });
 });
 
-test('downloads a video, says it is complete for three seconds, removes its card and records history', async () => {
+test('downloads a video, says it is complete for five seconds, removes its card and records history', async () => {
     const { page, downloadDir, logPath } = session;
     await submitUrl(page, 'https://example.com/watch?v=ok');
 
@@ -170,8 +170,8 @@ test('downloads a video, says it is complete for three seconds, removes its card
     await expect(page.getByTestId('job-card')).toHaveCount(0);
     await expect(page.getByText('// NO ACTIVE DOWNLOADS. JACK IN A URL ABOVE.')).toBeVisible();
     const shownAt = Date.now();
-    await expect(notice).toBeHidden({ timeout: 5000 });
-    expect(Date.now() - shownAt).toBeGreaterThan(1500);
+    await expect(notice).toBeHidden({ timeout: 8000 });
+    expect(Date.now() - shownAt).toBeGreaterThan(3500);
 
     const calls = readCalls(logPath).filter((args) => {
         return !args.includes('--version');
@@ -189,7 +189,7 @@ test('downloads a video, says it is complete for three seconds, removes its card
     await expect(item).toContainText('COMPLETE');
 });
 
-test('says each completion in turn, three seconds each, when downloads finish together', async () => {
+test('says each completion in turn, five seconds each, when downloads finish together', async () => {
     const { page } = session;
     await page.getByLabel('Link 1', { exact: true }).fill('https://example.com/ok1');
     await page.getByRole('button', { name: '+ ADD LINK' }).click();
@@ -201,9 +201,9 @@ test('says each completion in turn, three seconds each, when downloads finish to
     const shownAt = Date.now();
     await expectDownloadsComplete(page, 2);
     await expect(page.getByTestId('job-card')).toHaveCount(0);
-    // One notice at a time: the second one waits for the first, so the two take about six seconds.
-    await expect(notice).toBeHidden({ timeout: 10000 });
-    expect(Date.now() - shownAt).toBeGreaterThan(4500);
+    // One notice at a time: the second one waits for the first, so the two take about ten seconds.
+    await expect(notice).toBeHidden({ timeout: 15000 });
+    expect(Date.now() - shownAt).toBeGreaterThan(8500);
     await page.getByRole('button', { name: 'HISTORY' }).click();
     await expect(page.locator('.history__item--done')).toHaveCount(2);
 });

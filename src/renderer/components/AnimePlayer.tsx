@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { animeMediaUrl, type AnimeEpisodeRecord, type AnimeSubtitleTrack, type LibraryAnime } from '@shared/anime';
-import { useTranslator } from '../i18n/useTranslator';
+import { animeMediaUrl, type AnimeEpisodeRecord, type AnimeSubtitleCheckResponse, type AnimeSubtitleTrack, type LibraryAnime } from '@shared/anime';
+import type { Translator } from '@shared/i18n';
+import { useAppLanguage, useTranslator } from '../i18n/useTranslator';
+import type { LanguageCode } from '@shared/types';
 import { useAnimeStore } from '../store/animeStore';
+import { useAppStore, type Notice } from '../store/appStore';
 import {
     DEFAULT_OPTION_ID,
     importFailureKey,
@@ -12,11 +15,28 @@ import {
     saveSubtitleChoice,
     type SubtitleImportFailure
 } from './subtitleChoice';
+import { subtitleDisplayNames } from './subtitleName';
 import { VideoControls } from './VideoControls';
-import { isWatched, nextDownloadedEpisode, previousDownloadedEpisode, resumePosition } from './animeText';
+import { animeErrorKey, isWatched, nextDownloadedEpisode, previousDownloadedEpisode, resumePosition } from './animeText';
 
 // How often the position is saved while watching.
 export const SAVE_INTERVAL_SECONDS = 5;
+
+// What the app says about the check for new subtitles: good news (it goes away by itself), or what went wrong (it stays until it is
+// dismissed), as the other notices of the app do.
+function noticeOfCheck(response: AnimeSubtitleCheckResponse, t: Translator, language: LanguageCode): Notice {
+    if (response.ok) {
+        const message =
+            response.added.length === 0
+                ? t('anime.player.subtitlesNone')
+                : t('anime.player.subtitlesAdded', { count: response.added.length, names: subtitleDisplayNames(response.added, language).join(', ') });
+        return { kind: 'info', message };
+    }
+    if (response.reason === 'missing') {
+        return { kind: 'error', message: t('anime.player.subtitlesMissing') };
+    }
+    return { kind: 'error', message: t('anime.player.subtitlesFailed', { reason: t(animeErrorKey(response.error.code)) }) };
+}
 
 interface PlayerViewProps {
     anime: LibraryAnime;
@@ -26,6 +46,7 @@ interface PlayerViewProps {
 // One episode being watched. It is created again for each episode (see `key` below), so nothing carries over.
 function PlayerView({ anime, episode }: PlayerViewProps) {
     const t = useTranslator();
+    const language = useAppLanguage();
     const play = useAnimeStore((state) => {
         return state.play;
     });
@@ -45,6 +66,10 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
     const [tracks, setTracks] = useState<AnimeSubtitleTrack[]>([{ id: '', label: 'Subtitles', kind: 'default' }]);
     const [subtitle, setSubtitle] = useState<string | null>(DEFAULT_OPTION_ID);
     const [importFailure, setImportFailure] = useState<SubtitleImportFailure | null>(null);
+    const [checking, setChecking] = useState(false);
+    const setNotice = useAppStore((state) => {
+        return state.setNotice;
+    });
 
     useEffect(() => {
         let current = true;
@@ -72,6 +97,20 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
             chooseSubtitle(optionIdOf(result.imported));
         } else if (result.reason !== 'cancelled') {
             setImportFailure(result.reason);
+        }
+    }
+
+    // Asks the source for the subtitles the episode does not have yet; the ones that come show up in the list of the player.
+    async function checkSubtitles(): Promise<void> {
+        setChecking(true);
+        try {
+            const response = await window.api.checkAnimeSubtitles(episode.id);
+            if (response.ok) {
+                setTracks(response.tracks);
+            }
+            setNotice(noticeOfCheck(response, t, language));
+        } finally {
+            setChecking(false);
         }
     }
 
@@ -151,6 +190,16 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
                         >
                             {t('anime.player.loadSubtitle')}
                         </button>
+                        <button
+                            type="button"
+                            className="btn btn--small"
+                            disabled={checking}
+                            onClick={() => {
+                                void checkSubtitles();
+                            }}
+                        >
+                            {checking ? t('anime.player.checkingSubtitles') : t('anime.player.checkSubtitles')}
+                        </button>
                         <button type="button" className="btn btn--small btn--hot" autoFocus onClick={close}>
                             {t('anime.player.close')}
                         </button>
@@ -203,7 +252,7 @@ function PlayerView({ anime, episode }: PlayerViewProps) {
                         );
                     })}
                     </video>
-                    <VideoControls video={video} subtitles={optionsOf(tracks)} selectedSubtitle={subtitle} onSelectSubtitle={chooseSubtitle} />
+                    <VideoControls video={video} subtitles={optionsOf(tracks, language)} selectedSubtitle={subtitle} onSelectSubtitle={chooseSubtitle} />
                 </div>
             </div>
         </div>
