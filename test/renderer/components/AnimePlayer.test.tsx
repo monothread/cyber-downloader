@@ -8,6 +8,7 @@ import { INFO_NOTICE_MS, Toast } from '@renderer/components/Toast';
 import { INITIAL_SEARCH, UNSUPPORTED_STATUS, useAnimeStore } from '@renderer/store/animeStore';
 import { useAppStore } from '@renderer/store/appStore';
 import { makeAnime, makeEpisode } from '../../helpers/animeFixtures';
+import { openedSubtitleMenu, subtitleMenu, subtitleOption } from '../../helpers/playerSettings';
 import { installMockApi, type MockApiHandle } from '../../helpers/mockApi';
 
 let mock: MockApiHandle;
@@ -80,7 +81,7 @@ describe('AnimePlayer', () => {
         expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
         expect(screen.getByRole('slider', { name: 'Seek' })).toBeInTheDocument();
         expect(screen.getByRole('slider', { name: 'Volume' })).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('default');
+        expect(openedSubtitleMenu()).toHaveValue('default');
         expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeInTheDocument();
         const track = video.querySelector('track');
         expect(track).toHaveAttribute('src', 'pullwave-media://subtitle/1');
@@ -297,7 +298,7 @@ describe('AnimePlayer', () => {
     describe('subtitles', () => {
         it('asks for the subtitles of the episode', async () => {
             render(<AnimePlayer />);
-            await screen.findByRole('combobox', { name: 'Subtitles' });
+            await subtitleMenu();
             expect(mock.api.listAnimeSubtitles).toHaveBeenCalledTimes(1);
             expect(mock.api.listAnimeSubtitles).toHaveBeenCalledWith(1);
         });
@@ -305,7 +306,7 @@ describe('AnimePlayer', () => {
         it('adds a track for each subtitle of the episode, the first one showing', async () => {
             mock.api.listAnimeSubtitles.mockResolvedValue([ENGLISH, JAPANESE, IMPORTED]);
             render(<AnimePlayer />);
-            await screen.findByRole('option', { name: 'Japanese' });
+            await subtitleOption('Japanese');
 
             expect(
                 trackElements().map((track) => {
@@ -316,7 +317,7 @@ describe('AnimePlayer', () => {
                 ['subtitle-Japanese', 'pullwave-media://subtitle/1/subtitle-Japanese', 'Japanese', false],
                 ['import-aula', 'pullwave-media://subtitle/1/import-aula', 'aula', false]
             ]);
-            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('default');
+            expect(openedSubtitleMenu()).toHaveValue('default');
         });
 
         it('has no track and no subtitle control when the episode has no subtitles', async () => {
@@ -333,10 +334,10 @@ describe('AnimePlayer', () => {
             mock.api.listAnimeSubtitles.mockResolvedValue([ENGLISH, JAPANESE]);
             const user = userEvent.setup();
             render(<AnimePlayer />);
-            await screen.findByRole('option', { name: 'Japanese' });
+            await subtitleOption('Japanese');
 
-            await user.selectOptions(screen.getByRole('combobox', { name: 'Subtitles' }), 'subtitle-Japanese');
-            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('subtitle-Japanese');
+            await user.selectOptions(openedSubtitleMenu(), 'subtitle-Japanese');
+            expect(openedSubtitleMenu()).toHaveValue('subtitle-Japanese');
             expect(
                 trackElements().map((track) => {
                     return track.hasAttribute('default');
@@ -344,7 +345,7 @@ describe('AnimePlayer', () => {
             ).toEqual([false, true]);
             expect(window.localStorage.getItem('pullwave-subtitle-1')).toBe('subtitle-Japanese');
 
-            await user.selectOptions(screen.getByRole('combobox', { name: 'Subtitles' }), 'off');
+            await user.selectOptions(openedSubtitleMenu(), 'off');
             expect(window.localStorage.getItem('pullwave-subtitle-1')).toBe('off');
         });
 
@@ -352,24 +353,24 @@ describe('AnimePlayer', () => {
             window.localStorage.setItem('pullwave-subtitle-1', 'subtitle-Japanese');
             mock.api.listAnimeSubtitles.mockResolvedValue([ENGLISH, JAPANESE]);
             render(<AnimePlayer />);
-            await screen.findByRole('option', { name: 'Japanese' });
-            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('subtitle-Japanese');
+            await subtitleOption('Japanese');
+            expect(openedSubtitleMenu()).toHaveValue('subtitle-Japanese');
         });
 
         it('keeps the subtitles off when the viewer turned them off before', async () => {
             window.localStorage.setItem('pullwave-subtitle-1', 'off');
             mock.api.listAnimeSubtitles.mockResolvedValue([ENGLISH, JAPANESE]);
             render(<AnimePlayer />);
-            await screen.findByRole('option', { name: 'Japanese' });
-            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('off');
+            await subtitleOption('Japanese');
+            expect(openedSubtitleMenu()).toHaveValue('off');
         });
 
         it('falls back to the first subtitle when the one chosen before is gone', async () => {
             window.localStorage.setItem('pullwave-subtitle-1', 'subtitle-Korean');
             mock.api.listAnimeSubtitles.mockResolvedValue([ENGLISH, JAPANESE]);
             render(<AnimePlayer />);
-            await screen.findByRole('option', { name: 'Japanese' });
-            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('default');
+            await subtitleOption('Japanese');
+            expect(openedSubtitleMenu()).toHaveValue('default');
         });
 
         it('does not use a list that arrives after the player was closed', async () => {
@@ -393,7 +394,7 @@ describe('AnimePlayer', () => {
         it('asks again for the subtitles of the next episode', async () => {
             const user = userEvent.setup();
             render(<AnimePlayer />);
-            await screen.findByRole('combobox', { name: 'Subtitles' });
+            await subtitleMenu();
             await user.click(screen.getByRole('button', { name: 'NEXT EPISODE' }));
             expect(mock.api.listAnimeSubtitles).toHaveBeenLastCalledWith(2);
         });
@@ -405,14 +406,14 @@ describe('AnimePlayer', () => {
             mock.api.importAnimeSubtitle.mockResolvedValue({ ok: true, tracks: [ENGLISH, IMPORTED], imported: IMPORTED });
             const user = userEvent.setup();
             render(<AnimePlayer />);
-            await screen.findByRole('combobox', { name: 'Subtitles' });
+            await subtitleMenu();
 
             await user.click(screen.getByRole('button', { name: 'LOAD SUBTITLE' }));
 
             expect(mock.api.importAnimeSubtitle).toHaveBeenCalledTimes(1);
             expect(mock.api.importAnimeSubtitle).toHaveBeenCalledWith(1);
-            expect(await screen.findByRole('option', { name: 'aula' })).toBeInTheDocument();
-            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('import-aula');
+            expect(await subtitleOption('aula')).toBeInTheDocument();
+            expect(openedSubtitleMenu()).toHaveValue('import-aula');
             expect(window.localStorage.getItem('pullwave-subtitle-1')).toBe('import-aula');
             expect(document.querySelector('track[id="import-aula"]')).toHaveAttribute('src', 'pullwave-media://subtitle/1/import-aula');
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -424,17 +425,17 @@ describe('AnimePlayer', () => {
             const user = userEvent.setup();
             render(<AnimePlayer />);
             await user.click(screen.getByRole('button', { name: 'LOAD SUBTITLE' }));
-            expect(await screen.findByRole('combobox', { name: 'Subtitles' })).toHaveValue('import-aula');
+            expect(await subtitleMenu()).toHaveValue('import-aula');
         });
 
         it('does nothing when the user gives up', async () => {
             mock.api.importAnimeSubtitle.mockResolvedValue({ ok: false, reason: 'cancelled' });
             const user = userEvent.setup();
             render(<AnimePlayer />);
-            await screen.findByRole('combobox', { name: 'Subtitles' });
+            await subtitleMenu();
             await user.click(screen.getByRole('button', { name: 'LOAD SUBTITLE' }));
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('default');
+            expect(openedSubtitleMenu()).toHaveValue('default');
             expect(window.localStorage.getItem('pullwave-subtitle-1')).toBeNull();
         });
 
@@ -447,7 +448,7 @@ describe('AnimePlayer', () => {
             mock.api.importAnimeSubtitle.mockResolvedValue({ ok: false, reason });
             const user = userEvent.setup();
             render(<AnimePlayer />);
-            await screen.findByRole('combobox', { name: 'Subtitles' });
+            await subtitleMenu();
             await user.click(screen.getByRole('button', { name: 'LOAD SUBTITLE' }));
             expect(screen.getByRole('alert')).toHaveTextContent(message);
         });
@@ -457,11 +458,11 @@ describe('AnimePlayer', () => {
             mock.api.importAnimeSubtitle.mockResolvedValueOnce({ ok: true, tracks: [ENGLISH, IMPORTED], imported: IMPORTED });
             const user = userEvent.setup();
             render(<AnimePlayer />);
-            await screen.findByRole('combobox', { name: 'Subtitles' });
+            await subtitleMenu();
             await user.click(screen.getByRole('button', { name: 'LOAD SUBTITLE' }));
             expect(screen.getByRole('alert')).toBeInTheDocument();
             await user.click(screen.getByRole('button', { name: 'LOAD SUBTITLE' }));
-            await screen.findByRole('option', { name: 'aula' });
+            await subtitleOption('aula');
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         });
     });
@@ -472,7 +473,7 @@ describe('AnimePlayer', () => {
         async function ready() {
             const user = userEvent.setup();
             render(<AnimePlayer />);
-            await screen.findByRole('combobox', { name: 'Subtitles' });
+            await subtitleMenu();
             return user;
         }
 
@@ -491,17 +492,17 @@ describe('AnimePlayer', () => {
 
             expect(mock.api.checkAnimeSubtitles).toHaveBeenCalledTimes(1);
             expect(mock.api.checkAnimeSubtitles).toHaveBeenCalledWith(1);
-            expect(await screen.findByRole('option', { name: 'Portuguese' })).toBeInTheDocument();
+            expect(await subtitleOption('Portuguese')).toBeInTheDocument();
             expect(document.querySelector('track[id="subtitle-Portuguese"]')).toHaveAttribute('src', 'pullwave-media://subtitle/1/subtitle-Portuguese');
             // What the viewer was watching with stays as it was.
-            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('default');
+            expect(openedSubtitleMenu()).toHaveValue('default');
         });
 
         it('says which subtitles came with a notice of the app, not with a message in the player', async () => {
             mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: true, added: ['Portuguese'], tracks: [ENGLISH, PORTUGUESE] });
             const user = await ready();
             await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
-            await screen.findByRole('option', { name: 'Portuguese' });
+            await subtitleOption('Portuguese');
 
             expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'NEW SUBTITLES ADDED (1): Portuguese' });
             expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -512,7 +513,7 @@ describe('AnimePlayer', () => {
             mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: true, added: ['Portuguese', 'Spanish'], tracks: [ENGLISH, PORTUGUESE, { id: 'subtitle-Spanish', label: 'Spanish', kind: 'source' }] });
             const user = await ready();
             await user.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));
-            await screen.findByRole('option', { name: 'Spanish' });
+            await subtitleOption('Spanish');
             expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'NEW SUBTITLES ADDED (2): Portuguese, Spanish' });
         });
 
@@ -523,7 +524,7 @@ describe('AnimePlayer', () => {
             await vi.waitFor(() => {
                 expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'NO NEW SUBTITLES: THE SOURCE OFFERS NO OTHERS.' });
             });
-            expect(screen.getByRole('option', { name: 'Japanese' })).toBeInTheDocument();
+            expect(await subtitleOption('Japanese')).toBeInTheDocument();
         });
 
         it('shows that it is checking, with the button off, until the answer comes', async () => {
@@ -593,7 +594,7 @@ describe('AnimePlayer', () => {
             it('writes the names of the subtitles of the source in the language of the app, in the menu of the player', async () => {
                 mock.api.listAnimeSubtitles.mockResolvedValue([ENGLISH, BRAZIL, LATIN, IMPORTED]);
                 render(<AnimePlayer />);
-                const menu = await screen.findByRole('combobox');
+                const menu = await subtitleMenu({ gear: 'Configurações', menu: 'Legendas' });
                 expect(Array.from(menu.querySelectorAll('option')).map((option) => {
                     return option.textContent;
                 })).toEqual(expect.arrayContaining(['Inglês', 'Português (Brasil)', 'Espanhol (América Latina)', 'aula']));
@@ -605,7 +606,7 @@ describe('AnimePlayer', () => {
                 mock.api.checkAnimeSubtitles.mockResolvedValue({ ok: true, added: ['Portuguese (- Portuguese(Brazil))', 'Spanish (- Spanish(Latin America))'], tracks: [ENGLISH, BRAZIL, LATIN] });
                 const user = userEvent.setup();
                 render(<AnimePlayer />);
-                await screen.findByRole('combobox');
+                await subtitleMenu({ gear: 'Configurações', menu: 'Legendas' });
                 await user.click(screen.getByRole('button', { name: 'VERIFICAR LEGENDAS' }));
 
                 await vi.waitFor(() => {
@@ -633,7 +634,7 @@ describe('AnimePlayer', () => {
                         <Toast />
                     </>
                 );
-                await screen.findByRole('combobox', { name: 'Subtitles' });
+                await subtitleMenu();
                 vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
                 await act(async () => {
                     fireEvent.click(screen.getByRole('button', { name: 'CHECK SUBTITLES' }));

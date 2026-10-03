@@ -1,20 +1,11 @@
 import { useEffect, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import { useFullscreenIdle } from '../hooks/useFullscreenIdle';
+import { useSubtitleStyle } from '../hooks/useSubtitleStyle';
 import { useTranslator } from '../i18n/useTranslator';
-import {
-    MAX_SUBTITLE_SCALE,
-    MIN_SUBTITLE_SCALE,
-    readSubtitleScale,
-    saveSubtitleScale,
-    scalePercent,
-    stepSubtitleScale
-} from './subtitleScale';
+import { hasPlayerSettings, PlayerSettings, type SubtitleOption } from './PlayerSettings';
 
-// A subtitle the viewer can choose. The id is also the id of its <track>, which is how the control finds it.
-export interface SubtitleOption {
-    id: string;
-    label: string;
-}
+// Kept here, where the player's other files already import it from.
+export type { SubtitleOption } from './PlayerSettings';
 
 interface VideoControlsProps {
     video: RefObject<HTMLVideoElement | null>;
@@ -23,8 +14,6 @@ interface VideoControlsProps {
     selectedSubtitle: string | null;
     onSelectSubtitle: (id: string | null) => void;
 }
-
-const SUBTITLES_OFF = 'off';
 
 interface PlaybackState {
     paused: boolean;
@@ -103,10 +92,6 @@ function setTrackMode(track: TextTrack, mode: TextTrackMode): void {
     track.mode = mode;
 }
 
-function setScaleVariable(element: HTMLVideoElement, scale: number): void {
-    element.style.setProperty('--subtitle-scale', String(scale));
-}
-
 function progressStyle(percent: number): CSSProperties {
     return { '--progress': `${percent}%` } as CSSProperties;
 }
@@ -115,22 +100,10 @@ function progressStyle(percent: number): CSSProperties {
 export function VideoControls({ video, subtitles, selectedSubtitle, onSelectSubtitle }: VideoControlsProps) {
     const t = useTranslator();
     const [state, setState] = useState<PlaybackState>(INITIAL_STATE);
-    const [subtitleScale, setSubtitleScale] = useState(readSubtitleScale);
-    const hidden = useFullscreenIdle(video);
-
-    // The size is a variable on the video, which the style of the subtitles reads (see .player__video::cue).
-    useEffect(() => {
-        const element = video.current;
-        if (element) {
-            setScaleVariable(element, subtitleScale);
-        }
-    }, [video, subtitleScale]);
-
-    function resizeSubtitles(direction: 1 | -1): void {
-        const next = stepSubtitleScale(subtitleScale, direction);
-        setSubtitleScale(next);
-        saveSubtitleScale(next);
-    }
+    const subtitleStyle = useSubtitleStyle(video);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    // The bar stays while the settings are open: they are part of it.
+    const hidden = useFullscreenIdle(video) && !settingsOpen;
 
     useEffect(() => {
         const element = video.current;
@@ -286,51 +259,15 @@ export function VideoControls({ video, subtitles, selectedSubtitle, onSelectSubt
                     changeVolume(Number(event.target.value));
                 }}
             />
-            {subtitles.length > 0 && (
-                <select
-                    className="player__select"
-                    aria-label={t('anime.player.subtitles')}
-                    value={selectedSubtitle ?? SUBTITLES_OFF}
-                    onChange={(event) => {
-                        onSelectSubtitle(event.target.value === SUBTITLES_OFF ? null : event.target.value);
-                    }}
-                >
-                    <option value={SUBTITLES_OFF}>{t('anime.player.subtitlesOff')}</option>
-                    {subtitles.map((option) => {
-                        return (
-                            <option key={option.id} value={option.id}>
-                                {option.label}
-                            </option>
-                        );
-                    })}
-                </select>
-            )}
-            {subtitles.length > 0 && (
-                <span className="player__size" role="group" aria-label={t('anime.player.subtitleSize')}>
-                    <button
-                        type="button"
-                        className="player__button"
-                        aria-label={t('anime.player.subtitleSmaller')}
-                        disabled={subtitleScale <= MIN_SUBTITLE_SCALE}
-                        onClick={() => {
-                            resizeSubtitles(-1);
-                        }}
-                    >
-                        A−
-                    </button>
-                    <span className="player__time">{scalePercent(subtitleScale)}</span>
-                    <button
-                        type="button"
-                        className="player__button"
-                        aria-label={t('anime.player.subtitleLarger')}
-                        disabled={subtitleScale >= MAX_SUBTITLE_SCALE}
-                        onClick={() => {
-                            resizeSubtitles(1);
-                        }}
-                    >
-                        A+
-                    </button>
-                </span>
+            {hasPlayerSettings(subtitles) && (
+                <PlayerSettings
+                    open={settingsOpen}
+                    onOpenChange={setSettingsOpen}
+                    subtitles={subtitles}
+                    selectedSubtitle={selectedSubtitle}
+                    onSelectSubtitle={onSelectSubtitle}
+                    subtitleStyle={subtitleStyle}
+                />
             )}
             <button type="button" className="player__button" aria-label={t('anime.player.fullscreen')} onClick={toggleFullscreen}>
                 ⛶

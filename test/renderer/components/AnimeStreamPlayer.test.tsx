@@ -7,6 +7,7 @@ import { AnimeStreamPlayer } from '@renderer/components/AnimeStreamPlayer';
 import { INITIAL_SEARCH, UNSUPPORTED_STATUS, useAnimeStore } from '@renderer/store/animeStore';
 import { useAppStore } from '@renderer/store/appStore';
 import { installMockApi, type MockApiHandle } from '../../helpers/mockApi';
+import { openedSubtitleMenu } from '../../helpers/playerSettings';
 
 const hls = vi.hoisted(() => {
     type Listener = (event: string, data: { fatal: boolean }) => void;
@@ -118,7 +119,7 @@ describe('AnimeStreamPlayer', () => {
             expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
             expect(screen.getByRole('slider', { name: 'Seek' })).toBeInTheDocument();
             expect(screen.getByRole('slider', { name: 'Volume' })).toBeInTheDocument();
-            expect(screen.getByRole('combobox', { name: 'Subtitles' })).toHaveValue('stream');
+            expect(openedSubtitleMenu()).toHaveValue('stream');
             expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeInTheDocument();
             expect(video).toHaveAttribute('crossorigin', 'anonymous');
             expect(hls.state.instances).toHaveLength(1);
@@ -141,7 +142,7 @@ describe('AnimeStreamPlayer', () => {
             stream();
             const user = userEvent.setup();
             render(<AnimeStreamPlayer />);
-            const select = screen.getByRole('combobox', { name: 'Subtitles' });
+            const select = openedSubtitleMenu();
             await user.selectOptions(select, 'off');
             expect(select).toHaveValue('off');
             await user.selectOptions(select, 'stream');

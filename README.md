@@ -133,7 +133,7 @@ Click a season to show or hide its episodes, and click a downloaded episode to p
 ### Player
 ![The player in fullscreen, cyberpunk theme](docs/screenshots/anime-player.png)
 
-Play and pause, seek (the arrow keys jump 5 seconds), volume, previous and next episode, and subtitles you can choose and resize (A− / A+). It remembers where you stopped. Click the video to pause and double-click it for fullscreen; in fullscreen the controls hide when the mouse is still for 3 seconds. In the cyberpunk theme they float over the video with a neon progress bar. Escape closes the player.
+Play and pause, seek (the arrow keys jump 5 seconds), volume, previous and next episode, and a ⚙ with the subtitle settings (which one to show, size, color and background). It remembers where you stopped. Click the video to pause and double-click it for fullscreen; in fullscreen the controls hide when the mouse is still for 3 seconds. In the cyberpunk theme they float over the video with a neon progress bar. Escape closes the player.
 
 ### Subtitles
 - Subtitles in the language of the app, or the one you choose in the ⚙ of the ANIME tab, when the source has it. Every language the source offers is saved with the episode and can be picked in the player.

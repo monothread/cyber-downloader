@@ -232,8 +232,7 @@
 }
 
 @media (max-width: 520px) {
-    .player__volume,
-    .player__size {
+    .player__volume {
         display: none;
     }
 

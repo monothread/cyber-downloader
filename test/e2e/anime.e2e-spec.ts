@@ -1290,7 +1290,15 @@ test.describe('watching without downloading', () => {
         await page.getByRole('button', { name: 'PLAY: Fake Anime EP 1' }).click();
         const dialog = page.getByRole('dialog', { name: 'Fake Anime · EP 1' });
         await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole('combobox', { name: 'Subtitles' })).toHaveCount(0);
+        await dialog.getByRole('button', { name: 'Settings' }).click();
         await expect(dialog.getByRole('combobox', { name: 'Subtitles' })).toBeVisible();
+
+        await dialog.getByRole('combobox', { name: 'Subtitle color' }).selectOption('yellow');
+        await dialog.getByRole('combobox', { name: 'Subtitle background' }).selectOption('solid');
+        const video = dialog.locator('video');
+        await expect(video).toHaveCSS('--subtitle-color', '#ffeb3b');
+        await expect(video).toHaveCSS('--subtitle-background', '#000000');
 
         await dialog.getByRole('button', { name: 'CHECK SUBTITLES' }).click();
         await expect(page.locator('.toast--info .toast__message')).toHaveText('NEW SUBTITLES ADDED (3): English, Portuguese, Spanish');
@@ -1311,6 +1319,7 @@ test.describe('watching without downloading', () => {
             ['/es.vtt', REFERER]
         ]);
         // The player offers them at once.
+        await dialog.getByRole('button', { name: 'Settings' }).click();
         const options = await dialog.getByRole('combobox', { name: 'Subtitles' }).locator('option').allTextContents();
         expect(options).toEqual(expect.arrayContaining(['English', 'Portuguese', 'Spanish']));
 
@@ -1343,6 +1352,7 @@ test.describe('watching without downloading', () => {
         await dialog.getByRole('button', { name: 'CHECK SUBTITLES' }).click();
 
         await expect(page.locator('.toast--info .toast__message')).toHaveText('NEW SUBTITLES ADDED (2): Portuguese (Brazil), Spanish (Latin America)');
+        await dialog.getByRole('button', { name: 'Settings' }).click();
         const options = await dialog.getByRole('combobox', { name: 'Subtitles' }).locator('option').allTextContents();
         expect(options).toEqual(expect.arrayContaining(['Portuguese (Brazil)', 'Spanish (Latin America)']));
         expect(options.some((name) => {

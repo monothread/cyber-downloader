@@ -59,3 +59,4 @@
 - Notices on the screen for 5 seconds instead of 3 (D-049), 2026-10-03: `INFO_NOTICE_MS`; the end-to-end tests that wait for the toast to go away were given the longer wait.
 - Release 0.15.0, 2026-10-03: rows and cards that open by a click, CHECK SUBTITLES with translated names (D-048), notices for 5 seconds and a bigger gear (D-049), the wave of the fullscreen timeline only on what was watched. Test Windows ran green at the first run; Release Linux and Release Windows ran green from `58cb794`, one draft with 8 files, published. Tag `v0.15.0` = `58cb794`.
 - README by area with new screenshots, and the trust of UPDATE ANI-CLI written down (D-050), 2026-10-03.
+- Settings panel in the player and color of the subtitles (D-051), 2026-10-03: ⚙ with the subtitle, size, color and background; the bar keeps the sound. Version 0.16.0.
