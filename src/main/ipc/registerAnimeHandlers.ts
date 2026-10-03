@@ -10,6 +10,8 @@ import {
     type AnimeImportResponse,
     type AnimeMigrationResponse,
     type AnimeProgressUpdate,
+    type AnimeScheduleRequest,
+    type AnimeScheduleResponse,
     type AnimeSeriesResponse,
     type AnimeStreamResponse,
     type AnimeSubtitleCheckResponse,
@@ -30,9 +32,15 @@ import type { IpcMainLike } from './registerHandlers';
 
 export const MAX_TEXT_LENGTH = 200;
 export const MAX_EPISODES_PER_REQUEST = 2000;
+// The longest stretch that can be listed: a week, which is seven days (of 23 to 25 hours where the clock changes) and some more.
+export const MAX_SCHEDULE_SPAN_SECONDS = 8 * 24 * 60 * 60;
 
 export interface AnimeHandlerDependencies {
     service: Pick<AniCliService, 'isAvailable' | 'info' | 'search' | 'episodes' | 'resolveStream'>;
+    // The cover of an anime by its title (null when there is none).
+    covers: { find: (title: string) => Promise<string | null> };
+    // The episodes that air in a stretch of time.
+    schedule: { list: (request: AnimeScheduleRequest) => Promise<AnimeScheduleResponse> };
     updateAniCli: () => Promise<UpdateResult>;
     streams: Pick<StreamSessions, 'create' | 'close'>;
     // The quality of the settings, used to pick the stream.
@@ -158,6 +166,19 @@ export function parseHistoryRequest(input: unknown): AnimeHistoryRequest | null 
     return { title, query, index, audio, episode };
 }
 
+// Checks the stretch of time the screen asks the schedule of: two moments in seconds, the second after the first and not too far from it.
+export function parseScheduleRequest(input: unknown): AnimeScheduleRequest | null {
+    const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
+    const { from, to } = raw;
+    if (typeof from !== 'number' || typeof to !== 'number' || !Number.isInteger(from) || !Number.isInteger(to)) {
+        return null;
+    }
+    if (from < 1 || to <= from || to - from > MAX_SCHEDULE_SPAN_SECONDS) {
+        return null;
+    }
+    return { from, to, refresh: raw.refresh === true };
+}
+
 export function parseProgress(input: unknown): AnimeProgressUpdate | null {
     const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
     const episodeId = asId(raw.episodeId);
@@ -211,6 +232,12 @@ function registerUnsupported(ipcMain: IpcMainLike): void {
     ipcMain.handle(IPC.animeDownload, (): AnimeDownloadResponse => {
         return { ok: false, message: UNSUPPORTED.raw };
     });
+    ipcMain.handle(IPC.animeSchedule, (): AnimeScheduleResponse => {
+        return { ok: false, error: UNSUPPORTED };
+    });
+    ipcMain.handle(IPC.animeCover, (): null => {
+        return null;
+    });
     ipcMain.handle(IPC.animeLibrary, () => {
         return [];
     });
@@ -244,7 +271,7 @@ function registerUnsupported(ipcMain: IpcMainLike): void {
     ipcMain.handle(IPC.animeSubtitlesCheck, (): AnimeSubtitleCheckResponse => {
         return { ok: false, reason: 'missing' };
     });
-    [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose, IPC.animeHistoryRecord, IPC.animeHistoryRemove, IPC.animeHistoryClear].forEach((channel) => {
+    [IPC.animeCancel, IPC.animeRetry, IPC.animePause, IPC.animeResume, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose, IPC.animeHistoryRecord, IPC.animeHistoryRemove, IPC.animeHistoryClear].forEach((channel) => {
         ipcMain.handle(channel, (): void => {
             return undefined;
         });
@@ -288,6 +315,17 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
             return { ok: true, episodes: result.value };
         }
         return { ok: false, error: result.status === 'error' ? result.error : { code: 'UNKNOWN', raw: 'The search was cancelled.' } };
+    });
+    ipcMain.handle(IPC.animeCover, (_event, title): Promise<string | null> => {
+        const cleaned = asText(title).trim().slice(0, MAX_TEXT_LENGTH);
+        return cleaned.length === 0 ? Promise.resolve(null) : deps.covers.find(cleaned);
+    });
+    ipcMain.handle(IPC.animeSchedule, (_event, input): Promise<AnimeScheduleResponse> | AnimeScheduleResponse => {
+        const request = parseScheduleRequest(input);
+        if (request === null) {
+            return invalid('The stretch of time is invalid.');
+        }
+        return deps.schedule.list(request);
     });
     ipcMain.handle(IPC.animeDownload, (_event, input): AnimeDownloadResponse => {
         if (migrating) {
@@ -361,6 +399,18 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
         const id = asId(episodeId);
         if (id !== null) {
             queue.cancel(id);
+        }
+    });
+    ipcMain.handle(IPC.animePause, (_event, episodeId): void => {
+        const id = asId(episodeId);
+        if (id !== null) {
+            queue.pause(id);
+        }
+    });
+    ipcMain.handle(IPC.animeResume, (_event, episodeId): void => {
+        const id = asId(episodeId);
+        if (id !== null) {
+            queue.resume(id);
         }
     });
     ipcMain.handle(IPC.animeRetry, (_event, episodeId): void => {

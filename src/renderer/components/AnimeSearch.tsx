@@ -4,6 +4,7 @@ import { useTranslator } from '../i18n/useTranslator';
 import { useAppStore } from '../store/appStore';
 import { effectiveAudio, useAnimeStore } from '../store/animeStore';
 import { animeErrorKey, downloadedAnime, libraryEntry, seasonLabel } from './animeText';
+import { AnimeCover } from './AnimeCover';
 import { AnimeDetail } from './AnimeDetail';
 import { SelectField, TextField } from './fields';
 import { RowLink } from './RowLink';
@@ -79,12 +80,14 @@ export function AnimeSearch() {
             {search.status === 'done' && search.results.length > 0 && (
                 <>
                     <span className="section-label">{t('anime.results.label', { count: search.results.length })}</span>
-                    <ul className="history__list">
+                    <ul className="cover-grid">
                         {search.results.map((result) => {
                             const saved = downloadedAnime(library, result.title, search.searchedAudio);
                             const joined = libraryEntry(library, result.title, search.searchedAudio);
+                            const inSeries = joined?.series != null && joined.season !== null;
                             return (
-                                <li key={result.index} className="history__item row--link">
+                                <li key={result.index} className="history__item cover-card row--link">
+                                    <AnimeCover title={result.title} />
                                     <div className="history__main">
                                         <span className="history__title">
                                             <RowLink
@@ -97,22 +100,26 @@ export function AnimeSearch() {
                                                 {result.title}
                                             </RowLink>
                                         </span>
-                                        {joined?.series != null && joined.season !== null && (
-                                            <span className="history__meta">{t('anime.series.tag', { series: joined.series, label: seasonLabel(joined, t) })}</span>
+                                        {(saved || inSeries) && (
+                                            <div className="cover-card__footer">
+                                                {joined?.series != null && joined.season !== null && (
+                                                    <span className="history__meta">{t('anime.series.tag', { series: joined.series, label: seasonLabel(joined, t) })}</span>
+                                                )}
+                                                {saved && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn--small btn--ghost cover-card__action"
+                                                        aria-label={`${t('anime.library.view')}: ${result.title}`}
+                                                        onClick={() => {
+                                                            showInLibrary(saved.id);
+                                                        }}
+                                                    >
+                                                        {t('anime.library.view')}
+                                                    </button>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
-                                    {saved && (
-                                        <button
-                                            type="button"
-                                            className="btn btn--small btn--ghost"
-                                            aria-label={`${t('anime.library.view')}: ${result.title}`}
-                                            onClick={() => {
-                                                showInLibrary(saved.id);
-                                            }}
-                                        >
-                                            {t('anime.library.view')}
-                                        </button>
-                                    )}
                                 </li>
                             );
                         })}

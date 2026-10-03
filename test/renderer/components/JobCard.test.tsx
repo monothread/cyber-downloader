@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 
 function makeHandlers() {
-    return { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+    return { onCancel: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
 }
 
 function renderCard(job: DownloadJob) {
@@ -485,3 +485,65 @@ describe('JobCard custom options', () => {
     });
 });
 
+describe('JobCard pause and resume', () => {
+    it('offers PAUSE for a download that is going on, next to CANCEL, and asks to pause it by its id', async () => {
+        const user = userEvent.setup();
+        const handlers = renderCard(makeJob({ status: 'running' }));
+
+        await user.click(screen.getByRole('button', { name: 'PAUSE' }));
+
+        expect(handlers.onPause).toHaveBeenCalledTimes(1);
+        expect(handlers.onPause).toHaveBeenCalledWith('job-1');
+        expect(screen.getByRole('button', { name: 'CANCEL' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'RESUME' })).not.toBeInTheDocument();
+        expect(handlers.onResume).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['a live recording', { live: true }],
+        ['a download that waits for a live stream', { waitingForLive: true }],
+        ['a download that is checking if a live stream ended', { endCheck: { secondsLeft: 5, totalSeconds: 10 } }],
+        ['a recording that is being joined', { merging: true }],
+        ['a recording that is being saved', { saving: true }],
+        ['a download that is converting its file', { postProcess: 'Merger' }]
+    ] as const)('does not offer PAUSE for %s', (_name, overrides) => {
+        renderCard(makeJob({ status: 'running', ...overrides }));
+
+        expect(screen.queryByRole('button', { name: 'PAUSE' })).not.toBeInTheDocument();
+    });
+
+    it.each(['queued', 'done', 'error', 'cancelled'] as const)('does not offer PAUSE for a download that is %s', (status) => {
+        renderCard(makeJob({ status }));
+
+        expect(screen.queryByRole('button', { name: 'PAUSE' })).not.toBeInTheDocument();
+    });
+
+    it('shows a paused download as PAUSED, with what it had downloaded, and offers RESUME and CANCEL', async () => {
+        const user = userEvent.setup();
+        const handlers = renderCard(makeJob({ status: 'paused', percent: 42.5, speed: '', eta: '' }));
+
+        expect(screen.getByText('PAUSED')).toHaveClass('badge', 'badge--paused');
+        expect(screen.getByText('42.5%')).toBeInTheDocument();
+        expect(screen.getByTestId('job-card')).toHaveClass('job--paused');
+        await user.click(screen.getByRole('button', { name: 'RESUME' }));
+        expect(handlers.onResume).toHaveBeenCalledTimes(1);
+        expect(handlers.onResume).toHaveBeenCalledWith('job-1');
+        await user.click(screen.getByRole('button', { name: 'CANCEL' }));
+        expect(handlers.onCancel).toHaveBeenCalledWith('job-1');
+    });
+
+    it('does not offer PAUSE, RETRY or REMOVE for a paused download: it is resumed or cancelled first', () => {
+        renderCard(makeJob({ status: 'paused', hasPartial: true }));
+
+        expect(screen.queryByRole('button', { name: 'PAUSE' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'RETRY' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'REMOVE' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'CLEAR PARTIAL FILES' })).not.toBeInTheDocument();
+    });
+
+    it('does not offer RESUME for a download that is not paused', () => {
+        renderCard(makeJob({ status: 'queued' }));
+
+        expect(screen.queryByRole('button', { name: 'RESUME' })).not.toBeInTheDocument();
+    });
+});

@@ -268,3 +268,22 @@ describe('sortForDisplay', () => {
         expect(ids(sortForDisplay([makeJob({ id: 'only' })]))).toEqual(['only']);
     });
 });
+
+describe('jobs that are paused', () => {
+    it('says a paused download is paused', () => {
+        expect(statusLabel('paused', false, t)).toBe('PAUSED');
+    });
+
+    it('sorts them after what is running and before what waits and what is over', () => {
+        const job = (id: string, status: DownloadJob['status']): DownloadJob => {
+            return makeJob({ id, status });
+        };
+        const sorted = sortForDisplay([job('done', 'done'), job('queued', 'queued'), job('paused', 'paused'), job('running', 'running'), job('error', 'error')]);
+
+        expect(
+            sorted.map((entry) => {
+                return entry.id;
+            })
+        ).toEqual(['running', 'paused', 'queued', 'error', 'done']);
+    });
+});

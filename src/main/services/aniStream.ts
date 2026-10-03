@@ -5,6 +5,8 @@ export interface ResolvedStream {
     subtitleUrl: string | null;
     // The site the stream expects the request to come from.
     referer: string | null;
+    // Every subtitle the source offers (empty when this copy of ani-cli does not report them): the one ani-cli picked is among them.
+    subtitles: SourceSubtitle[];
 }
 
 // With the "debug" player ani-cli prints the address of the episode instead of playing it, but not the referer the host of
@@ -83,5 +85,5 @@ export function parseStreamOutput(output: string): ResolvedStream | null {
     if (url === null) {
         return null;
     }
-    return { url, subtitleUrl: valueAfter(lines, 'Subtitles:'), referer: valueAfter(lines, 'Referer:') };
+    return { url, subtitleUrl: valueAfter(lines, 'Subtitles:'), referer: valueAfter(lines, 'Referer:'), subtitles: parseSubtitleList(output).subtitles };
 }

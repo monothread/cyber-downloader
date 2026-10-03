@@ -37,7 +37,7 @@ describe('AnimeHistory', () => {
         expect(screen.getByText('HISTORY [2]')).toBeInTheDocument();
         const items = screen.getAllByRole('listitem');
         expect(items).toHaveLength(2);
-        expect(within(items[0] as HTMLElement).getByText('Bleach')).toHaveAttribute('title', 'Bleach');
+        expect(within(items[0] as HTMLElement).getByRole('button', { name: 'OPEN: Bleach' })).toHaveAttribute('title', 'Bleach');
         expect(within(items[0] as HTMLElement).getByText(/^SUB · EP 12 · /)).toBeInTheDocument();
         expect(within(items[0] as HTMLElement).getByText(new RegExp(new Date(WATCHED.openedAt).toLocaleString('en').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))).toBeInTheDocument();
         expect(within(items[1] as HTMLElement).getByText('Naruto')).toBeInTheDocument();
@@ -80,5 +80,69 @@ describe('AnimeHistory', () => {
         expect(mock.api.clearAnimeHistory).toHaveBeenCalledTimes(1);
         expect(useAnimeStore.getState().history).toEqual([]);
         expect(screen.getByText('// NOTHING OPENED YET. SEARCH AN ANIME OR PLAY AN EPISODE.')).toBeInTheDocument();
+    });
+});
+
+describe('AnimeHistory cards with a cover', () => {
+    it('lists the anime as cards of a grid, each with a cover and the title as the button that opens it', () => {
+        useAnimeStore.setState({ history: [WATCHED, OPENED] });
+        render(<AnimeHistory />);
+
+        expect(screen.getByRole('list')).toHaveClass('cover-grid');
+        screen.getAllByRole('listitem').forEach((card) => {
+            expect(card).toHaveClass('history__item', 'cover-card', 'row--link');
+            expect(card.firstElementChild).toHaveClass('cover');
+            expect(card.querySelector('.history__title .row-link')).not.toBeNull();
+        });
+    });
+
+    it('has no OPEN button of its own: the card opens by a click on its title, which is stretched over it', () => {
+        useAnimeStore.setState({ history: [WATCHED, OPENED] });
+        render(<AnimeHistory />);
+
+        expect(screen.queryByText('OPEN', { selector: 'button' })).not.toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: /^OPEN: / })).toHaveLength(2);
+        screen.getAllByRole('listitem').forEach((card) => {
+            expect(within(card).getAllByRole('button')).toHaveLength(2);
+        });
+    });
+
+    it('puts what was watched and the button that removes at the bottom of the card, what was watched just above the button', () => {
+        useAnimeStore.setState({ history: [WATCHED] });
+        render(<AnimeHistory />);
+
+        const [card] = screen.getAllByRole('listitem');
+        const main = (card as HTMLElement).querySelector('.history__main') as HTMLElement;
+        const footer = main.querySelector('.cover-card__footer') as HTMLElement;
+        expect(main.lastElementChild).toBe(footer);
+        expect(footer.children).toHaveLength(2);
+        expect(footer.firstElementChild).toHaveClass('history__meta');
+        expect(footer.firstElementChild).toHaveTextContent(/^SUB · EP 12 · /);
+        expect(footer.lastElementChild).toHaveClass('anime__actions');
+        expect(within(footer).getByRole('button', { name: 'REMOVE FROM HISTORY: Bleach' })).toBeInTheDocument();
+        expect(main.firstElementChild).toHaveClass('history__title');
+    });
+
+    it('opens an entry by its title, wherever the card is clicked, and removing does not open it', async () => {
+        const user = userEvent.setup();
+        mock.api.listAnimeEpisodes.mockResolvedValue({ ok: true, episodes: ['1'] });
+        useAnimeStore.setState({ history: [OPENED] });
+        render(<AnimeHistory />);
+
+        await user.click(screen.getByRole('button', { name: 'REMOVE FROM HISTORY: Naruto' }));
+
+        expect(mock.api.removeAnimeHistory).toHaveBeenCalledWith(1);
+        expect(mock.api.listAnimeEpisodes).not.toHaveBeenCalled();
+    });
+
+    it('looks the cover of each anime up by its title', async () => {
+        useAnimeStore.setState({ history: [WATCHED, OPENED] });
+        render(<AnimeHistory />);
+
+        await vi.waitFor(() => {
+            expect(mock.api.findAnimeCover.mock.calls.map((call) => {
+                return call[0];
+            }).sort()).toEqual(['Bleach', 'Naruto']);
+        });
     });
 });

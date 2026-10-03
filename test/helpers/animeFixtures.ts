@@ -1,4 +1,4 @@
-import type { AniCliInfo, AnimeEpisodeRecord, AnimeJob, AnimeStatus, LibraryAnime } from '@shared/anime';
+import type { AniCliInfo, AnimeEpisodeRecord, AnimeJob, AnimeScheduleEntry, AnimeStatus, LibraryAnime } from '@shared/anime';
 
 export function makeEpisode(overrides: Partial<AnimeEpisodeRecord> = {}): AnimeEpisodeRecord {
     return {
@@ -33,6 +33,18 @@ export function makeAnimeJob(overrides: Partial<AnimeJob> = {}): AnimeJob {
         speed: '1.50MiB/s',
         eta: '00:10',
         error: null,
+        ...overrides
+    };
+}
+
+export function makeScheduleEntry(overrides: Partial<AnimeScheduleEntry> = {}): AnimeScheduleEntry {
+    return {
+        anilistId: 154587,
+        title: 'Sousou no Frieren',
+        names: ['Sousou no Frieren', 'Frieren: Beyond Journey\'s End'],
+        episode: 12,
+        airingAt: 1_700_040_000,
+        coverUrl: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/frieren.jpg',
         ...overrides
     };
 }

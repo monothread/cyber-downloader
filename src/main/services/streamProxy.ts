@@ -62,7 +62,9 @@ export class StreamSessions {
 
     create(stream: ResolvedStream): AnimeStream {
         const session: StreamSession = { id: this.newId(), referer: stream.referer, hosts: new Set() };
-        [stream.url, stream.subtitleUrl].forEach((url) => {
+        [stream.url, stream.subtitleUrl, ...stream.subtitles.map((subtitle) => {
+            return subtitle.src;
+        })].forEach((url) => {
             const host = url === null ? null : hostOf(url);
             if (host !== null) {
                 session.hosts.add(host);
@@ -78,7 +80,10 @@ export class StreamSessions {
         return {
             sessionId: session.id,
             url: proxyUrl(session.id, stream.url),
-            subtitleUrl: stream.subtitleUrl === null ? null : proxyUrl(session.id, stream.subtitleUrl)
+            subtitleUrl: stream.subtitleUrl === null ? null : proxyUrl(session.id, stream.subtitleUrl),
+            subtitles: stream.subtitles.map((subtitle, position) => {
+                return { id: `stream-${position + 1}`, label: subtitle.label, url: proxyUrl(session.id, subtitle.src) };
+            })
         };
     }
 

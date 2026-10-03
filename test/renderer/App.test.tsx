@@ -303,7 +303,10 @@ describe('App anime section', () => {
 
         expect(screen.getByRole('button', { name: 'ANIME' })).toHaveAttribute('aria-current', 'page');
         expect(screen.getByRole('region', { name: 'Anime' })).toBeInTheDocument();
-        expect(screen.getByLabelText('Anime name')).toBeInTheDocument();
+        // The section opens on the schedule, the first of its tabs.
+        expect(screen.getByRole('button', { name: 'SCHEDULE' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByRole('region', { name: 'Anime schedule' })).toBeInTheDocument();
+        expect(screen.queryByLabelText('Anime name')).not.toBeInTheDocument();
         expect(screen.queryByLabelText('Link 1')).not.toBeInTheDocument();
     });
 
@@ -320,7 +323,7 @@ describe('App anime section', () => {
         const { unmount } = render(<App />);
         await screen.findByRole('button', { name: 'ANIME' });
         unmount();
-        expect(mock.unsubscribers).toHaveLength(8);
+        expect(mock.unsubscribers).toHaveLength(9);
         mock.unsubscribers.forEach((unsubscribe) => {
             expect(unsubscribe).toHaveBeenCalledTimes(1);
         });

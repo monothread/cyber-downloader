@@ -147,7 +147,7 @@ describe('App in another language', () => {
 describe('components in another language', () => {
     it('translates the job card status, progress, ETA and actions', () => {
         useLanguage('pt');
-        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        const handlers = { onCancel: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
         render(<JobCard job={makeJob()} {...handlers} />);
         expect(screen.getByText('BAIXANDO')).toBeInTheDocument();
         expect(screen.getByText('Restam 00:10')).toBeInTheDocument();
@@ -157,7 +157,7 @@ describe('components in another language', () => {
 
     it('translates a live recording', () => {
         useLanguage('es');
-        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        const handlers = { onCancel: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
         render(<JobCard job={makeJob({ live: true, elapsedSeconds: 65, downloadedBytes: 2048 })} {...handlers} />);
         expect(screen.getByText('GRABANDO')).toBeInTheDocument();
         expect(screen.getByText('● EN DIRECTO')).toBeInTheDocument();
@@ -169,7 +169,7 @@ describe('components in another language', () => {
         useLanguage('zh');
         const user = userEvent.setup();
         const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        const handlers = { onCancel: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
         render(<JobCard job={makeJob({ status: 'cancelled', live: true, hasPartial: true })} {...handlers} />);
         expect(screen.getByText('已取消')).toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: '移除' }));
@@ -187,7 +187,7 @@ describe('components in another language', () => {
         ['ja', '処理中', 'ダウンロードしたファイルを処理しています', '音声を変換しています', '映像と音声を結合しています']
     ] as const)('translates the processing of the downloaded file in "%s"', (language, badge, label, audio, merge) => {
         useLanguage(language);
-        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        const handlers = { onCancel: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
         const { rerender } = render(<JobCard job={makeJob({ postProcess: 'ExtractAudio' })} {...handlers} />);
         expect(screen.getByText(badge)).toBeInTheDocument();
         expect(screen.getByText(audio)).toBeInTheDocument();
@@ -204,7 +204,7 @@ describe('components in another language', () => {
         ['ja', 'ファイル保存中', '録画を終了してファイルを保存しています', '録画を保存しています。アプリを閉じないでください']
     ] as const)('translates the saving of a stopped recording in "%s"', (language, badge, label, text) => {
         useLanguage(language);
-        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        const handlers = { onCancel: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
         render(<JobCard job={makeJob({ live: true, saving: true })} {...handlers} />);
         expect(screen.getByText(badge)).toBeInTheDocument();
         expect(screen.getByText(text)).toBeInTheDocument();
@@ -219,7 +219,7 @@ describe('components in another language', () => {
         ['ja', 'パート結合中', '録画のパートを1つのファイルに結合しています']
     ] as const)('translates the joining of the parts of a recording in "%s"', (language, badge, text) => {
         useLanguage(language);
-        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        const handlers = { onCancel: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
         render(<JobCard job={makeJob({ live: true, merging: true })} {...handlers} />);
         expect(screen.getByText(badge)).toBeInTheDocument();
         expect(screen.getByText(text)).toBeInTheDocument();
@@ -234,7 +234,7 @@ describe('components in another language', () => {
         ['ja', '終了を確認中', '配信が止まりました。本当に終了したか確認中… 6 秒', '今すぐ終了', 'ライブ待機中', 'ライブ配信の開始を待っています']
     ] as const)('translates the live phases of a card in "%s"', (language, verifyingBadge, verifyingText, finishNow, waitingBadge, waitingText) => {
         useLanguage(language);
-        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        const handlers = { onCancel: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
         const { unmount } = render(<JobCard job={makeJob({ live: true, endCheck: { secondsLeft: 6, totalSeconds: 10 } })} {...handlers} />);
         expect(screen.getByText(verifyingBadge)).toBeInTheDocument();
         expect(screen.getByText(verifyingText)).toBeInTheDocument();
@@ -254,7 +254,7 @@ describe('components in another language', () => {
     ] as const)('translates the options of one download in "%s"', async (language, button, ariaLabel, badge, applyLabel) => {
         useLanguage(language);
         const user = userEvent.setup();
-        const handlers = { onCancel: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
+        const handlers = { onCancel: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onStop: vi.fn(), onRetry: vi.fn(), onRemove: vi.fn(), onClearPartials: vi.fn(), onShowFile: vi.fn() };
         const { unmount } = render(<UrlInput />);
         const opener = screen.getByRole('button', { name: ariaLabel });
         expect(opener).toHaveTextContent(button);

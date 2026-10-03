@@ -23,6 +23,7 @@ const STATUS_KEYS: Record<AnimeEpisodeStatus | AnimeJob['status'], MessageKey> =
     queued: 'anime.status.queued',
     downloading: 'anime.status.downloading',
     running: 'anime.status.downloading',
+    paused: 'anime.status.paused',
     done: 'anime.status.done',
     error: 'anime.status.error',
     cancelled: 'anime.status.cancelled'

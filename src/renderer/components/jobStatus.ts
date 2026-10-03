@@ -58,7 +58,7 @@ export function statusLabel(status: JobStatus, live: boolean, t: Translator, pha
 
 // The list shows what is happening first (running), then what waits (queued), then what is over; inside each group the
 // newest is on top. The queue itself keeps the order the downloads were added, which is the order they start in.
-const DISPLAY_RANK: Record<JobStatus, number> = { running: 0, queued: 1, done: 2, error: 2, cancelled: 2 };
+const DISPLAY_RANK: Record<JobStatus, number> = { running: 0, paused: 1, queued: 2, done: 3, error: 3, cancelled: 3 };
 
 export function sortForDisplay(jobs: DownloadJob[]): DownloadJob[] {
     return jobs

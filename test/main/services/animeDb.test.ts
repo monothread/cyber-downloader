@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { AnimeHistoryRequest } from '@shared/anime';
+import type { AnimeHistoryRequest, AnimeScheduleEntry } from '@shared/anime';
 import { AnimeDb, INTERRUPTED_MESSAGE, MAX_HISTORY_ENTRIES, type NewAnime } from '@main/services/animeDb';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
 
@@ -19,7 +19,7 @@ afterEach(() => {
 
 describe('AnimeDb schema', () => {
     it('applies the migrations and remembers the version', () => {
-        expect(makeDb().schemaVersion).toBe(4);
+        expect(makeDb().schemaVersion).toBe(5);
     });
 
     it('keeps the data and does not migrate again when the file is opened twice', () => {
@@ -32,7 +32,7 @@ describe('AnimeDb schema', () => {
         first.close();
 
         const second = new AnimeDb(path);
-        expect(second.schemaVersion).toBe(4);
+        expect(second.schemaVersion).toBe(5);
         expect(second.list()).toEqual([
             {
                 id: anime.id,
@@ -429,7 +429,7 @@ describe('AnimeDb series and seasons', () => {
         const db = new AnimeDb(path, () => {
             return NOW;
         });
-        expect(db.schemaVersion).toBe(4);
+        expect(db.schemaVersion).toBe(5);
         expect(db.list()).toEqual([{ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub', createdAt: 5, series: null, season: null, seasonName: null, episodes: [] }]);
         db.close();
     });
@@ -565,11 +565,11 @@ describe('AnimeDb series and seasons', () => {
         first.setSeries(anime.id, 'Series', 2);
         first.close();
         const raw = new DatabaseSync(path);
-        raw.exec('ALTER TABLE anime DROP COLUMN season_name; DROP TABLE anime_history; PRAGMA user_version = 2;');
+        raw.exec('ALTER TABLE anime DROP COLUMN season_name; DROP TABLE anime_history; DROP TABLE anime_cover; DROP TABLE anime_schedule_cache; PRAGMA user_version = 2;');
         raw.close();
 
         const db = new AnimeDb(path);
-        expect(db.schemaVersion).toBe(4);
+        expect(db.schemaVersion).toBe(5);
         expect(db.getAnime(anime.id)).toMatchObject({ series: 'Series', season: 2, seasonName: null });
         db.close();
     });
@@ -700,16 +700,536 @@ describe('AnimeDb history', () => {
         old.ensureEpisode(anime.id, '1');
         old.close();
         const raw = new DatabaseSync(path);
-        raw.exec('DROP TABLE anime_history; PRAGMA user_version = 3;');
+        raw.exec('DROP TABLE anime_history; DROP TABLE anime_cover; DROP TABLE anime_schedule_cache; PRAGMA user_version = 3;');
         raw.close();
 
         const db = new AnimeDb(path, () => {
             return NOW;
         });
-        expect(db.schemaVersion).toBe(4);
+        expect(db.schemaVersion).toBe(5);
         expect(db.listHistory()).toEqual([]);
         expect(db.list()).toHaveLength(1);
         expect(db.list()[0]?.episodes).toHaveLength(1);
         db.close();
+    });
+});
+
+// The schema of the last release (0.17.0), as it was published. It must never change: the databases of the people who use that
+// release are in this state, and the tests below open them with the current code.
+const RELEASED_MIGRATIONS: readonly string[] = [
+    `CREATE TABLE anime (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        query TEXT NOT NULL,
+        search_index INTEGER NOT NULL,
+        audio TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE (title, audio)
+    );
+    CREATE TABLE episode (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        anime_id INTEGER NOT NULL REFERENCES anime (id) ON DELETE CASCADE,
+        number TEXT NOT NULL,
+        status TEXT NOT NULL,
+        file_path TEXT,
+        size_bytes INTEGER,
+        error_code TEXT,
+        error_raw TEXT,
+        position_seconds REAL NOT NULL DEFAULT 0,
+        duration_seconds REAL NOT NULL DEFAULT 0,
+        watched INTEGER NOT NULL DEFAULT 0,
+        downloaded_at INTEGER,
+        UNIQUE (anime_id, number)
+    );`,
+    // The seasons of an anime are separate entries in the source; the user joins them under a series with a season number.
+    `ALTER TABLE anime ADD COLUMN series TEXT;
+    ALTER TABLE anime ADD COLUMN season INTEGER;`,
+    // The name an anime is shown with inside its series (the season number only orders them).
+    `ALTER TABLE anime ADD COLUMN season_name TEXT;`,
+    // What the viewer opened or watched, apart from the library (it also covers anime that were only searched or streamed).
+    `CREATE TABLE anime_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        query TEXT NOT NULL,
+        search_index INTEGER NOT NULL,
+        audio TEXT NOT NULL,
+        episode TEXT,
+        opened_at INTEGER NOT NULL,
+        UNIQUE (title, audio)
+    );`
+];
+
+
+// A database as the last release left it (or as an older one did, up to `version` migrations).
+function makeReleasedDatabase(path: string, version: number = RELEASED_MIGRATIONS.length): void {
+    const raw = new DatabaseSync(path);
+    RELEASED_MIGRATIONS.slice(0, version).forEach((migration) => {
+        raw.exec(migration);
+    });
+    raw.exec(`PRAGMA user_version = ${version}`);
+    raw.close();
+}
+
+function tablesOf(path: string): string[] {
+    const raw = new DatabaseSync(path, { readOnly: true });
+    const names = raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all();
+    raw.close();
+    return names.map((row) => {
+        return String(row.name);
+    });
+}
+
+function schemaOf(path: string): Array<{ name: string; sql: string }> {
+    const raw = new DatabaseSync(path, { readOnly: true });
+    const rows = raw.prepare("SELECT name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all();
+    raw.close();
+    return rows.map((row) => {
+        return { name: String(row.name), sql: String(row.sql) };
+    });
+}
+
+function versionOf(path: string): number {
+    const raw = new DatabaseSync(path, { readOnly: true });
+    const version = Number((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version);
+    raw.close();
+    return version;
+}
+
+// Every row of the tables the last release had, in a fixed order, to compare before and after an upgrade.
+function releasedRowsOf(path: string): Record<string, unknown[]> {
+    const raw = new DatabaseSync(path, { readOnly: true });
+    const rows = {
+        anime: raw.prepare('SELECT * FROM anime ORDER BY id').all().map((row) => {
+            return { ...row };
+        }),
+        episode: raw.prepare('SELECT * FROM episode ORDER BY id').all().map((row) => {
+            return { ...row };
+        }),
+        anime_history: raw.prepare('SELECT * FROM anime_history ORDER BY id').all().map((row) => {
+            return { ...row };
+        })
+    };
+    raw.close();
+    return rows;
+}
+
+describe('AnimeDb upgrade of the last release', () => {
+    function fillReleasedDatabase(path: string): void {
+        const raw = new DatabaseSync(path);
+        raw.exec(`
+            INSERT INTO anime (id, title, query, search_index, audio, created_at, series, season, season_name) VALUES
+                (1, 'Naruto', 'naruto', 1, 'sub', 1700000000000, NULL, NULL, NULL),
+                (2, 'Frieren: Beyond Journey''s End', 'Frieren', 1, 'sub', 1700000001000, 'Frieren', 1, NULL),
+                (3, 'Frieren: Beyond Journey''s End Season 2', 'Frieren', 2, 'dub', 1700000002000, 'Frieren', 2, 'The Second Season'),
+                (4, 'Bleach', 'bleach', 0, 'sub', 1700000003000, NULL, NULL, NULL);
+            INSERT INTO episode (id, anime_id, number, status, file_path, size_bytes, error_code, error_raw, position_seconds, duration_seconds, watched, downloaded_at) VALUES
+                (1, 1, '1', 'done', '/lib/Naruto/Episode 1/Naruto Episode 1.mp4', 123456, NULL, NULL, 600.5, 1400, 1, 1700000100000),
+                (2, 1, '2', 'queued', NULL, NULL, NULL, NULL, 0, 0, 0, NULL),
+                (3, 2, '1', 'downloading', NULL, NULL, NULL, NULL, 0, 0, 0, NULL),
+                (4, 2, '2', 'error', NULL, NULL, 'NETWORK', 'curl: (6) Could not resolve host', 0, 0, 0, NULL),
+                (5, 3, '12.5', 'cancelled', NULL, NULL, NULL, NULL, 12, 1500, 0, NULL),
+                (6, 4, '366', 'done', 'D:\\Anime\\Bleach\\Episode 366\\Bleach Episode 366.mp4', 99, NULL, NULL, 1400, 1400, 1, 1700000200000);
+            INSERT INTO anime_history (id, title, query, search_index, audio, episode, opened_at) VALUES
+                (1, 'Naruto', 'naruto', 1, 'sub', NULL, 1700000300000),
+                (2, 'Frieren: Beyond Journey''s End', 'Frieren', 1, 'sub', '3', 1700000400000);
+        `);
+        raw.close();
+    }
+
+    it('is at version 4 as published, and the current code goes to version 5 with the two tables it adds', () => {
+        expect(RELEASED_MIGRATIONS).toHaveLength(4);
+        const path = join(makeTempDir(), 'anime.db');
+        makeReleasedDatabase(path);
+        expect(versionOf(path)).toBe(4);
+        expect(tablesOf(path)).toEqual(['anime', 'anime_history', 'episode']);
+
+        new AnimeDb(path).close();
+
+        expect(versionOf(path)).toBe(5);
+        expect(tablesOf(path)).toEqual(['anime', 'anime_cover', 'anime_history', 'anime_schedule_cache', 'episode']);
+    });
+
+    it('keeps every row of the last release exactly as it was', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        makeReleasedDatabase(path);
+        fillReleasedDatabase(path);
+        const before = releasedRowsOf(path);
+
+        new AnimeDb(path).close();
+
+        expect(releasedRowsOf(path)).toEqual(before);
+        expect(before.anime).toHaveLength(4);
+        expect(before.episode).toHaveLength(6);
+        expect(before.anime_history).toHaveLength(2);
+    });
+
+    it('reads the library, the episodes and the history of the last release with the current code', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        makeReleasedDatabase(path);
+        fillReleasedDatabase(path);
+
+        const db = new AnimeDb(path, () => {
+            return NOW;
+        });
+
+        expect(
+            db.list().map((anime) => {
+                return [anime.title, anime.audio, anime.series, anime.season, anime.seasonName, anime.episodes.length];
+            })
+        ).toEqual([
+            ['Bleach', 'sub', null, null, null, 1],
+            ['Frieren: Beyond Journey\'s End', 'sub', 'Frieren', 1, null, 2],
+            ['Frieren: Beyond Journey\'s End Season 2', 'dub', 'Frieren', 2, 'The Second Season', 1],
+            ['Naruto', 'sub', null, null, null, 2]
+        ]);
+        expect(db.getEpisode(1)).toMatchObject({ status: 'done', filePath: '/lib/Naruto/Episode 1/Naruto Episode 1.mp4', sizeBytes: 123456, positionSeconds: 600.5, durationSeconds: 1400, watched: true });
+        expect(db.getEpisode(4)).toMatchObject({ status: 'error', error: { code: 'NETWORK', raw: 'curl: (6) Could not resolve host' } });
+        expect(db.getEpisode(5)).toMatchObject({ number: '12.5', status: 'cancelled' });
+        expect(db.listHistory().map((entry) => {
+            return [entry.title, entry.episode];
+        })).toEqual([
+            ['Frieren: Beyond Journey\'s End', '3'],
+            ['Naruto', null]
+        ]);
+        db.close();
+    });
+
+    it('fails what the last release left queued or downloading, as the app does at start, and keeps the rest', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        makeReleasedDatabase(path);
+        fillReleasedDatabase(path);
+        const db = new AnimeDb(path);
+
+        db.failInterrupted();
+
+        expect(
+            [1, 2, 3, 4, 5, 6].map((id) => {
+                return db.getEpisode(id)?.status;
+            })
+        ).toEqual(['done', 'error', 'error', 'error', 'cancelled', 'done']);
+        db.close();
+    });
+
+    it('lets the new features write to a database that was upgraded, next to what was already there', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        makeReleasedDatabase(path);
+        fillReleasedDatabase(path);
+        const db = new AnimeDb(path, () => {
+            return NOW;
+        });
+
+        db.saveCover('naruto', 'https://s4.anilist.co/naruto.jpg');
+        db.saveScheduleCache(1_700_000_000, 1_700_086_400, [], NOW - 1);
+        db.markPaused(2);
+
+        expect(db.getCover('naruto')).toEqual({ url: 'https://s4.anilist.co/naruto.jpg', checkedAt: NOW });
+        expect(db.findScheduleCache(1_700_000_000, 1_700_086_400, NOW - 1)).toEqual([]);
+        expect(db.getEpisode(2)?.status).toBe('paused');
+        expect(db.list()).toHaveLength(4);
+        db.close();
+    });
+
+    it('does not migrate again when the upgraded database is opened once more, and keeps what the new features saved', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        makeReleasedDatabase(path);
+        fillReleasedDatabase(path);
+        const first = new AnimeDb(path, () => {
+            return NOW;
+        });
+        first.saveCover('naruto', null);
+        first.close();
+        const schema = schemaOf(path);
+
+        const second = new AnimeDb(path, () => {
+            return NOW;
+        });
+
+        expect(second.schemaVersion).toBe(5);
+        expect(second.getCover('naruto')).toEqual({ url: null, checkedAt: NOW });
+        second.close();
+        expect(schemaOf(path)).toEqual(schema);
+    });
+
+    it.each([1, 2, 3, 4])('upgrades a database of version %i to the same schema a new database has', (version) => {
+        const directory = makeTempDir();
+        const upgraded = join(directory, 'upgraded.db');
+        const fresh = join(directory, 'fresh.db');
+        makeReleasedDatabase(upgraded, version);
+        new AnimeDb(fresh).close();
+
+        new AnimeDb(upgraded).close();
+
+        expect(versionOf(upgraded)).toBe(5);
+        expect(schemaOf(upgraded)).toEqual(schemaOf(fresh));
+    });
+
+    it('creates both tables or neither: a migration that fails is undone, and the database stays at the version of the release', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        makeReleasedDatabase(path);
+        fillReleasedDatabase(path);
+        const raw = new DatabaseSync(path);
+        // Something in the way of the second table of the migration: it fails after the first one was created.
+        raw.exec('CREATE TABLE anime_schedule_cache (in_the_way INTEGER)');
+        raw.close();
+
+        expect(() => {
+            return new AnimeDb(path);
+        }).toThrow(/anime_schedule_cache/);
+
+        expect(versionOf(path)).toBe(4);
+        expect(tablesOf(path)).toEqual(['anime', 'anime_history', 'anime_schedule_cache', 'episode']);
+        expect(releasedRowsOf(path).episode).toHaveLength(6);
+    });
+
+    it('opens a database that a newer version of the app made, as it is', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        makeReleasedDatabase(path);
+        fillReleasedDatabase(path);
+        const raw = new DatabaseSync(path);
+        raw.exec('CREATE TABLE from_the_future (id INTEGER); PRAGMA user_version = 9;');
+        raw.close();
+
+        const db = new AnimeDb(path);
+
+        expect(db.schemaVersion).toBe(9);
+        expect(db.list()).toHaveLength(4);
+        db.close();
+        expect(versionOf(path)).toBe(9);
+        expect(tablesOf(path)).toContain('from_the_future');
+    });
+});
+
+describe('AnimeDb covers', () => {
+    it('has none for a title that was never saved', () => {
+        expect(makeDb().getCover('naruto')).toBeNull();
+    });
+
+    it('keeps the address of a cover with the moment it was checked', () => {
+        const db = makeDb();
+        db.saveCover('naruto', 'https://s4.anilist.co/naruto.jpg');
+        expect(db.getCover('naruto')).toEqual({ url: 'https://s4.anilist.co/naruto.jpg', checkedAt: NOW });
+    });
+
+    it('keeps that a title has no cover, which is not the same as not having checked it', () => {
+        const db = makeDb();
+        db.saveCover('unknown anime', null);
+        expect(db.getCover('unknown anime')).toEqual({ url: null, checkedAt: NOW });
+    });
+
+    it('replaces the address and the moment when the same title is saved again', () => {
+        let moment = NOW;
+        const db = new AnimeDb(':memory:', () => {
+            return moment;
+        });
+        db.saveCover('naruto', 'https://s4.anilist.co/old.jpg');
+        moment = NOW + 5000;
+        db.saveCover('naruto', 'https://s4.anilist.co/new.jpg');
+        expect(db.getCover('naruto')).toEqual({ url: 'https://s4.anilist.co/new.jpg', checkedAt: NOW + 5000 });
+    });
+
+    it('keeps the titles apart', () => {
+        const db = makeDb();
+        db.saveCover('naruto', 'https://s4.anilist.co/naruto.jpg');
+        db.saveCover('bleach', null);
+        expect(db.getCover('naruto')?.url).toBe('https://s4.anilist.co/naruto.jpg');
+        expect(db.getCover('bleach')?.url).toBeNull();
+        expect(db.getCover('one piece')).toBeNull();
+    });
+
+    it('survives the library being removed: covers are not tied to an anime', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        db.saveCover('naruto', 'https://s4.anilist.co/naruto.jpg');
+        db.removeAnime(anime.id);
+        expect(db.getCover('naruto')?.url).toBe('https://s4.anilist.co/naruto.jpg');
+    });
+});
+
+describe('AnimeDb schedule cache', () => {
+    const FROM = 1_700_000_000;
+    const TO = FROM + 86_400;
+    const SINCE = NOW - 24 * 60 * 60 * 1000;
+
+    function entry(anilistId: number, airingAt: number, overrides: Partial<AnimeScheduleEntry> = {}): AnimeScheduleEntry {
+        return { anilistId, title: `Anime ${anilistId}`, names: [`Anime ${anilistId}`, `Other ${anilistId}`], episode: 3, airingAt, coverUrl: `https://s4.anilist.co/${anilistId}.jpg`, ...overrides };
+    }
+
+    function makeClockedDb(clock: { now: number }): AnimeDb {
+        return new AnimeDb(':memory:', () => {
+            return clock.now;
+        });
+    }
+
+    it('has nothing for a stretch that was never listed', () => {
+        expect(makeDb().findScheduleCache(FROM, TO, SINCE)).toBeNull();
+    });
+
+    it('gives back the episodes that were saved for the stretch, as they were', () => {
+        const db = makeDb();
+        const entries = [entry(1, FROM + 100), entry(2, FROM + 200, { coverUrl: null, episode: 12 })];
+        db.saveScheduleCache(FROM, TO, entries, SINCE);
+        expect(db.findScheduleCache(FROM, TO, SINCE)).toEqual(entries);
+    });
+
+    it('gives an empty day back as empty, not as missing', () => {
+        const db = makeDb();
+        db.saveScheduleCache(FROM, TO, [], SINCE);
+        expect(db.findScheduleCache(FROM, TO, SINCE)).toEqual([]);
+    });
+
+    it('answers a shorter stretch from one that covers it, with only the episodes inside it', () => {
+        const db = makeDb();
+        const week = FROM + 7 * 86_400;
+        db.saveScheduleCache(FROM, week, [entry(1, FROM), entry(2, FROM + 86_399), entry(3, FROM + 86_400), entry(4, week - 1)], SINCE);
+        expect(
+            db.findScheduleCache(FROM, TO, SINCE)?.map((found) => {
+                return found.anilistId;
+            })
+        ).toEqual([1, 2]);
+    });
+
+    it('does not count an episode that airs at the end of the stretch (the end is not part of it)', () => {
+        const db = makeDb();
+        db.saveScheduleCache(FROM, TO + 1000, [entry(1, TO), entry(2, TO - 1)], SINCE);
+        expect(
+            db.findScheduleCache(FROM, TO, SINCE)?.map((found) => {
+                return found.anilistId;
+            })
+        ).toEqual([2]);
+    });
+
+    it('does not answer a longer stretch, or one that starts before or ends after what was listed', () => {
+        const db = makeDb();
+        db.saveScheduleCache(FROM, TO, [entry(1, FROM + 1)], SINCE);
+        expect(db.findScheduleCache(FROM - 1, TO, SINCE)).toBeNull();
+        expect(db.findScheduleCache(FROM, TO + 1, SINCE)).toBeNull();
+        expect(db.findScheduleCache(FROM + 3600, TO + 3600, SINCE)).toBeNull();
+    });
+
+    it('does not answer from a listing that was asked before the moment given', () => {
+        const clock = { now: NOW - 25 * 60 * 60 * 1000 };
+        const db = makeClockedDb(clock);
+        db.saveScheduleCache(FROM, TO, [entry(1, FROM + 1)], 0);
+        clock.now = NOW;
+        expect(db.findScheduleCache(FROM, TO, SINCE)).toBeNull();
+        expect(db.findScheduleCache(FROM, TO, NOW - 26 * 60 * 60 * 1000)).toHaveLength(1);
+    });
+
+    it('answers from a listing asked exactly at the moment given', () => {
+        const db = makeDb();
+        db.saveScheduleCache(FROM, TO, [entry(1, FROM + 1)], 0);
+        expect(db.findScheduleCache(FROM, TO, NOW)).toHaveLength(1);
+        expect(db.findScheduleCache(FROM, TO, NOW + 1)).toBeNull();
+    });
+
+    it('uses the newest of the listings that cover the stretch', () => {
+        const clock = { now: NOW - 3600_000 };
+        const db = makeClockedDb(clock);
+        db.saveScheduleCache(FROM, TO + 86_400, [entry(1, FROM + 10, { title: 'Old' })], 0);
+        clock.now = NOW;
+        db.saveScheduleCache(FROM, TO, [entry(1, FROM + 10, { title: 'New' })], 0);
+        expect(db.findScheduleCache(FROM, TO, SINCE)?.[0]?.title).toBe('New');
+    });
+
+    it('replaces what was kept for the same stretch', () => {
+        const clock = { now: NOW - 3600_000 };
+        const db = makeClockedDb(clock);
+        db.saveScheduleCache(FROM, TO, [entry(1, FROM + 10)], 0);
+        clock.now = NOW;
+        db.saveScheduleCache(FROM, TO, [entry(2, FROM + 20)], 0);
+        expect(
+            db.findScheduleCache(FROM, TO, NOW)?.map((found) => {
+                return found.anilistId;
+            })
+        ).toEqual([2]);
+    });
+
+    it('forgets the listings asked before the moment given when a new one is saved', () => {
+        const clock = { now: NOW - 30 * 60 * 60 * 1000 };
+        const db = makeClockedDb(clock);
+        db.saveScheduleCache(FROM, TO, [entry(1, FROM + 1)], 0);
+        clock.now = NOW;
+        db.saveScheduleCache(FROM + 86_400, TO + 86_400, [entry(2, FROM + 86_401)], SINCE);
+        expect(db.findScheduleCache(FROM, TO, 0)).toBeNull();
+        expect(db.findScheduleCache(FROM + 86_400, TO + 86_400, 0)).toHaveLength(1);
+    });
+
+    it('keeps the listings that are still fresh when it forgets the old ones', () => {
+        const db = makeDb();
+        db.saveScheduleCache(FROM, TO, [entry(1, FROM + 1)], SINCE);
+        db.saveScheduleCache(FROM + 86_400, TO + 86_400, [entry(2, FROM + 86_401)], SINCE);
+        expect(db.findScheduleCache(FROM, TO, SINCE)).toHaveLength(1);
+        expect(db.findScheduleCache(FROM + 86_400, TO + 86_400, SINCE)).toHaveLength(1);
+    });
+
+    it('treats what it cannot read as missing: a row that is not JSON, and one that is not a list', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        new AnimeDb(path).close();
+        const raw = new DatabaseSync(path);
+        raw.prepare('INSERT INTO anime_schedule_cache (from_at, to_at, fetched_at, entries) VALUES (?, ?, ?, ?)').run(FROM, TO, NOW, 'not json');
+        raw.prepare('INSERT INTO anime_schedule_cache (from_at, to_at, fetched_at, entries) VALUES (?, ?, ?, ?)').run(FROM + 1, TO, NOW, '{"airingAt":1}');
+        raw.close();
+        const db = new AnimeDb(path);
+
+        expect(db.findScheduleCache(FROM, TO, 0)).toBeNull();
+        expect(db.findScheduleCache(FROM + 1, TO, 0)).toBeNull();
+        db.close();
+    });
+
+    it('leaves out an item of a row that has no time to tell if it is inside the stretch', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        new AnimeDb(path).close();
+        const raw = new DatabaseSync(path);
+        raw.prepare('INSERT INTO anime_schedule_cache (from_at, to_at, fetched_at, entries) VALUES (?, ?, ?, ?)').run(FROM, TO, NOW, JSON.stringify([{ anilistId: 1 }, entry(2, FROM + 5)]));
+        raw.close();
+        const db = new AnimeDb(path);
+
+        expect(
+            db.findScheduleCache(FROM, TO, 0)?.map((found) => {
+                return found.anilistId;
+            })
+        ).toEqual([2]);
+        db.close();
+    });
+});
+
+describe('AnimeDb paused episodes', () => {
+    it('keeps an episode as paused, without the error it had', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const episode = db.ensureEpisode(anime.id, '1');
+        db.markFailed(episode.id, 'error', { code: 'NETWORK', raw: 'offline' });
+
+        db.markPaused(episode.id);
+
+        expect(db.getEpisode(episode.id)).toMatchObject({ status: 'paused', error: null });
+    });
+
+    it('does not fail a paused episode when the app starts, as it does with the ones that were waiting or downloading', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const paused = db.ensureEpisode(anime.id, '1');
+        const downloading = db.ensureEpisode(anime.id, '2');
+        const queued = db.ensureEpisode(anime.id, '3');
+        db.markPaused(paused.id);
+        db.markDownloading(downloading.id);
+
+        db.failInterrupted();
+
+        expect(db.getEpisode(paused.id)?.status).toBe('paused');
+        expect(db.getEpisode(downloading.id)?.status).toBe('error');
+        expect(db.getEpisode(queued.id)?.status).toBe('error');
+    });
+
+    it('goes back to downloading, and then done, when it is resumed', () => {
+        const db = makeDb();
+        const anime = db.upsertAnime(NARUTO);
+        const episode = db.ensureEpisode(anime.id, '1');
+        db.markPaused(episode.id);
+
+        db.markDownloading(episode.id);
+        expect(db.getEpisode(episode.id)?.status).toBe('downloading');
+        db.markDone(episode.id, '/lib/Naruto/Naruto Episode 1.mp4', 10);
+        expect(db.getEpisode(episode.id)).toMatchObject({ status: 'done', sizeBytes: 10 });
     });
 });

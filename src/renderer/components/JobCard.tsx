@@ -9,6 +9,8 @@ import { StreamFinder } from './StreamFinder';
 interface JobCardProps {
     job: DownloadJob;
     onCancel: (id: string) => void;
+    onPause: (id: string) => void;
+    onResume: (id: string) => void;
     onStop: (id: string) => void;
     onRetry: (id: string) => void;
     onRemove: (id: string) => void;
@@ -16,12 +18,14 @@ interface JobCardProps {
     onShowFile: (path: string) => void;
 }
 
-export function JobCard({ job, onCancel, onStop, onRetry, onRemove, onClearPartials, onShowFile }: JobCardProps) {
+export function JobCard({ job, onCancel, onPause, onResume, onStop, onRetry, onRemove, onClearPartials, onShowFile }: JobCardProps) {
     const t = useTranslator();
-    const isActive = job.status === 'queued' || job.status === 'running';
+    const isActive = job.status === 'queued' || job.status === 'running' || job.status === 'paused';
     const phase = livePhase(job);
     const isRecording = job.live && job.status === 'running' && phase === null;
     const canRetry = job.status === 'error' || job.status === 'cancelled';
+    // A plain download that is running (not a live recording, nor one closing its file) can be paused.
+    const canPause = job.status === 'running' && !job.live && phase === null;
     // A live recording left behind may still be playable, so deleting it is confirmed first.
     const confirmDeletion = (): boolean => {
         return !(job.live && job.hasPartial) || window.confirm(t('job.confirmLivePartial'));
@@ -83,6 +87,28 @@ export function JobCard({ job, onCancel, onStop, onRetry, onRemove, onClearParti
                         }}
                     >
                         {t('job.finishNow')}
+                    </button>
+                )}
+                {canPause && (
+                    <button
+                        type="button"
+                        className="btn btn--small"
+                        onClick={() => {
+                            onPause(job.id);
+                        }}
+                    >
+                        {t('job.pause')}
+                    </button>
+                )}
+                {job.status === 'paused' && (
+                    <button
+                        type="button"
+                        className="btn btn--small btn--primary"
+                        onClick={() => {
+                            onResume(job.id);
+                        }}
+                    >
+                        {t('job.resume')}
                     </button>
                 )}
                 {isActive && phase !== 'verifying' && phase !== 'merging' && phase !== 'saving' && phase !== 'processing' && (

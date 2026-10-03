@@ -55,26 +55,68 @@ describe('StreamSessions', () => {
 
     it('opens a session and gives the addresses the player uses', () => {
         const all = sessions();
-        const stream = all.create({ url: MASTER, subtitleUrl: 'https://subs.example/pt.vtt', referer: 'https://embed.example/' });
+        const stream = all.create({ url: MASTER, subtitleUrl: 'https://subs.example/pt.vtt', referer: 'https://embed.example/', subtitles: [] });
 
-        expect(stream).toEqual({ sessionId: 'id1', url: proxyUrl('id1', MASTER), subtitleUrl: proxyUrl('id1', 'https://subs.example/pt.vtt') });
+        expect(stream).toEqual({ sessionId: 'id1', url: proxyUrl('id1', MASTER), subtitleUrl: proxyUrl('id1', 'https://subs.example/pt.vtt'), subtitles: [] });
         expect(all.get('id1')).toEqual({ id: 'id1', referer: 'https://embed.example/', hosts: new Set(['cdn.example', 'subs.example']) });
         expect(all.size).toBe(1);
     });
 
+    it('gives an address through the app for every subtitle the source offers, in the order it gives them, with the label of the source', () => {
+        const all = sessions();
+        const stream = all.create({
+            url: MASTER,
+            subtitleUrl: 'https://subs.example/en.vtt',
+            referer: 'https://embed.example/',
+            subtitles: [
+                { label: 'Arabic', src: 'https://subs.example/ar.vtt' },
+                { label: 'English', src: 'https://subs.example/en.vtt' },
+                { label: 'Portuguese (- Portuguese(Brazil))', src: 'https://other-subs.example:8443/pt.vtt' }
+            ]
+        });
+
+        expect(stream.subtitles).toEqual([
+            { id: 'stream-1', label: 'Arabic', url: proxyUrl('id1', 'https://subs.example/ar.vtt') },
+            { id: 'stream-2', label: 'English', url: proxyUrl('id1', 'https://subs.example/en.vtt') },
+            { id: 'stream-3', label: 'Portuguese (- Portuguese(Brazil))', url: proxyUrl('id1', 'https://other-subs.example:8443/pt.vtt') }
+        ]);
+        // The one ani-cli picked has the same address in the list as on its own, so the player can tell which it is.
+        expect(stream.subtitleUrl).toBe(stream.subtitles[1]?.url);
+    });
+
+    it('lets the session fetch from the hosts of every subtitle, and only those', () => {
+        const all = sessions();
+        all.create({
+            url: MASTER,
+            subtitleUrl: null,
+            referer: null,
+            subtitles: [
+                { label: 'Arabic', src: 'https://subs.example/ar.vtt' },
+                { label: 'Portuguese', src: 'https://other-subs.example:8443/pt.vtt' },
+                { label: 'Broken', src: 'not a url' }
+            ]
+        });
+
+        expect(all.get('id1')?.hosts).toEqual(new Set(['cdn.example', 'subs.example', 'other-subs.example:8443']));
+    });
+
+    it('has no subtitles in the list when the source does not offer any', () => {
+        expect(sessions().create({ url: MASTER, subtitleUrl: null, referer: null, subtitles: [] }).subtitles).toEqual([]);
+    });
+
     it('has no subtitle address when there are no subtitles', () => {
-        expect(sessions().create({ url: MASTER, subtitleUrl: null, referer: null }).subtitleUrl).toBeNull();
+        expect(sessions().create({ url: MASTER, subtitleUrl: null, referer: null, subtitles: [] }).subtitleUrl).toBeNull();
     });
 
     it('only allows web hosts', () => {
         const all = sessions();
-        all.create({ url: 'file:///etc/passwd', subtitleUrl: 'not a url', referer: null });
+        all.create({ url: 'file:///etc/passwd', subtitleUrl: 'not a url', referer: null, subtitles: [] });
         expect(all.get('id1')?.hosts).toEqual(new Set());
     });
 
     it('closes a session, and a missing one is harmless', () => {
         const all = sessions();
-        all.create({ url: MASTER, subtitleUrl: null, referer: null });
+        all.create({ url: MASTER, subtitleUrl: null, referer: null, subtitles: [] });
         all.close('id1');
         all.close('nope');
         expect(all.get('id1')).toBeUndefined();
@@ -84,7 +126,7 @@ describe('StreamSessions', () => {
     it('keeps only the latest sessions', () => {
         const all = sessions();
         for (let count = 0; count < MAX_SESSIONS + 2; count += 1) {
-            all.create({ url: MASTER, subtitleUrl: null, referer: null });
+            all.create({ url: MASTER, subtitleUrl: null, referer: null, subtitles: [] });
         }
         expect(all.size).toBe(MAX_SESSIONS);
         expect(all.get('id1')).toBeUndefined();
@@ -95,8 +137,8 @@ describe('StreamSessions', () => {
 
     it('makes unique ids by default', () => {
         const all = new StreamSessions();
-        const first = all.create({ url: MASTER, subtitleUrl: null, referer: null });
-        const second = all.create({ url: MASTER, subtitleUrl: null, referer: null });
+        const first = all.create({ url: MASTER, subtitleUrl: null, referer: null, subtitles: [] });
+        const second = all.create({ url: MASTER, subtitleUrl: null, referer: null, subtitles: [] });
         expect(first.sessionId).not.toBe(second.sessionId);
         expect(first.sessionId).toMatch(/^[\w-]+$/);
     });
@@ -161,7 +203,7 @@ describe('rewritePlaylist', () => {
 describe('createStreamHandler', () => {
     function setup(respond: (url: string) => Response | Promise<Response> = () => {return new Response('data')}) {
         const sessions = new StreamSessions(() => {return 'sess'});
-        const stream = sessions.create({ url: MASTER, subtitleUrl: 'https://cdn.example/subs/pt.vtt', referer: 'https://embed.example/path/' });
+        const stream = sessions.create({ url: MASTER, subtitleUrl: 'https://cdn.example/subs/pt.vtt', referer: 'https://embed.example/path/', subtitles: [] });
         const fetchRemote = vi.fn<StreamFetch>(async (url) => {
             return respond(url);
         });
@@ -186,7 +228,7 @@ describe('createStreamHandler', () => {
 
     it('sends no referer when the stream has none', async () => {
         const sessions = new StreamSessions(() => {return 'sess'});
-        sessions.create({ url: MASTER, subtitleUrl: null, referer: null });
+        sessions.create({ url: MASTER, subtitleUrl: null, referer: null, subtitles: [] });
         const fetchRemote = vi.fn<StreamFetch>(async () => {
             return new Response('x');
         });
@@ -303,7 +345,7 @@ describe('createStreamHandler', () => {
 
     it('uses the real fetch when none is given', async () => {
         const sessions = new StreamSessions(() => {return 'sess'});
-        sessions.create({ url: 'http://127.0.0.1:1/x.ts', subtitleUrl: null, referer: null });
+        sessions.create({ url: 'http://127.0.0.1:1/x.ts', subtitleUrl: null, referer: null, subtitles: [] });
         const response = await createStreamHandler(sessions)(new Request(proxyUrl('sess', 'http://127.0.0.1:1/x.ts')));
         expect(response.status).toBe(502);
     });

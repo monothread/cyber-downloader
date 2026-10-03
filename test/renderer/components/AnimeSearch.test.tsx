@@ -547,3 +547,103 @@ describe('AnimeDetail', () => {
         expect(screen.getByRole('button', { name: 'EP 1' })).not.toHaveClass('episode-chip--done');
     });
 });
+
+describe('AnimeSearch cards with a cover', () => {
+    function showResults(library: ReturnType<typeof makeAnime>[] = []): void {
+        useAnimeStore.setState({ search: { ...INITIAL_SEARCH, status: 'done', results: RESULTS, searchedQuery: 'cyberpunk', searchedAudio: 'sub' }, library });
+    }
+
+    it('lists the results as cards of a grid, each with a cover', () => {
+        showResults();
+        render(<AnimeSearch />);
+
+        const list = screen.getByRole('list');
+        expect(list).toHaveClass('cover-grid');
+        const cards = screen.getAllByRole('listitem');
+        expect(cards).toHaveLength(2);
+        cards.forEach((card) => {
+            expect(card).toHaveClass('history__item', 'cover-card', 'row--link');
+            expect(card.querySelector('.cover')).not.toBeNull();
+            expect(card.firstElementChild).toHaveClass('cover');
+        });
+    });
+
+    it('looks the cover of each result up by its title', async () => {
+        mock.api.findAnimeCover.mockImplementation(async (title: string) => {
+            return title === 'Cyberpunk: Edgerunners' ? 'https://s4.anilist.co/cyberpunk.jpg' : null;
+        });
+        showResults();
+        render(<AnimeSearch />);
+
+        await waitFor(() => {
+            expect(mock.api.findAnimeCover.mock.calls.map((call) => {
+                return call[0];
+            }).sort()).toEqual(['Cyberpunk: Edgerunners', 'Cyberpunk: Edgerunners 2']);
+        });
+        const [first, second] = screen.getAllByRole('listitem');
+        await waitFor(() => {
+            expect(first?.querySelector('img')).toHaveAttribute('src', 'https://s4.anilist.co/cyberpunk.jpg');
+        });
+        expect(within(second as HTMLElement).getByText('COVER NOT FOUND')).toBeInTheDocument();
+    });
+
+    it('puts the series and the button to the library at the bottom of the card, the series just above the button', () => {
+        showResults([makeAnime([makeEpisode({ id: 1 })], { id: 4, title: 'Cyberpunk: Edgerunners', audio: 'sub', series: 'Cyberpunk', season: 1 })]);
+        render(<AnimeSearch />);
+
+        const [card] = screen.getAllByRole('listitem');
+        const main = (card as HTMLElement).querySelector('.history__main') as HTMLElement;
+        const footer = main.querySelector('.cover-card__footer') as HTMLElement;
+        expect(main.lastElementChild).toBe(footer);
+        expect(footer.children).toHaveLength(2);
+        expect(footer.firstElementChild).toHaveTextContent('Cyberpunk · SEASON 1');
+        expect(footer.firstElementChild).toHaveClass('history__meta');
+        expect(footer.lastElementChild).toBe(within(footer).getByRole('button', { name: 'VIEW IN LIBRARY: Cyberpunk: Edgerunners' }));
+        // The title is above all of it.
+        expect(main.firstElementChild).toHaveClass('history__title');
+    });
+
+    it('keeps the button alone in the footer when the anime is in the library but not in a series', () => {
+        showResults([makeAnime([makeEpisode({ id: 1 })], { id: 4, title: 'Cyberpunk: Edgerunners', audio: 'sub' })]);
+        render(<AnimeSearch />);
+
+        const [card] = screen.getAllByRole('listitem');
+        const footer = (card as HTMLElement).querySelector('.cover-card__footer') as HTMLElement;
+        expect(footer.children).toHaveLength(1);
+        expect(footer.firstElementChild).toBe(within(footer).getByRole('button', { name: 'VIEW IN LIBRARY: Cyberpunk: Edgerunners' }));
+    });
+
+    it('keeps the series, without a button, when the anime is in a series but nothing of it was downloaded', () => {
+        showResults([makeAnime([], { id: 4, title: 'Cyberpunk: Edgerunners', audio: 'sub', series: 'Cyberpunk', season: 1 })]);
+        render(<AnimeSearch />);
+
+        const [card] = screen.getAllByRole('listitem');
+        const footer = (card as HTMLElement).querySelector('.cover-card__footer') as HTMLElement;
+        expect(footer.children).toHaveLength(1);
+        expect(footer.firstElementChild).toHaveTextContent('Cyberpunk · SEASON 1');
+        expect(within(card as HTMLElement).queryByRole('button', { name: /^VIEW IN LIBRARY/ })).not.toBeInTheDocument();
+    });
+
+    it('has no footer on a result that is not in the library, so its card is the same size as the others', () => {
+        showResults();
+        render(<AnimeSearch />);
+
+        screen.getAllByRole('listitem').forEach((card) => {
+            expect(card.querySelector('.cover-card__footer')).toBeNull();
+            expect(within(card).getAllByRole('button')).toHaveLength(1);
+        });
+    });
+
+    it('gives a card in the library and one that is not the same parts: the cover and the title, then the footer only where there is something for it', () => {
+        showResults([makeAnime([makeEpisode({ id: 1 })], { id: 4, title: 'Cyberpunk: Edgerunners', audio: 'sub', series: 'Cyberpunk', season: 1 })]);
+        render(<AnimeSearch />);
+
+        const [inLibrary, other] = screen.getAllByRole('listitem') as [HTMLElement, HTMLElement];
+        expect(inLibrary.firstElementChild).toHaveClass('cover');
+        expect(other.firstElementChild).toHaveClass('cover');
+        expect(inLibrary.querySelector('.history__main > .history__title')).not.toBeNull();
+        expect(other.querySelector('.history__main > .history__title')).not.toBeNull();
+        expect(inLibrary.querySelector('.cover-card__footer')).not.toBeNull();
+        expect(other.querySelector('.cover-card__footer')).toBeNull();
+    });
+});

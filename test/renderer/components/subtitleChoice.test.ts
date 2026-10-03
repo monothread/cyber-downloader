@@ -6,7 +6,10 @@ import {
     optionIdOf,
     optionsOf,
     readSubtitleChoice,
-    saveSubtitleChoice
+    saveSubtitleChoice,
+    STREAM_SUBTITLE_ID,
+    streamOptionsOf,
+    streamTracks
 } from '@renderer/components/subtitleChoice';
 
 const OPTIONS = [
@@ -151,5 +154,75 @@ describe('initialSubtitle', () => {
     it('has nothing to show without subtitles', () => {
         expect(initialSubtitle([], undefined)).toBeNull();
         expect(initialSubtitle([], 'default')).toBeNull();
+    });
+});
+
+describe('streamTracks', () => {
+    const base = { sessionId: 's1', url: 'pullwave-stream://p/s1/abc' };
+    const ARABIC = { id: 'stream-1', label: 'Arabic', url: 'pullwave-stream://p/s1/ar' };
+    const ENGLISH = { id: 'stream-2', label: 'English', url: 'pullwave-stream://p/s1/en' };
+    const PORTUGUESE = { id: 'stream-3', label: 'Portuguese (- Portuguese(Brazil))', url: 'pullwave-stream://p/s1/pt' };
+
+    it('has none when the source offers none and ani-cli picked none', () => {
+        expect(streamTracks({ ...base, subtitleUrl: null, subtitles: [] })).toEqual([]);
+    });
+
+    it('keeps the one ani-cli picked as the only subtitle, with the id the player gives it, when the source does not list them', () => {
+        expect(streamTracks({ ...base, subtitleUrl: 'pullwave-stream://p/s1/en', subtitles: [] })).toEqual([{ id: STREAM_SUBTITLE_ID, label: 'Subtitles', url: 'pullwave-stream://p/s1/en' }]);
+        expect(STREAM_SUBTITLE_ID).toBe('stream');
+    });
+
+    it('puts the one ani-cli picked first and keeps the order of the rest', () => {
+        expect(streamTracks({ ...base, subtitleUrl: ENGLISH.url, subtitles: [ARABIC, ENGLISH, PORTUGUESE] })).toEqual([ENGLISH, ARABIC, PORTUGUESE]);
+        expect(streamTracks({ ...base, subtitleUrl: PORTUGUESE.url, subtitles: [ARABIC, ENGLISH, PORTUGUESE] })).toEqual([PORTUGUESE, ARABIC, ENGLISH]);
+    });
+
+    it('keeps the order of the source when the picked one is already the first', () => {
+        expect(streamTracks({ ...base, subtitleUrl: ARABIC.url, subtitles: [ARABIC, ENGLISH, PORTUGUESE] })).toEqual([ARABIC, ENGLISH, PORTUGUESE]);
+    });
+
+    it('keeps the order of the source when the picked one is not in the list, or none was picked', () => {
+        expect(streamTracks({ ...base, subtitleUrl: 'pullwave-stream://p/s1/other', subtitles: [ARABIC, ENGLISH] })).toEqual([ARABIC, ENGLISH]);
+        expect(streamTracks({ ...base, subtitleUrl: null, subtitles: [ARABIC, ENGLISH] })).toEqual([ARABIC, ENGLISH]);
+    });
+
+    it('does not change the list it was given', () => {
+        const subtitles = [ARABIC, ENGLISH, PORTUGUESE];
+
+        streamTracks({ ...base, subtitleUrl: PORTUGUESE.url, subtitles });
+
+        expect(subtitles).toEqual([ARABIC, ENGLISH, PORTUGUESE]);
+    });
+});
+
+describe('streamOptionsOf', () => {
+    const TRACKS = [
+        { id: 'stream-2', label: 'English', url: 'u2' },
+        { id: 'stream-1', label: 'Arabic', url: 'u1' },
+        { id: 'stream-3', label: 'Portuguese (- Portuguese(Brazil))', url: 'u3' },
+        { id: 'stream-4', label: 'Spanish (- Spanish(Latin America))', url: 'u4' }
+    ];
+
+    it('names the languages as the language of the app does, keeping the order and the ids', () => {
+        expect(streamOptionsOf(TRACKS, 'en')).toEqual([
+            { id: 'stream-2', label: 'English' },
+            { id: 'stream-1', label: 'Arabic' },
+            { id: 'stream-3', label: 'Portuguese (Brazil)' },
+            { id: 'stream-4', label: 'Spanish (Latin America)' }
+        ]);
+        expect(streamOptionsOf(TRACKS, 'pt')).toEqual([
+            { id: 'stream-2', label: 'Inglês' },
+            { id: 'stream-1', label: 'Árabe' },
+            { id: 'stream-3', label: 'Português (Brasil)' },
+            { id: 'stream-4', label: 'Espanhol (América Latina)' }
+        ]);
+    });
+
+    it('keeps the generic name of the only subtitle when the source does not list them', () => {
+        expect(streamOptionsOf([{ id: STREAM_SUBTITLE_ID, label: 'Subtitles', url: 'u' }], 'pt')).toEqual([{ id: STREAM_SUBTITLE_ID, label: 'Subtitles' }]);
+    });
+
+    it('has no options without tracks', () => {
+        expect(streamOptionsOf([], 'en')).toEqual([]);
     });
 });

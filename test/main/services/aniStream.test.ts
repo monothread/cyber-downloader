@@ -50,21 +50,50 @@ describe('parseStreamOutput', () => {
             'Referer:',
             'https://embed.example/'
         ].join('\n');
-        expect(parseStreamOutput(output)).toEqual({ url: LINK, subtitleUrl: 'https://hls.example.top/v/abc/subs/pt.vtt', referer: 'https://embed.example/' });
+        expect(parseStreamOutput(output)).toEqual({ url: LINK, subtitleUrl: 'https://hls.example.top/v/abc/subs/pt.vtt', referer: 'https://embed.example/', subtitles: [] });
     });
 
     it('reads a stream without subtitles, which are not printed at all', () => {
         const output = ['All links:', `720 >${LINK}`, 'Selected link:', LINK, 'Subtitles:', 'Referer:', 'https://embed.example/'].join('\n');
-        expect(parseStreamOutput(output)).toEqual({ url: LINK, subtitleUrl: null, referer: 'https://embed.example/' });
+        expect(parseStreamOutput(output)).toEqual({ url: LINK, subtitleUrl: null, referer: 'https://embed.example/', subtitles: [] });
     });
 
     it('reads a stream from a script that does not print the referer', () => {
-        expect(parseStreamOutput(['Selected link:', LINK, 'Subtitles:', 'https://s/en.vtt'].join('\n'))).toEqual({ url: LINK, subtitleUrl: 'https://s/en.vtt', referer: null });
-        expect(parseStreamOutput(['Selected link:', LINK, 'Subtitles:'].join('\n'))).toEqual({ url: LINK, subtitleUrl: null, referer: null });
+        expect(parseStreamOutput(['Selected link:', LINK, 'Subtitles:', 'https://s/en.vtt'].join('\n'))).toEqual({ url: LINK, subtitleUrl: 'https://s/en.vtt', referer: null, subtitles: [] });
+        expect(parseStreamOutput(['Selected link:', LINK, 'Subtitles:'].join('\n'))).toEqual({ url: LINK, subtitleUrl: null, referer: null, subtitles: [] });
     });
 
     it('ignores spaces around the lines and blank lines', () => {
-        expect(parseStreamOutput(`  Selected link:  \n\n  ${LINK}  \n`)).toEqual({ url: LINK, subtitleUrl: null, referer: null });
+        expect(parseStreamOutput(`  Selected link:  \n\n  ${LINK}  \n`)).toEqual({ url: LINK, subtitleUrl: null, referer: null, subtitles: [] });
+    });
+
+    it('reads every subtitle the source offers, in the order it gives them, besides the one ani-cli picked', () => {
+        const output = [
+            'Selected link:',
+            LINK,
+            'Subtitles:',
+            'https://s.example/en.vtt',
+            'Referer:',
+            'https://embed.example/',
+            'Subtitle list:',
+            '{"lang":"en","label":"Arabic","default":false,"src":"https://s.example/ar.vtt"}',
+            '{"lang":"en","label":"English","default":true,"src":"https://s.example/en.vtt"}',
+            '{"lang":"en","label":"Portuguese (- Portuguese(Brazil))","default":false,"src":"https://s.example/pt.vtt"}'
+        ].join('\n');
+        expect(parseStreamOutput(output)).toEqual({
+            url: LINK,
+            subtitleUrl: 'https://s.example/en.vtt',
+            referer: 'https://embed.example/',
+            subtitles: [
+                { label: 'Arabic', src: 'https://s.example/ar.vtt' },
+                { label: 'English', src: 'https://s.example/en.vtt' },
+                { label: 'Portuguese (- Portuguese(Brazil))', src: 'https://s.example/pt.vtt' }
+            ]
+        });
+    });
+
+    it('has no subtitles in the list when the script did not print one', () => {
+        expect(parseStreamOutput(['Selected link:', LINK, 'Subtitles:', 'https://s.example/en.vtt', 'Referer:', 'https://embed.example/', 'Subtitle list:'].join('\n'))?.subtitles).toEqual([]);
     });
 
     it('gives null when there is no address', () => {
@@ -134,7 +163,7 @@ describe('parseSubtitleList', () => {
     it('does not mistake the list for a referer when the referer is empty', () => {
         const output = ['Selected link:', LINK, 'Subtitles:', 'Referer:', 'Subtitle list:', ENGLISH].join('\n');
         expect(parseSubtitleList(output)).toEqual({ referer: null, subtitles: [{ label: 'English', src: 'https://s.example/en.vtt' }] });
-        expect(parseStreamOutput(output)).toEqual({ url: LINK, subtitleUrl: null, referer: null });
+        expect(parseStreamOutput(output)).toEqual({ url: LINK, subtitleUrl: null, referer: null, subtitles: [{ label: 'English', src: 'https://s.example/en.vtt' }] });
     });
 });
 

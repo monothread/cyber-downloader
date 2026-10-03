@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, IPC } from '@shared/constants';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createAnimeRuntime, fetchSubtitleText, REMOVE_RETRY_MS, SUBTITLE_FETCH_TIMEOUT_MS, type AnimeRuntime, type AnimeRuntimeOptions } from '@main/animeRuntime';
+import { DatabaseSync } from 'node:sqlite';
 import { AnimeDb } from '@main/services/animeDb';
 import { BinaryResolver } from '@main/services/binaryResolver';
 import { cleanTempDirs, makeTempDir } from '../helpers/tempDir';
@@ -214,7 +215,7 @@ describe('createAnimeRuntime', () => {
         expect(runtime?.handlers.streamQuality()).toBe('480p');
         expect((await (runtime?.streamHandler as (request: Request) => Promise<Response>)(new Request('pullwave-stream://p/unknown/abc'))).status).toBe(404);
 
-        const stream = runtime?.handlers.streams.create({ url: 'http://127.0.0.1:1/a.m3u8', subtitleUrl: null, referer: null });
+        const stream = runtime?.handlers.streams.create({ url: 'http://127.0.0.1:1/a.m3u8', subtitleUrl: null, referer: null, subtitles: [] });
         expect(stream?.url).toMatch(/^pullwave-stream:\/\/p\//);
         runtime?.handlers.streams.close(stream?.sessionId ?? '');
         expect((await (runtime?.streamHandler as (request: Request) => Promise<Response>)(new Request(stream?.url ?? ''))).status).toBe(404);
@@ -742,3 +743,272 @@ describe('fetchSubtitleText', () => {
     });
 });
 
+
+describe('createAnimeRuntime schedule', () => {
+    let server: Server;
+    let origin: string;
+    let bodies: Array<{ query: string; variables: { start: number; end: number; page: number; perPage: number } }>;
+
+    function item(id: number, title: string, episode: number, airingAt: number): unknown {
+        return {
+            episode,
+            airingAt,
+            media: { id, format: 'TV', countryOfOrigin: 'JP', isAdult: false, title: { romaji: title, english: 'English name' }, synonyms: ['Other name'], coverImage: { large: 'https://s4.anilist.co/cover.jpg' } }
+        };
+    }
+
+    beforeEach(async () => {
+        bodies = [];
+        server = createServer((request, response) => {
+            const chunks: Buffer[] = [];
+            request.on('data', (chunk: Buffer) => {
+                chunks.push(chunk);
+            });
+            request.on('end', () => {
+                bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+                response.writeHead(200, { 'Content-Type': 'application/json' });
+                response.end(JSON.stringify({ data: { Page: { pageInfo: { hasNextPage: false }, airingSchedules: [item(1, 'Sousou no Frieren', 12, 1_700_040_000), item(2, 'Dandadan', 3, 1_700_050_000)] } } }));
+            });
+        });
+        await new Promise<void>((resolve) => {
+            server.listen(0, '127.0.0.1', resolve);
+        });
+        origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    });
+
+    afterEach(async () => {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        });
+    });
+
+    it('asks for the stretch at the address it was given and lists what airs, with the names and the cover', async () => {
+        const { send, options: given } = options({ scheduleUrl: origin });
+        const runtime = open(given) as AnimeRuntime;
+
+        const response = await runtime.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_604_800, refresh: false });
+
+        expect(bodies).toHaveLength(1);
+        expect(bodies[0]?.variables).toEqual({ start: 1_700_000_000 - 1, end: 1_700_604_800, page: 1, perPage: 50 });
+        expect(response).toEqual({
+            ok: true,
+            entries: [
+                { anilistId: 1, title: 'Sousou no Frieren', names: ['Sousou no Frieren', 'English name', 'Other name'], episode: 12, airingAt: 1_700_040_000, coverUrl: 'https://s4.anilist.co/cover.jpg' },
+                { anilistId: 2, title: 'Dandadan', names: ['Dandadan', 'English name', 'Other name'], episode: 3, airingAt: 1_700_050_000, coverUrl: 'https://s4.anilist.co/cover.jpg' }
+            ]
+        });
+        // Nothing is pushed to the screen: it is asked, and answered, once.
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it('keeps what AniList said for a day, and answers the same day from it without asking again', async () => {
+        const { options: given } = options({ scheduleUrl: origin });
+        const runtime = open(given) as AnimeRuntime;
+        const request = { from: 1_700_000_000, to: 1_700_086_400, refresh: false };
+
+        const first = await runtime.handlers.schedule.list(request);
+        const second = await runtime.handlers.schedule.list(request);
+
+        expect(bodies).toHaveLength(1);
+        expect(second).toEqual(first);
+        expect(first.ok && first.entries).toHaveLength(2);
+    });
+
+    it('answers a shorter stretch from a longer one that was kept, with only what airs inside it', async () => {
+        const { options: given } = options({ scheduleUrl: origin });
+        const runtime = open(given) as AnimeRuntime;
+
+        await runtime.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_604_800, refresh: false });
+        const day = await runtime.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_043_000, refresh: false });
+
+        expect(bodies).toHaveLength(1);
+        expect(day.ok && day.entries.map((entry) => {
+            return entry.anilistId;
+        })).toEqual([1]);
+    });
+
+    it('asks AniList again when it is asked to refresh, and keeps the new answer', async () => {
+        const { options: given } = options({ scheduleUrl: origin });
+        const runtime = open(given) as AnimeRuntime;
+
+        await runtime.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_086_400, refresh: false });
+        await runtime.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_086_400, refresh: true });
+        await runtime.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_086_400, refresh: false });
+
+        expect(bodies).toHaveLength(2);
+    });
+
+    it('keeps the listing in the library file, so it is still there when the app is opened again', async () => {
+        const { options: given } = options({ scheduleUrl: origin });
+        const first = open(given) as AnimeRuntime;
+        await first.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_086_400, refresh: false });
+        first.db.close();
+        opened.splice(opened.indexOf(first), 1);
+
+        const second = open(given) as AnimeRuntime;
+        const again = await second.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_086_400, refresh: false });
+
+        expect(bodies).toHaveLength(1);
+        expect(again.ok && again.entries).toHaveLength(2);
+    });
+
+    it('does not keep a failure: the next time asks again', async () => {
+        const { options: given } = options({ scheduleUrl: 'http://127.0.0.1:1/graphql' });
+        const runtime = open(given) as AnimeRuntime;
+
+        const failed = await runtime.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_086_400, refresh: false });
+
+        expect(failed.ok).toBe(false);
+        expect(runtime.db.findScheduleCache(1_700_000_000, 1_700_086_400, 0)).toBeNull();
+    });
+
+    it('fails with a network error when the schedule cannot be reached', async () => {
+        const { options: given } = options({ scheduleUrl: origin });
+        const runtime = open(given) as AnimeRuntime;
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        });
+
+        const response = await runtime.handlers.schedule.list({ from: 1_700_000_000, to: 1_700_086_400, refresh: false });
+
+        expect(response.ok).toBe(false);
+        expect(response.ok ? '' : response.error.code).toBe('NETWORK');
+        expect(response.ok ? '' : response.error.raw).toContain('AniList could not be reached:');
+        server = createServer();
+        await new Promise<void>((resolve) => {
+            server.listen(0, '127.0.0.1', resolve);
+        });
+    });
+});
+
+describe('createAnimeRuntime covers', () => {
+    let server: Server;
+    let origin: string;
+    let searches: string[];
+    let cover: string;
+
+    beforeEach(async () => {
+        searches = [];
+        cover = 'https://s4.anilist.co/cover/naruto.jpg';
+        server = createServer((request, response) => {
+            const chunks: Buffer[] = [];
+            request.on('data', (chunk: Buffer) => {
+                chunks.push(chunk);
+            });
+            request.on('end', () => {
+                const search = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { variables: { search: string } }).variables.search;
+                searches.push(search);
+                if (search.includes('Unknown')) {
+                    response.writeHead(404, { 'Content-Type': 'application/json' });
+                    response.end(JSON.stringify({ errors: [{ status: 404 }], data: { Media: null } }));
+                    return;
+                }
+                response.writeHead(200, { 'Content-Type': 'application/json' });
+                response.end(JSON.stringify({ data: { Media: { coverImage: { large: cover } } } }));
+            });
+        });
+        await new Promise<void>((resolve) => {
+            server.listen(0, '127.0.0.1', resolve);
+        });
+        origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    });
+
+    afterEach(async () => {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        });
+    });
+
+    it('looks the cover up at the address it was given and keeps it in the library file', async () => {
+        const { options: given } = options({ scheduleUrl: origin });
+        const runtime = open(given) as AnimeRuntime;
+
+        expect(await runtime.handlers.covers.find('Naruto')).toBe(cover);
+
+        expect(searches).toEqual(['Naruto']);
+        expect(runtime.db.getCover('naruto')).toEqual({ url: cover, checkedAt: expect.any(Number) });
+    });
+
+    it('keeps that a title has no cover', async () => {
+        const { options: given } = options({ scheduleUrl: origin });
+        const runtime = open(given) as AnimeRuntime;
+
+        expect(await runtime.handlers.covers.find('Unknown anime')).toBeNull();
+
+        expect(runtime.db.getCover('unknown anime')).toEqual({ url: null, checkedAt: expect.any(Number) });
+    });
+
+    it('starts with the covers that were kept, without asking AniList again, when the app is opened again the same day', async () => {
+        const { options: given } = options({ scheduleUrl: origin });
+        const first = open(given) as AnimeRuntime;
+        await first.handlers.covers.find('Naruto');
+        first.db.close();
+        opened.splice(opened.indexOf(first), 1);
+
+        const second = open(given) as AnimeRuntime;
+
+        expect(await second.handlers.covers.find('Naruto')).toBe(cover);
+        expect(searches).toEqual(['Naruto']);
+    });
+
+    it('checks a cover kept on an earlier day once, and tells the screen when AniList gives another address', async () => {
+        const { send, options: given } = options({ scheduleUrl: origin });
+        const previous = new AnimeDb(join(given.dataDir, 'anime', 'anime.db'));
+        previous.saveCover('naruto', 'https://s4.anilist.co/cover/old.jpg');
+        previous.close();
+        const longAgo = new DatabaseSync(join(given.dataDir, 'anime', 'anime.db'));
+        longAgo.prepare('UPDATE anime_cover SET checked_at = ?').run(Date.now() - 3 * 24 * 60 * 60 * 1000);
+        longAgo.close();
+        const runtime = open(given) as AnimeRuntime;
+
+        // What was kept is shown at once.
+        expect(await runtime.handlers.covers.find('Naruto')).toBe('https://s4.anilist.co/cover/old.jpg');
+
+        await vi.waitFor(() => {
+            expect(send).toHaveBeenCalledWith(IPC.eventAnimeCover, { title: 'Naruto', url: cover });
+        });
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(runtime.db.getCover('naruto')?.url).toBe(cover);
+        expect(await runtime.handlers.covers.find('Naruto')).toBe(cover);
+        expect(searches).toEqual(['Naruto']);
+    });
+
+    it('keeps the cover it has, and says nothing, when AniList gives the same address', async () => {
+        const { send, options: given } = options({ scheduleUrl: origin });
+        const previous = new AnimeDb(join(given.dataDir, 'anime', 'anime.db'));
+        previous.saveCover('naruto', cover);
+        previous.close();
+        const longAgo = new DatabaseSync(join(given.dataDir, 'anime', 'anime.db'));
+        longAgo.prepare('UPDATE anime_cover SET checked_at = ?').run(Date.now() - 3 * 24 * 60 * 60 * 1000);
+        longAgo.close();
+        const runtime = open(given) as AnimeRuntime;
+
+        await runtime.handlers.covers.find('Naruto');
+
+        await vi.waitFor(() => {
+            expect(searches).toEqual(['Naruto']);
+        });
+        await vi.waitFor(() => {
+            expect(runtime.db.getCover('naruto')?.checkedAt).toBeGreaterThan(Date.now() - 60_000);
+        });
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it('fails, and keeps nothing, when AniList cannot be reached', async () => {
+        const { options: given } = options({ scheduleUrl: 'http://127.0.0.1:1/graphql' });
+        const runtime = open(given) as AnimeRuntime;
+
+        await expect(runtime.handlers.covers.find('Naruto')).rejects.toThrow('AniList could not be reached:');
+
+        expect(runtime.db.getCover('naruto')).toBeNull();
+    });
+});

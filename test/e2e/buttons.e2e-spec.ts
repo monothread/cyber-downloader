@@ -39,7 +39,7 @@ async function launch(theme: string): Promise<void> {
             { id: 'b', url: 'https://x/2', title: 'Short', filePath: '/tmp/b.mp4', status: 'done', errorTitle: null, finishedAt: 1700000000000 }
         ])
     );
-    app = await electron.launch({ executablePath: ELECTRON_PATH, args: [ROOT, '--no-sandbox', `--user-data-dir=${userData}`], env: { ...process.env, PULLWAVE_ANI_CLI: FAKE_ANI_CLI } });
+    app = await electron.launch({ executablePath: ELECTRON_PATH, args: [ROOT, '--no-sandbox', `--user-data-dir=${userData}`], env: { ...process.env, PULLWAVE_ANI_CLI: FAKE_ANI_CLI, PULLWAVE_ANILIST_URL: 'http://127.0.0.1:9/graphql' } });
     page = await app.firstWindow();
     await page.setViewportSize({ width: 1100, height: 780 });
     await page.waitForSelector('.logo');
@@ -90,6 +90,7 @@ for (const theme of ['cyberpunk', 'light']) {
         test('the search of an anime lines up: field, audio and button are the same height as the tabs', async () => {
             test.skip(!HAS_ANI_TOOLS, 'the anime section needs `npm run fetch-binaries`');
             await page.getByRole('button', { name: 'ANIME', exact: true }).click();
+            await page.getByRole('navigation', { name: 'Anime' }).getByRole('button', { name: 'SEARCH', exact: true }).click();
             const heights = [
                 await height(page.getByLabel('Anime name')),
                 await height(page.getByLabel('Audio')),

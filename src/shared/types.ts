@@ -1,4 +1,5 @@
 import type {
+    AnimeCoverUpdate,
     AnimeDownloadRequest,
     AnimeDownloadResponse,
     AnimeEpisodesResponse,
@@ -9,6 +10,8 @@ import type {
     AnimeMigrationProgress,
     AnimeMigrationResponse,
     AnimeProgressUpdate,
+    AnimeScheduleRequest,
+    AnimeScheduleResponse,
     AnimeSeriesResponse,
     AnimeSearchResponse,
     AnimeStatus,
@@ -96,7 +99,7 @@ export interface Settings {
     theme: ThemeName;
     language: LanguageSetting;
     extraArgs: string;
-    // Anime section (Linux only).
+    // Anime section (Linux and Windows).
     animeDownloadDir: string;
     animeQuality: AnimeQuality;
     animeAudio: AnimeAudio;
@@ -121,7 +124,7 @@ export interface DownloadError {
     raw: string;
 }
 
-export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
+export type JobStatus = 'queued' | 'running' | 'paused' | 'done' | 'error' | 'cancelled';
 
 // A live stream that seems to have ended is checked for a few seconds before the download is considered finished.
 export interface LiveEndCheck {
@@ -271,6 +274,9 @@ export interface CyberApi {
     addDownload: (url: string, downloadDir?: string, options?: DownloadOptions) => Promise<AddJobResult>;
     listJobs: () => Promise<DownloadJob[]>;
     cancelJob: (id: string) => Promise<void>;
+    // Stops a download keeping what was downloaded so far, and continues it from there later.
+    pauseJob: (id: string) => Promise<void>;
+    resumeJob: (id: string) => Promise<void>;
     stopJob: (id: string) => Promise<void>;
     retryJob: (id: string) => Promise<void>;
     clearPartialFiles: (id: string) => Promise<void>;
@@ -303,6 +309,8 @@ export interface CyberApi {
     listAnimeJobs: () => Promise<AnimeJob[]>;
     cancelAnimeJob: (episodeId: number) => Promise<void>;
     retryAnimeJob: (episodeId: number) => Promise<void>;
+    pauseAnimeJob: (episodeId: number) => Promise<void>;
+    resumeAnimeJob: (episodeId: number) => Promise<void>;
     clearFinishedAnimeJobs: () => Promise<void>;
     removeAnimeEpisode: (episodeId: number) => Promise<void>;
     removeAnime: (animeId: number) => Promise<void>;
@@ -322,9 +330,14 @@ export interface CyberApi {
     updateAniCli: () => Promise<UpdateResult>;
     openAnimeStream: (request: AnimeStreamRequest) => Promise<AnimeStreamResponse>;
     closeAnimeStream: (sessionId: string) => Promise<void>;
+    listAnimeSchedule: (request: AnimeScheduleRequest) => Promise<AnimeScheduleResponse>;
+    // The address of the cover of an anime, found by its title; null when there is none.
+    findAnimeCover: (title: string) => Promise<string | null>;
     onAnimeJobUpdate: (listener: (job: AnimeJob) => void) => () => void;
     onAnimeLibraryChanged: (listener: () => void) => () => void;
     onAnimeMigrationProgress: (listener: (progress: AnimeMigrationProgress) => void) => () => void;
+    // A cover that was checked again and changed.
+    onAnimeCoverUpdate: (listener: (update: AnimeCoverUpdate) => void) => () => void;
     onJobUpdate: (listener: (job: DownloadJob) => void) => () => void;
     onJobRemoved: (listener: (id: string) => void) => () => void;
     onHistoryChanged: (listener: () => void) => () => void;

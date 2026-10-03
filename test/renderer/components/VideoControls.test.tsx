@@ -3,6 +3,7 @@ import { createRef, type RefObject } from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { openedPlayerSettings } from '../../helpers/playerSettings';
+import { fakeTextTrackList, type FakeTextTrack } from '../../helpers/textTracks';
 import { VideoControls, formatClock, type SubtitleOption } from '@renderer/components/VideoControls';
 
 interface Harness {
@@ -303,8 +304,8 @@ describe('VideoControls', () => {
 
         it('shows the selected track and hides the others', () => {
             const { video, ref, unmount } = setup(OPTIONS, 120, 'subtitle-Japanese');
-            const tracks = [{ id: 'default', mode: 'showing' }, { id: 'subtitle-Japanese', mode: 'disabled' }, { id: 'other', mode: 'showing' }];
-            Object.defineProperty(video, 'textTracks', { value: tracks, configurable: true });
+            const tracks: FakeTextTrack[] = [{ id: 'default', mode: 'showing' }, { id: 'subtitle-Japanese', mode: 'disabled' }, { id: 'other', mode: 'showing' }];
+            Object.defineProperty(video, 'textTracks', { value: fakeTextTrackList(tracks), configurable: true });
             unmount();
             render(<VideoControls video={ref} subtitles={OPTIONS} selectedSubtitle="subtitle-Japanese" onSelectSubtitle={vi.fn()} />);
             expect(
@@ -316,6 +317,79 @@ describe('VideoControls', () => {
                 ['subtitle-Japanese', 'showing'],
                 ['other', 'disabled']
             ]);
+        });
+
+        it('puts the choice back when the browser shows another track by itself afterwards', () => {
+            const { video, ref, unmount } = setup(OPTIONS, 120, 'subtitle-Japanese');
+            const tracks: FakeTextTrack[] = [{ id: 'default', mode: 'disabled' }, { id: 'subtitle-Japanese', mode: 'showing' }, { id: 'other', mode: 'disabled' }];
+            const list = fakeTextTrackList(tracks);
+            Object.defineProperty(video, 'textTracks', { value: list, configurable: true });
+            unmount();
+            render(<VideoControls video={ref} subtitles={OPTIONS} selectedSubtitle="subtitle-Japanese" onSelectSubtitle={vi.fn()} />);
+
+            // The browser picks a subtitle by the language it prefers once the data of the video is there.
+            (tracks[2] as FakeTextTrack).mode = 'showing';
+            list.dispatchEvent(new Event('change'));
+
+            expect(
+                tracks.map((track) => {
+                    return [track.id, track.mode];
+                })
+            ).toEqual([
+                ['default', 'disabled'],
+                ['subtitle-Japanese', 'showing'],
+                ['other', 'disabled']
+            ]);
+        });
+
+        it('puts the choice back when the chosen track is hidden by the browser', () => {
+            const { video, ref, unmount } = setup(OPTIONS, 120, 'subtitle-Japanese');
+            const tracks: FakeTextTrack[] = [{ id: 'default', mode: 'disabled' }, { id: 'subtitle-Japanese', mode: 'showing' }];
+            const list = fakeTextTrackList(tracks);
+            Object.defineProperty(video, 'textTracks', { value: list, configurable: true });
+            unmount();
+            render(<VideoControls video={ref} subtitles={OPTIONS} selectedSubtitle="subtitle-Japanese" onSelectSubtitle={vi.fn()} />);
+
+            (tracks[1] as FakeTextTrack).mode = 'disabled';
+            list.dispatchEvent(new Event('change'));
+
+            expect((tracks[1] as FakeTextTrack).mode).toBe('showing');
+        });
+
+        it('applies the choice to a track that is added afterwards', () => {
+            const { video, ref, unmount } = setup(OPTIONS, 120, 'subtitle-Japanese');
+            const tracks: FakeTextTrack[] = [{ id: 'subtitle-Japanese', mode: 'showing' }];
+            const list = fakeTextTrackList(tracks);
+            Object.defineProperty(video, 'textTracks', { value: list, configurable: true });
+            unmount();
+            render(<VideoControls video={ref} subtitles={OPTIONS} selectedSubtitle="subtitle-Japanese" onSelectSubtitle={vi.fn()} />);
+
+            tracks.push({ id: 'added', mode: 'showing' });
+            list.dispatchEvent(new Event('addtrack'));
+
+            expect(
+                tracks.map((track) => {
+                    return [track.id, track.mode];
+                })
+            ).toEqual([
+                ['subtitle-Japanese', 'showing'],
+                ['added', 'disabled']
+            ]);
+        });
+
+        it('stops listening to the tracks when the controls go away', () => {
+            const { video, ref, unmount } = setup(OPTIONS, 120, 'subtitle-Japanese');
+            const tracks: FakeTextTrack[] = [{ id: 'default', mode: 'disabled' }, { id: 'subtitle-Japanese', mode: 'showing' }];
+            const list = fakeTextTrackList(tracks);
+            Object.defineProperty(video, 'textTracks', { value: list, configurable: true });
+            unmount();
+            const { unmount: unmountAgain } = render(<VideoControls video={ref} subtitles={OPTIONS} selectedSubtitle="subtitle-Japanese" onSelectSubtitle={vi.fn()} />);
+            unmountAgain();
+
+            (tracks[0] as FakeTextTrack).mode = 'showing';
+            list.dispatchEvent(new Event('change'));
+
+            expect((tracks[0] as FakeTextTrack).mode).toBe('showing');
         });
 
         it('makes the subtitles bigger and smaller, remembers it and shows it on the video', async () => {
@@ -435,8 +509,8 @@ describe('VideoControls', () => {
 
         it('hides every track when the subtitles are off', () => {
             const { video, ref, unmount } = setupOpen();
-            const tracks = [{ id: 'default', mode: 'showing' }, { id: 'subtitle-Japanese', mode: 'showing' }];
-            Object.defineProperty(video, 'textTracks', { value: tracks, configurable: true });
+            const tracks: FakeTextTrack[] = [{ id: 'default', mode: 'showing' }, { id: 'subtitle-Japanese', mode: 'showing' }];
+            Object.defineProperty(video, 'textTracks', { value: fakeTextTrackList(tracks), configurable: true });
             unmount();
             render(<VideoControls video={ref} subtitles={OPTIONS} selectedSubtitle={null} onSelectSubtitle={vi.fn()} />);
             expect(

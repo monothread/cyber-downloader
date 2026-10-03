@@ -55,7 +55,21 @@ let mock: MockApiHandle;
 const initialApp = useAppStore.getState();
 const initialAnime = useAnimeStore.getState();
 
-const STREAM: AnimeStream = { sessionId: 's1', url: 'pullwave-stream://p/s1/abc', subtitleUrl: 'pullwave-stream://p/s1/def' };
+const STREAM: AnimeStream = { sessionId: 's1', url: 'pullwave-stream://p/s1/abc', subtitleUrl: 'pullwave-stream://p/s1/def', subtitles: [] };
+
+// A stream whose source lists its subtitles, as the one of Frieren does: every one is named in English and the first of the list is
+// not the one ani-cli picked.
+const LISTED: AnimeStream = {
+    sessionId: 's1',
+    url: 'pullwave-stream://p/s1/abc',
+    subtitleUrl: 'pullwave-stream://p/s1/english',
+    subtitles: [
+        { id: 'stream-1', label: 'Arabic', url: 'pullwave-stream://p/s1/arabic' },
+        { id: 'stream-2', label: 'English', url: 'pullwave-stream://p/s1/english' },
+        { id: 'stream-3', label: 'Portuguese (- Portuguese(Brazil))', url: 'pullwave-stream://p/s1/portuguese' },
+        { id: 'stream-4', label: 'Spanish (- Spanish(Latin America))', url: 'pullwave-stream://p/s1/spanish' }
+    ]
+};
 
 beforeEach(() => {
     mock = installMockApi();
@@ -163,6 +177,149 @@ describe('AnimeStreamPlayer', () => {
             expect(screen.queryByRole('combobox', { name: 'Subtitles' })).not.toBeInTheDocument();
         });
 
+        describe('with the subtitles the source lists', () => {
+            function tracks(): HTMLTrackElement[] {
+                return Array.from(document.querySelectorAll('track'));
+            }
+
+            it('has a track for every language, the one ani-cli picked first, each with its own address through the app', () => {
+                stream({ stream: LISTED });
+                render(<AnimeStreamPlayer />);
+
+                expect(
+                    tracks().map((track) => {
+                        return [track.id, track.getAttribute('src'), track.getAttribute('label'), track.getAttribute('kind')];
+                    })
+                ).toEqual([
+                    ['stream-2', 'pullwave-stream://p/s1/english', 'English', 'subtitles'],
+                    ['stream-1', 'pullwave-stream://p/s1/arabic', 'Arabic', 'subtitles'],
+                    ['stream-3', 'pullwave-stream://p/s1/portuguese', 'Portuguese (- Portuguese(Brazil))', 'subtitles'],
+                    ['stream-4', 'pullwave-stream://p/s1/spanish', 'Spanish (- Spanish(Latin America))', 'subtitles']
+                ]);
+            });
+
+            it('shows the one ani-cli picked at first, and only that one is the default', () => {
+                stream({ stream: LISTED });
+                render(<AnimeStreamPlayer />);
+
+                expect(openedSubtitleMenu()).toHaveValue('stream-2');
+                expect(
+                    tracks()
+                        .filter((track) => {
+                            return track.hasAttribute('default');
+                        })
+                        .map((track) => {
+                            return track.id;
+                        })
+                ).toEqual(['stream-2']);
+            });
+
+            it('names the languages in the menu as the language of the app does, and keeps "off" in it', () => {
+                stream({ stream: LISTED });
+                render(<AnimeStreamPlayer />);
+                const menu = openedSubtitleMenu();
+
+                expect(
+                    Array.from(menu.querySelectorAll('option')).map((option) => {
+                        return [option.value, option.textContent];
+                    })
+                ).toEqual([
+                    ['off', 'Off'],
+                    ['stream-2', 'English'],
+                    ['stream-1', 'Arabic'],
+                    ['stream-3', 'Portuguese (Brazil)'],
+                    ['stream-4', 'Spanish (Latin America)']
+                ]);
+            });
+
+            it('writes the names in Portuguese when the app is in Portuguese', () => {
+                useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'pt' } });
+                stream({ stream: LISTED });
+                render(<AnimeStreamPlayer />);
+                const menu = openedSubtitleMenu({ gear: 'Configurações', menu: 'Legendas' });
+
+                expect(
+                    Array.from(menu.querySelectorAll('option')).map((option) => {
+                        return [option.value, option.textContent];
+                    })
+                ).toEqual([
+                    ['off', 'Desativadas'],
+                    ['stream-2', 'Inglês'],
+                    ['stream-1', 'Árabe'],
+                    ['stream-3', 'Português (Brasil)'],
+                    ['stream-4', 'Espanhol (América Latina)']
+                ]);
+            });
+
+            it('lets the viewer pick a language: the menu follows, and the track of that language is the one that shows', async () => {
+                stream({ stream: LISTED });
+                const user = userEvent.setup();
+                render(<AnimeStreamPlayer />);
+                const menu = openedSubtitleMenu();
+
+                await user.selectOptions(menu, 'stream-3');
+
+                expect(menu).toHaveValue('stream-3');
+                expect(tracks().find((track) => {
+                    return track.id === 'stream-3';
+                })?.hasAttribute('default')).toBe(true);
+            });
+
+            it('turns the subtitles off and on again, back to the language that was picked', async () => {
+                stream({ stream: LISTED });
+                const user = userEvent.setup();
+                render(<AnimeStreamPlayer />);
+                const menu = openedSubtitleMenu();
+
+                await user.selectOptions(menu, 'stream-4');
+                await user.selectOptions(menu, 'off');
+                expect(menu).toHaveValue('off');
+                await user.selectOptions(menu, 'stream-4');
+
+                expect(menu).toHaveValue('stream-4');
+            });
+
+            it('keeps the tracks apart from the ones of another stream', () => {
+                stream({ stream: LISTED });
+                render(<AnimeStreamPlayer />);
+                act(() => {
+                    stream({ stream: { ...LISTED, sessionId: 's2', subtitleUrl: 'pullwave-stream://p/s2/arabic', subtitles: [{ id: 'stream-1', label: 'Arabic', url: 'pullwave-stream://p/s2/arabic' }] } });
+                });
+
+                expect(tracks().map((track) => {
+                    return track.getAttribute('src');
+                })).toEqual(['pullwave-stream://p/s2/arabic']);
+                expect(openedSubtitleMenu()).toHaveValue('stream-1');
+            });
+
+            it('shows the first of the list when the one ani-cli picked is not in it', () => {
+                stream({ stream: { ...LISTED, subtitleUrl: 'pullwave-stream://p/s1/not-listed' } });
+                render(<AnimeStreamPlayer />);
+
+                expect(openedSubtitleMenu()).toHaveValue('stream-1');
+                expect(tracks()[0]?.id).toBe('stream-1');
+            });
+
+            it('shows no subtitle at first when ani-cli picked none and the source lists some: the first of the list', () => {
+                stream({ stream: { ...LISTED, subtitleUrl: null } });
+                render(<AnimeStreamPlayer />);
+
+                expect(openedSubtitleMenu()).toHaveValue('stream-1');
+            });
+
+            it('keeps the one generic subtitle, named as before, when the source does not list them', () => {
+                stream();
+                render(<AnimeStreamPlayer />);
+
+                const menu = openedSubtitleMenu();
+                expect(
+                    Array.from(menu.querySelectorAll('option')).map((option) => {
+                        return option.textContent;
+                    })
+                ).toEqual(['Off', 'Subtitles']);
+            });
+        });
+
         it('says so when hls.js reports a failure it cannot recover from', () => {
             stream();
             render(<AnimeStreamPlayer />);
@@ -198,7 +355,7 @@ describe('AnimeStreamPlayer', () => {
             stream();
             render(<AnimeStreamPlayer />);
             act(() => {
-                stream({ stream: { sessionId: 's2', url: 'pullwave-stream://p/s2/xyz', subtitleUrl: null } });
+                stream({ stream: { sessionId: 's2', url: 'pullwave-stream://p/s2/xyz', subtitleUrl: null, subtitles: [] } });
             });
             expect(hls.state.instances).toHaveLength(2);
             expect(hls.state.instances[0]?.destroyed).toBe(true);

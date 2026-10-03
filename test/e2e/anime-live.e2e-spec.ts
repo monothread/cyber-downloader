@@ -42,6 +42,7 @@ test.afterAll(async () => {
 
 async function openFirstResult(): Promise<void> {
     await page.getByRole('button', { name: 'ANIME', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Anime' }).getByRole('button', { name: 'SEARCH', exact: true }).click();
     await page.getByLabel('Anime name').fill('cyberpunk edgerunners');
     await page.getByLabel('Anime name').press('Enter');
     await page.getByRole('button', { name: 'OPEN: Cyberpunk: Edgerunners', exact: true }).click({ timeout: 60000 });

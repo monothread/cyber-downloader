@@ -4,7 +4,7 @@ import { useAnimeStore } from '../store/animeStore';
 import { animeErrorKey, animeStatusKey } from './animeText';
 import { formatPercent } from './jobStatus';
 
-const ORDER: Record<AnimeJob['status'], number> = { running: 0, queued: 1, error: 2, cancelled: 3, done: 4 };
+const ORDER: Record<AnimeJob['status'], number> = { running: 0, paused: 1, queued: 2, error: 3, cancelled: 4, done: 5 };
 
 function isFinished(job: AnimeJob): boolean {
     return job.status === 'done' || job.status === 'error' || job.status === 'cancelled';
@@ -21,6 +21,12 @@ export function AnimeJobs() {
     });
     const retryJob = useAnimeStore((state) => {
         return state.retryJob;
+    });
+    const pauseJob = useAnimeStore((state) => {
+        return state.pauseJob;
+    });
+    const resumeJob = useAnimeStore((state) => {
+        return state.resumeJob;
     });
     const clearFinishedJobs = useAnimeStore((state) => {
         return state.clearFinishedJobs;
@@ -82,7 +88,29 @@ export function AnimeJobs() {
                             </p>
                         )}
                         <div className="job__actions">
-                            {(job.status === 'queued' || job.status === 'running') && (
+                            {job.status === 'running' && (
+                                <button
+                                    type="button"
+                                    className="btn btn--small"
+                                    onClick={() => {
+                                        void pauseJob(job.episodeId);
+                                    }}
+                                >
+                                    {t('anime.job.pause')}
+                                </button>
+                            )}
+                            {job.status === 'paused' && (
+                                <button
+                                    type="button"
+                                    className="btn btn--small btn--primary"
+                                    onClick={() => {
+                                        void resumeJob(job.episodeId);
+                                    }}
+                                >
+                                    {t('anime.job.resume')}
+                                </button>
+                            )}
+                            {(job.status === 'queued' || job.status === 'running' || job.status === 'paused') && (
                                 <button
                                     type="button"
                                     className="btn btn--small btn--hot"

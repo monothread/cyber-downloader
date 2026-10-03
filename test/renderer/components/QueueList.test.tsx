@@ -139,3 +139,54 @@ describe('QueueList', () => {
         expect(mock.api.cancelJob).not.toHaveBeenCalled();
     });
 });
+
+describe('QueueList pause and resume', () => {
+    it('pauses a download through the store when its PAUSE is pressed', async () => {
+        const user = userEvent.setup();
+        useAppStore.setState({ jobs: [makeJob({ id: 'a', status: 'running' })] });
+        render(<QueueList />);
+
+        await user.click(screen.getByRole('button', { name: 'PAUSE' }));
+
+        expect(mock.api.pauseJob).toHaveBeenCalledTimes(1);
+        expect(mock.api.pauseJob).toHaveBeenCalledWith('a');
+        expect(mock.api.resumeJob).not.toHaveBeenCalled();
+    });
+
+    it('resumes a download through the store when its RESUME is pressed', async () => {
+        const user = userEvent.setup();
+        useAppStore.setState({ jobs: [makeJob({ id: 'a', status: 'paused' })] });
+        render(<QueueList />);
+
+        await user.click(screen.getByRole('button', { name: 'RESUME' }));
+
+        expect(mock.api.resumeJob).toHaveBeenCalledTimes(1);
+        expect(mock.api.resumeJob).toHaveBeenCalledWith('a');
+        expect(mock.api.pauseJob).not.toHaveBeenCalled();
+    });
+
+    it('shows what is paused after what is running and before what waits', () => {
+        useAppStore.setState({
+            jobs: [
+                makeJob({ id: 'a', title: 'Waiting', status: 'queued' }),
+                makeJob({ id: 'b', title: 'Paused', status: 'paused' }),
+                makeJob({ id: 'c', title: 'Running', status: 'running' }),
+                makeJob({ id: 'd', title: 'Done', status: 'done' })
+            ]
+        });
+        render(<QueueList />);
+
+        expect(
+            screen.getAllByRole('heading', { level: 3 }).map((heading) => {
+                return heading.textContent;
+            })
+        ).toEqual(['Running', 'Paused', 'Waiting', 'Done']);
+    });
+
+    it('does not offer to clear the finished ones because of a paused download', () => {
+        useAppStore.setState({ jobs: [makeJob({ id: 'a', status: 'paused' })] });
+        render(<QueueList />);
+
+        expect(screen.queryByRole('button', { name: 'CLEAR FINISHED' })).not.toBeInTheDocument();
+    });
+});

@@ -83,6 +83,8 @@ export class QueueManager {
     private readonly endChecks = new Map<string, EndCheck>();
     // Live recordings that were asked to stop on purpose (STOP & SAVE): their end is final, so it is not double-checked.
     private readonly stopRequested = new Set<string>();
+    // Downloads asked to pause: the run is ended, and its partial files are kept so it can go on from there.
+    private readonly pauseRequested = new Set<string>();
     // The part of the recording each live job is in (1 for the first file, +1 each time the stream came back).
     private readonly parts = new Map<string, number>();
     private closed = false;
@@ -126,6 +128,33 @@ export class QueueManager {
         job.saving = true;
         this.emit(job);
         this.handles.get(id)?.stop();
+    }
+
+    // Only a plain download that is running can be paused: not a live recording, nor one that is waiting for a live stream to start, nor
+    // one that is already closing its file (ffmpeg joining or converting).
+    canPause(job: DownloadJob): boolean {
+        return job.status === 'running' && !job.live && !job.waitingForLive && job.postProcess === null && !job.merging && !job.saving && !this.endChecks.has(job.id);
+    }
+
+    // Ends the run keeping the partial files, so `resume` continues from them; the card waits as PAUSED and frees its place in the queue.
+    pause(id: string): void {
+        const job = this.find(id);
+        if (!job || !this.canPause(job)) {
+            return;
+        }
+        this.pauseRequested.add(id);
+        this.handles.get(id)?.cancel();
+    }
+
+    // Puts a paused download back in the queue: yt-dlp finds its partial file and goes on from where it stopped.
+    resume(id: string): void {
+        const job = this.find(id);
+        if (job?.status !== 'paused') {
+            return;
+        }
+        Object.assign(job, { status: 'queued', speed: '', eta: '' });
+        this.emit(job);
+        this.pump();
     }
 
     // Live recordings are asked to finish (and given a moment to save their file); everything else is cancelled.
@@ -224,6 +253,12 @@ export class QueueManager {
         if (job.status === 'queued') {
             job.status = 'cancelled';
             this.emit(job);
+            return;
+        }
+        if (job.status === 'paused') {
+            Object.assign(job, { status: 'cancelled', speed: '', eta: '' });
+            this.settleLeftovers(job);
+            this.emit(job);
         }
     }
 
@@ -260,6 +295,7 @@ export class QueueManager {
         this.stopTicker(id);
         this.parts.delete(id);
         this.stopRequested.delete(id);
+        this.pauseRequested.delete(id);
         this.deps.onJobRemoved(id);
         this.pump();
     }
@@ -354,6 +390,10 @@ export class QueueManager {
                 this.handles.delete(job.id);
             }
             job.postProcess = null;
+            if (result.status === 'cancelled' && this.pauseRequested.delete(job.id)) {
+                this.finishPaused(job);
+                return;
+            }
             if (resumedPart !== undefined && !wentLive) {
                 this.endCheckAttemptEnded(job);
                 return;
@@ -633,6 +673,7 @@ export class QueueManager {
 
     private finish(job: DownloadJob, result: RunResult): void {
         this.stopTicker(job.id);
+        this.pauseRequested.delete(job.id);
         this.parts.delete(job.id);
         this.stopRequested.delete(job.id);
         job.waitingForLive = false;
@@ -659,6 +700,20 @@ export class QueueManager {
         } else {
             this.outputPaths.delete(job.id);
         }
+        this.emit(job);
+        this.pump();
+    }
+
+    // The run was ended on purpose to pause: the card waits with its partial files and the place in the queue is free.
+    private finishPaused(job: DownloadJob): void {
+        this.stopTicker(job.id);
+        if (!this.find(job.id)) {
+            // The card was removed while the download was being paused: whatever it left behind goes too.
+            this.deleteLeftovers(job, false);
+            this.outputPaths.delete(job.id);
+            return;
+        }
+        Object.assign(job, { status: 'paused', speed: '', eta: '', hasPartial: this.leftoversOf(job).length > 0 });
         this.emit(job);
         this.pump();
     }

@@ -206,7 +206,7 @@ describe('AniCliService.resolveStream', () => {
 
     it('asks ani-cli to print the address, without downloading, and reads it', async () => {
         const { service, callsOf } = setup([done(outcome({ exitCode: 0, output: printed }))]);
-        expect(await service.resolveStream(request)).toEqual({ status: 'done', value: { url: LINK, subtitleUrl: 'https://s/pt.vtt', referer: 'https://embed.example/' } });
+        expect(await service.resolveStream(request)).toEqual({ status: 'done', value: { url: LINK, subtitleUrl: 'https://s/pt.vtt', referer: 'https://embed.example/', subtitles: [] } });
 
         const [call] = callsOf();
         expect(call?.args).toEqual(['sh', RUNNER, SCRIPT, '-S', '2', '-e', '4', '-q', '720p', 'naruto']);

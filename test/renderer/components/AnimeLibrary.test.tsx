@@ -65,16 +65,23 @@ describe('AnimeLibrary', () => {
             expect(screen.getByText('2 ANIMES')).toBeInTheDocument();
         });
 
-        it('gives an anime on its own and a series the same slim card: a header with the number of seasons and the two buttons', () => {
+        it('gives an anime on its own and a series the same card: the cover, the name, and at the bottom the number of seasons and the remove button', () => {
             useAnimeStore.setState({ library: SERIES_LIBRARY });
             render(<AnimeLibrary />);
             screen.getAllByTestId('anime-card').forEach((card) => {
-                expect(card).toHaveClass('library__card');
-                expect(card.parentElement).toHaveClass('library');
+                expect(card).toHaveClass('library__card', 'cover-card');
+                expect(card.parentElement).toHaveClass('cover-grid');
+                expect(card.querySelector('.cover')).not.toBeNull();
                 expect(card.querySelector('header.job__head')).not.toBeNull();
+                expect(card.querySelector('header.job__head .badge')).toBeNull();
                 expect(card.querySelector('.library__body')).toBeNull();
                 expect(within(card).getAllByRole('button')).toHaveLength(2);
-                expect(card.querySelector('.library__footer')).not.toBeNull();
+                const footer = card.querySelector('.cover-card__footer') as HTMLElement;
+                expect(footer.querySelector('.job__badges .badge')).not.toBeNull();
+                expect(footer.querySelector('.library__footer')).not.toBeNull();
+                // The seasons are above the button that removes, both at the bottom of the card.
+                expect(footer.firstElementChild).toHaveClass('job__badges');
+                expect(footer.lastElementChild).toHaveClass('library__footer');
             });
             expect(screen.queryByTestId('anime-episode')).not.toBeInTheDocument();
         });
@@ -982,3 +989,54 @@ describe('AnimeLibrary', () => {
     });
 });
 
+
+describe('AnimeLibrary paused episodes', () => {
+    const PAUSED_LIBRARY = [
+        makeAnime(
+            [
+                makeEpisode({ id: 1, number: '1', status: 'paused', sizeBytes: null, filePath: null }),
+                makeEpisode({ id: 2, number: '2', status: 'downloading', sizeBytes: null, filePath: null }),
+                makeEpisode({ id: 3, number: '3', status: 'done' })
+            ],
+            { id: 10, title: 'Naruto', audio: 'sub' }
+        )
+    ];
+
+    async function openSeries() {
+        const user = userEvent.setup();
+        useAnimeStore.setState({ library: PAUSED_LIBRARY });
+        render(<AnimeLibrary />);
+        await user.click(screen.getByRole('button', { name: 'OPEN SERIES: Naruto' }));
+        return { user, rows: screen.getAllByTestId('anime-episode') };
+    }
+
+    it('says an episode is paused', async () => {
+        const { rows } = await openSeries();
+
+        expect(rows[0]?.querySelector('.history__meta')?.textContent).toBe('PAUSED');
+        expect(rows[0]).not.toHaveClass('history__item--error');
+    });
+
+    it('offers RESUME for a paused episode, and resumes it by its id', async () => {
+        const { user } = await openSeries();
+
+        await user.click(screen.getByRole('button', { name: 'RESUME: Naruto EP 1' }));
+
+        expect(mock.api.resumeAnimeJob).toHaveBeenCalledTimes(1);
+        expect(mock.api.resumeAnimeJob).toHaveBeenCalledWith(1);
+    });
+
+    it('does not offer RESUME for an episode that is downloading or downloaded, nor RETRY for a paused one', async () => {
+        await openSeries();
+
+        expect(screen.queryByRole('button', { name: 'RESUME: Naruto EP 2' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'RESUME: Naruto EP 3' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'RETRY: Naruto EP 1' })).not.toBeInTheDocument();
+    });
+
+    it('lets a paused episode be removed like any other', async () => {
+        const { rows } = await openSeries();
+
+        expect(within(rows[0] as HTMLElement).getByRole('button', { name: 'REMOVE: Naruto EP 1' })).toBeInTheDocument();
+    });
+});

@@ -10,6 +10,8 @@ import { createDefaultUpdaterDependencies, updateAniCli, type AniCliUpdaterDepen
 import { AniCliService } from './services/aniCliService';
 import { subtitleLabels } from './services/aniSubtitles';
 import { AnimeDb } from './services/animeDb';
+import { AnimeCoverService } from './services/animeCovers';
+import { loadSchedule, SCHEDULE_CACHE_MS } from './services/animeSchedule';
 import { AnimeDownloadQueue } from './services/animeDownloadQueue';
 import { animeBaseDirectory, isInsideDirectory, removeDirectories, removeEmptyDirectories } from './services/animeFiles';
 import { migrateAnimeFolder, type MigrationFileSystem } from './services/animeMigration';
@@ -68,6 +70,8 @@ export interface AnimeRuntimeOptions {
     // How the text at an address is fetched when the subtitles of an episode are checked; null when it could not be (the tests
     // replace it).
     fetchSubtitleText?: (url: string, referer: string | null) => Promise<string | null>;
+    // The address the schedule of the day is asked at, instead of AniList's (used by the end-to-end tests).
+    scheduleUrl?: string;
     send: (channel: string, payload?: unknown) => void;
 }
 
@@ -191,6 +195,20 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
         }
     };
     const streams = new StreamSessions();
+    const covers = new AnimeCoverService({
+        url: options.scheduleUrl,
+        store: {
+            get: (key) => {
+                return db.getCover(key);
+            },
+            save: (key, url) => {
+                db.saveCover(key, url);
+            }
+        },
+        onChange: (title, url) => {
+            options.send(IPC.eventAnimeCover, { title, url });
+        }
+    });
     return {
         db,
         queue,
@@ -198,6 +216,22 @@ export function createAnimeRuntime(options: AnimeRuntimeOptions): AnimeRuntime |
         streamHandler: createStreamHandler(streams),
         handlers: {
             service,
+            covers,
+            schedule: {
+                list: (request) => {
+                    return loadSchedule(request, {
+                        url: options.scheduleUrl,
+                        cache: {
+                            find: (from, to) => {
+                                return db.findScheduleCache(from, to, Date.now() - SCHEDULE_CACHE_MS);
+                            },
+                            save: (from, to, entries) => {
+                                db.saveScheduleCache(from, to, entries, Date.now() - SCHEDULE_CACHE_MS);
+                            }
+                        }
+                    });
+                }
+            },
             updateAniCli: () => {
                 return updateAniCli(locator, customScriptPath(), options.updaterDependencies ?? createDefaultUpdaterDependencies(locator.busyboxPath, readTextFile));
             },

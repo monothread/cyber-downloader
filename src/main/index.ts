@@ -38,7 +38,7 @@ import { runYtdlp } from './services/ytdlpRunner';
 const APP_ID = 'dev.lucas.pullwave';
 const STARTUP_UPDATE_CHECK_DELAY_MS = 5000;
 const PRODUCTION_CSP =
-    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${ANIME_STREAM_SCHEME}:; media-src 'self' blob: ${ANIME_MEDIA_SCHEME}: ${ANIME_STREAM_SCHEME}:`;
+    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.anilist.co; connect-src 'self' ${ANIME_STREAM_SCHEME}:; media-src 'self' blob: ${ANIME_MEDIA_SCHEME}: ${ANIME_STREAM_SCHEME}:`;
 
 // The schemes the anime player reads files and streams through have to be declared before the app is ready (only where the
 // anime section exists).
@@ -251,6 +251,8 @@ function bootstrap(): void {
         customScriptPath: () => {
             return process.env.PULLWAVE_ANI_CLI ?? '';
         },
+        // PULLWAVE_ANILIST_URL replaces the address of the schedule of the day (used by the end-to-end tests).
+        scheduleUrl: process.env.PULLWAVE_ANILIST_URL,
         // PULLWAVE_IMPORT_DIR answers the question of which folder to import (used by the end-to-end tests).
         chooseLibraryFolder: async (startAt) => {
             if (process.env.PULLWAVE_IMPORT_DIR) {

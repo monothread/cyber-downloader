@@ -289,6 +289,55 @@ test('cancels a running download and lets the user remove it', async () => {
     await expect(page.getByText('NO ACTIVE DOWNLOADS')).toBeVisible();
 });
 
+test('pauses a running download, keeps its card as paused and goes on when it is resumed', async () => {
+    const { page } = session;
+    await submitUrl(page, 'https://example.com/slow');
+
+    const card = page.getByTestId('job-card');
+    await expect(card.locator('.badge')).toHaveText('DOWNLOADING');
+    await expect(card.getByRole('button', { name: 'RESUME' })).toHaveCount(0);
+    await expect(card.getByText('50.0%')).toBeVisible();
+    await card.getByRole('button', { name: 'PAUSE' }).click();
+
+    await expect(card.locator('.badge')).toHaveText('PAUSED');
+    await expect(card.locator('.badge')).toHaveClass(/badge--paused/);
+    await expect(card).toHaveClass(/job--paused/);
+    await expect(card.getByText('50.0%')).toBeVisible();
+    await expect(card.getByRole('button', { name: 'PAUSE' })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'RESUME' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'CANCEL' })).toBeVisible();
+    // A paused download is not over: it is not in the history, and the card stays where it is.
+    await page.getByRole('button', { name: 'HISTORY' }).click();
+    await expect(page.locator('.history__item')).toHaveCount(0);
+    await page.getByRole('button', { name: 'QUEUE' }).click();
+
+    await card.getByRole('button', { name: 'RESUME' }).click();
+    await expect(card.locator('.badge')).toHaveText('DOWNLOADING');
+    await expect(card.getByRole('button', { name: 'PAUSE' })).toBeVisible();
+
+    await card.getByRole('button', { name: 'PAUSE' }).click();
+    await expect(card.locator('.badge')).toHaveText('PAUSED');
+    await card.getByRole('button', { name: 'CANCEL' }).click();
+    await expect(card.locator('.badge')).toHaveText('CANCELLED');
+    await card.getByRole('button', { name: 'REMOVE' }).click();
+    await expect(page.getByTestId('job-card')).toHaveCount(0);
+});
+
+test('a paused download frees its place in the queue for the next one', async () => {
+    const { page } = session;
+    await submitUrl(page, 'https://example.com/slow-first');
+    await expect(page.getByTestId('job-card').locator('.badge')).toHaveText('DOWNLOADING');
+    await submitUrl(page, 'https://example.com/slow-second');
+    const badges = page.getByTestId('job-card').locator('.badge');
+    // The queue runs one download at a time: the second waits.
+    await expect(badges).toHaveText(['DOWNLOADING', 'QUEUED']);
+
+    await page.getByTestId('job-card').first().getByRole('button', { name: 'PAUSE' }).click();
+
+    // The paused one is shown after the one that runs now, and before what waits (nothing here).
+    await expect(badges).toHaveText(['DOWNLOADING', 'PAUSED']);
+});
+
 test('shows the error on the link row for an invalid URL, keeps it for editing and does not create a job', async () => {
     const { page } = session;
     await submitUrl(page, 'not-a-url');

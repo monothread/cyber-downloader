@@ -543,3 +543,15 @@ describe('useAppStore stream search', () => {
     });
 });
 
+describe('useAppStore pause and resume', () => {
+    it('pauses and resumes a download through the api, by its id', async () => {
+        await useAppStore.getState().pauseJob('a');
+        await useAppStore.getState().resumeJob('b');
+
+        expect(mock.api.pauseJob).toHaveBeenCalledTimes(1);
+        expect(mock.api.pauseJob).toHaveBeenCalledWith('a');
+        expect(mock.api.resumeJob).toHaveBeenCalledTimes(1);
+        expect(mock.api.resumeJob).toHaveBeenCalledWith('b');
+        expect(mock.api.cancelJob).not.toHaveBeenCalled();
+    });
+});

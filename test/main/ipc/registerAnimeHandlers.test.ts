@@ -1,9 +1,9 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AniRunResult, AnimeImportResponse, AnimeMigrationResponse, AnimeSearchResult, AnimeSubtitleCheckResponse, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
+import type { AniRunResult, AnimeImportResponse, AnimeMigrationResponse, AnimeScheduleResponse, AnimeSearchResult, AnimeSubtitleCheckResponse, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { ResolvedStream } from '@main/services/aniStream';
 import { IPC } from '@shared/constants';
-import { MAX_EPISODES_PER_REQUEST, MAX_TEXT_LENGTH, parseDownloadRequest, parseHistoryRequest, parseProgress, registerAnimeHandlers, type AnimeHandlerDependencies } from '@main/ipc/registerAnimeHandlers';
+import { MAX_EPISODES_PER_REQUEST, MAX_SCHEDULE_SPAN_SECONDS, MAX_TEXT_LENGTH, parseDownloadRequest, parseHistoryRequest, parseProgress, parseScheduleRequest, registerAnimeHandlers, type AnimeHandlerDependencies } from '@main/ipc/registerAnimeHandlers';
 import type { IpcMainLike } from '@main/ipc/registerHandlers';
 import { AnimeDb } from '@main/services/animeDb';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
@@ -38,6 +38,9 @@ function makeIpc(): { ipcMain: IpcMainLike; call: (channel: string, ...args: unk
 const ANIME_CHANNELS = [
     IPC.animeCancel,
     IPC.animeClearFinished,
+    IPC.animeCover,
+    IPC.animePause,
+    IPC.animeResume,
     IPC.animeDownload,
     IPC.animeEpisodes,
     IPC.animeHistoryClear,
@@ -53,6 +56,7 @@ const ANIME_CHANNELS = [
     IPC.animeRemoveAnime,
     IPC.animeRemoveEpisode,
     IPC.animeRetry,
+    IPC.animeSchedule,
     IPC.animeSearch,
     IPC.animeSetSeries,
     IPC.animeStatus,
@@ -75,12 +79,22 @@ function setup(available = true) {
     const episodes = vi.fn(async (): Promise<AniRunResult<string[]>> => {
         return { status: 'done', value: ['1', '2'] };
     });
+    const schedule = {
+        list: vi.fn(async (): Promise<AnimeScheduleResponse> => {
+            return { ok: true, entries: [] };
+        })
+    };
+    const covers = {
+        find: vi.fn(async (): Promise<string | null> => {
+            return 'https://s4.anilist.co/cover.jpg';
+        })
+    };
     const updateAniCli = vi.fn(async () => {
         return { ok: true, output: 'Updated ani-cli 5.1.4 → 5.2.0.' };
     });
     const aniCliInfo = { found: true, path: '/app/resources/bin/ani/ani-cli', version: '5.1.4', source: 'bundled' as const };
     const resolveStream = vi.fn(async (): Promise<AniRunResult<ResolvedStream>> => {
-        return { status: 'done', value: { url: 'https://cdn.example/master.m3u8', subtitleUrl: null, referer: 'https://embed.example/' } };
+        return { status: 'done', value: { url: 'https://cdn.example/master.m3u8', subtitleUrl: null, referer: 'https://embed.example/', subtitles: [] } };
     });
     const streams = {
         create: vi.fn(() => {
@@ -101,6 +115,8 @@ function setup(available = true) {
         }),
         cancel: vi.fn(),
         retry: vi.fn(),
+        pause: vi.fn(),
+        resume: vi.fn(),
         clearFinished: vi.fn(),
         forget: vi.fn()
     };
@@ -130,6 +146,8 @@ function setup(available = true) {
     };
     const deps = {
         service: { isAvailable: vi.fn(() => { return available; }), info: vi.fn(() => { return aniCliInfo; }), search, episodes, resolveStream },
+        schedule,
+        covers,
         updateAniCli,
         streams,
         streamQuality: () => {
@@ -155,7 +173,7 @@ function setup(available = true) {
         subtitles
     } as unknown as AnimeHandlerDependencies;
     registerAnimeHandlers(ipc.ipcMain, deps);
-    return { ...ipc, db, search, episodes, resolveStream, updateAniCli, aniCliInfo, streams, queue, removeFiles, removeFolders, removeEmptyFolders, openFolder, refreshMetadata, importLibrary, migrateFolder, missing, onLibraryChanged, subtitles, deps };
+    return { ...ipc, db, search, episodes, resolveStream, schedule, covers, updateAniCli, aniCliInfo, streams, queue, removeFiles, removeFolders, removeEmptyFolders, openFolder, refreshMetadata, importLibrary, migrateFolder, missing, onLibraryChanged, subtitles, deps };
 }
 
 describe('registerAnimeHandlers', () => {
@@ -338,16 +356,30 @@ describe('registerAnimeHandlers', () => {
         expect(queue.clearFinished).toHaveBeenCalledTimes(1);
     });
 
+    it('pauses and resumes through the queue', () => {
+        const { call, queue } = setup();
+        call(IPC.animePause, 6);
+        call(IPC.animeResume, 7);
+        expect(queue.pause).toHaveBeenCalledTimes(1);
+        expect(queue.pause).toHaveBeenCalledWith(6);
+        expect(queue.resume).toHaveBeenCalledTimes(1);
+        expect(queue.resume).toHaveBeenCalledWith(7);
+    });
+
     it('ignores an id that is not a positive whole number', () => {
         const { call, queue, db } = setup();
         ['4', 0, -1, 1.5, null, undefined, {}].forEach((id) => {
             call(IPC.animeCancel, id);
             call(IPC.animeRetry, id);
+            call(IPC.animePause, id);
+            call(IPC.animeResume, id);
             call(IPC.animeRemoveEpisode, id);
             call(IPC.animeRemoveAnime, id);
         });
         expect(queue.cancel).not.toHaveBeenCalled();
         expect(queue.retry).not.toHaveBeenCalled();
+        expect(queue.pause).not.toHaveBeenCalled();
+        expect(queue.resume).not.toHaveBeenCalled();
         expect(queue.forget).not.toHaveBeenCalled();
         expect(db.list()).toEqual([]);
     });
@@ -752,7 +784,7 @@ describe('registerAnimeHandlers', () => {
             const { call, resolveStream, streams } = setup();
             expect(await call(IPC.animeStreamOpen, request)).toEqual({ ok: true, stream: { sessionId: 's1', url: 'pullwave-stream://p/s1/abc', subtitleUrl: null } });
             expect(resolveStream).toHaveBeenCalledWith({ query: 'd naruto', index: 2, audio: 'dub', episode: '4', quality: '720p' });
-            expect(streams.create).toHaveBeenCalledWith({ url: 'https://cdn.example/master.m3u8', subtitleUrl: null, referer: 'https://embed.example/' });
+            expect(streams.create).toHaveBeenCalledWith({ url: 'https://cdn.example/master.m3u8', subtitleUrl: null, referer: 'https://embed.example/', subtitles: [] });
         });
 
         it('refuses an invalid request without asking ani-cli', async () => {
@@ -925,6 +957,136 @@ describe('registerAnimeHandlers', () => {
     });
 });
 
+describe('registerAnimeHandlers schedule', () => {
+    const request = { from: 1_700_000_000, to: 1_700_086_400, refresh: false };
+
+    it('asks the resolver for the day with the request as it came and gives its answer back', async () => {
+        const { call, schedule } = setup();
+        const entries = [
+            {
+                anilistId: 154587,
+                title: 'Sousou no Frieren',
+                names: ['Sousou no Frieren', 'Frieren: Beyond Journey\'s End'],
+                episode: 12,
+                airingAt: 1_700_040_000,
+                coverUrl: 'https://img.example/frieren.jpg'
+            }
+        ];
+        schedule.list.mockResolvedValueOnce({ ok: true, entries });
+
+        expect(await call(IPC.animeSchedule, request)).toEqual({ ok: true, entries });
+        expect(schedule.list).toHaveBeenCalledTimes(1);
+        expect(schedule.list).toHaveBeenCalledWith(request);
+    });
+
+    it('gives the error of the resolver back as it is', async () => {
+        const { call, schedule } = setup();
+        const error = { code: 'NETWORK', raw: 'AniList answered with status 429.' };
+        schedule.list.mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK', raw: error.raw } });
+
+        expect(await call(IPC.animeSchedule, request)).toEqual({ ok: false, error });
+        expect(schedule.list).toHaveBeenCalledWith(request);
+    });
+
+    it.each([
+        ['nothing', undefined],
+        ['text', 'today'],
+        ['a stretch that ends where it starts', { ...request, to: request.from }]
+    ])('refuses %s without asking the resolver', async (_name, input) => {
+        const { call, schedule } = setup();
+
+        expect(await call(IPC.animeSchedule, input)).toEqual({ ok: false, error: { code: 'INVALID_SELECTION', raw: 'The stretch of time is invalid.' } });
+        expect(schedule.list).not.toHaveBeenCalled();
+    });
+});
+
+describe('parseScheduleRequest', () => {
+    const valid = { from: 1_700_000_000, to: 1_700_086_400, refresh: false };
+
+    it('accepts a valid request as it is', () => {
+        expect(parseScheduleRequest(valid)).toEqual(valid);
+    });
+
+    it('keeps the refresh that was asked for', () => {
+        expect(parseScheduleRequest({ ...valid, refresh: true })).toEqual({ ...valid, refresh: true });
+    });
+
+    it.each([undefined, null, 'true', 1, 0, {}])('does not refresh when the refresh is %s', (refresh) => {
+        expect(parseScheduleRequest({ from: valid.from, to: valid.to, refresh })).toEqual({ ...valid, refresh: false });
+    });
+
+    it('keeps only the two moments and the refresh', () => {
+        expect(parseScheduleRequest({ ...valid, audio: 'sub', other: 1 })).toEqual(valid);
+    });
+
+    it('accepts the longest stretch that can still be a week', () => {
+        const longest = { from: valid.from, to: valid.from + MAX_SCHEDULE_SPAN_SECONDS, refresh: false };
+        expect(parseScheduleRequest(longest)).toEqual(longest);
+        expect(MAX_SCHEDULE_SPAN_SECONDS).toBe(8 * 24 * 60 * 60);
+    });
+
+    it('does not take a stretch longer than that', () => {
+        expect(parseScheduleRequest({ from: valid.from, to: valid.from + MAX_SCHEDULE_SPAN_SECONDS + 1 })).toBeNull();
+    });
+
+    it.each([
+        ['null', null],
+        ['a number', 5],
+        ['an empty object', {}],
+        ['a start that is not a number', { ...valid, from: '1700000000' }],
+        ['an end that is not a number', { ...valid, to: '1700086400' }],
+        ['a start with decimals', { ...valid, from: 1_700_000_000.5 }],
+        ['an end with decimals', { ...valid, to: 1_700_086_400.5 }],
+        ['a start before the epoch', { from: 0, to: 100 }],
+        ['an end equal to the start', { ...valid, to: valid.from }],
+        ['an end before the start', { ...valid, to: valid.from - 1 }],
+        ['no start', { to: valid.to }],
+        ['no end', { from: valid.from }]
+    ])('does not take %s', (_name, input) => {
+        expect(parseScheduleRequest(input)).toBeNull();
+    });
+});
+
+describe('registerAnimeHandlers covers', () => {
+    it('looks the cover up by the title and gives the address back', async () => {
+        const { call, covers } = setup();
+
+        expect(await call(IPC.animeCover, "Frieren: Beyond Journey's End")).toBe('https://s4.anilist.co/cover.jpg');
+        expect(covers.find).toHaveBeenCalledTimes(1);
+        expect(covers.find).toHaveBeenCalledWith("Frieren: Beyond Journey's End");
+    });
+
+    it('gives null when there is no cover', async () => {
+        const { call, covers } = setup();
+        covers.find.mockResolvedValueOnce(null);
+
+        expect(await call(IPC.animeCover, 'Unknown anime')).toBeNull();
+    });
+
+    it('cleans the title: the spaces around it go, and it is cut to the size every name has', async () => {
+        const { call, covers } = setup();
+
+        await call(IPC.animeCover, '  Naruto  ');
+        await call(IPC.animeCover, 'x'.repeat(MAX_TEXT_LENGTH + 50));
+
+        expect(covers.find.mock.calls).toEqual([['Naruto'], ['x'.repeat(MAX_TEXT_LENGTH)]]);
+    });
+
+    it.each([['nothing', undefined], ['null', null], ['a number', 5], ['an empty title', ''], ['only spaces', '   '], ['an object', {}]])('does not look up %s', async (_name, title) => {
+        const { call, covers } = setup();
+
+        expect(await call(IPC.animeCover, title)).toBeNull();
+        expect(covers.find).not.toHaveBeenCalled();
+    });
+
+    it('passes on the failure when the cover could not be asked for, so the screen can tell', async () => {
+        const { call, covers } = setup();
+        covers.find.mockRejectedValueOnce(new Error('AniList answered with status 500.'));
+
+        await expect(call(IPC.animeCover, 'Naruto')).rejects.toThrow('AniList answered with status 500.');
+    });
+});
+
 describe('registerAnimeHandlers where the section does not exist', () => {
     it('answers that it is unsupported and does nothing else', async () => {
         const ipc = makeIpc();
@@ -937,6 +1099,8 @@ describe('registerAnimeHandlers where the section does not exist', () => {
         expect(ipc.call(IPC.animeSearch, 'naruto', 'sub')).toEqual({ ok: false, error: unsupported });
         expect(ipc.call(IPC.animeEpisodes, 'naruto', 1, 'sub')).toEqual({ ok: false, error: unsupported });
         expect(ipc.call(IPC.animeDownload, {})).toEqual({ ok: false, message: unsupported.raw });
+        expect(ipc.call(IPC.animeSchedule, { from: 1, to: 2, refresh: false })).toEqual({ ok: false, error: unsupported });
+        expect(ipc.call(IPC.animeCover, 'Naruto')).toBeNull();
         expect(ipc.call(IPC.animeLibrary)).toEqual([]);
         expect(ipc.call(IPC.animeJobs)).toEqual([]);
         expect(ipc.call(IPC.animeHistoryList)).toEqual([]);
@@ -947,7 +1111,7 @@ describe('registerAnimeHandlers where the section does not exist', () => {
         expect(ipc.call(IPC.animeSubtitles, 1)).toEqual([]);
         expect(ipc.call(IPC.animeSubtitleImport, 1)).toEqual({ ok: false, reason: 'missing' });
         expect(ipc.call(IPC.animeSubtitlesCheck, 1)).toEqual({ ok: false, reason: 'missing' });
-        [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose, IPC.animeHistoryRecord, IPC.animeHistoryRemove, IPC.animeHistoryClear].forEach((channel) => {
+        [IPC.animeCancel, IPC.animeRetry, IPC.animePause, IPC.animeResume, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose, IPC.animeHistoryRecord, IPC.animeHistoryRemove, IPC.animeHistoryClear].forEach((channel) => {
             expect(ipc.call(channel, 1)).toBeUndefined();
         });
     });

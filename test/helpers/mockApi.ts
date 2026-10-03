@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { AnimeHistoryEntry, AnimeImportResponse, AnimeSubtitleCheckResponse, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
+import type { AnimeCoverUpdate, AnimeHistoryEntry, AnimeImportResponse, AnimeSubtitleCheckResponse, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeScheduleResponse, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 export interface MockApiHandle {
@@ -12,6 +12,7 @@ export interface MockApiHandle {
     emitAnimeJob: (job: AnimeJob) => void;
     emitAnimeLibraryChanged: () => void;
     emitAnimeMigrationProgress: (progress: AnimeMigrationProgress) => void;
+    emitAnimeCover: (update: AnimeCoverUpdate) => void;
     unsubscribers: Array<ReturnType<typeof vi.fn>>;
 }
 
@@ -26,6 +27,7 @@ export function createMockApi(): MockApiHandle {
     const animeJobListeners: Array<(job: AnimeJob) => void> = [];
     const animeLibraryListeners: Array<() => void> = [];
     const animeMigrationListeners: Array<(progress: AnimeMigrationProgress) => void> = [];
+    const animeCoverListeners: Array<(update: AnimeCoverUpdate) => void> = [];
     const unsubscribers: Array<ReturnType<typeof vi.fn>> = [];
 
     function subscribe<T>(listeners: T[], listener: T): () => void {
@@ -49,6 +51,12 @@ export function createMockApi(): MockApiHandle {
             return [];
         }),
         cancelJob: vi.fn(async () => {
+            return undefined;
+        }),
+        pauseJob: vi.fn(async () => {
+            return undefined;
+        }),
+        resumeJob: vi.fn(async () => {
             return undefined;
         }),
         stopJob: vi.fn(async () => {
@@ -147,6 +155,12 @@ export function createMockApi(): MockApiHandle {
         cancelAnimeJob: vi.fn(async () => {
             return undefined;
         }),
+        pauseAnimeJob: vi.fn(async () => {
+            return undefined;
+        }),
+        resumeAnimeJob: vi.fn(async () => {
+            return undefined;
+        }),
         retryAnimeJob: vi.fn(async () => {
             return undefined;
         }),
@@ -192,6 +206,12 @@ export function createMockApi(): MockApiHandle {
         closeAnimeStream: vi.fn(async () => {
             return undefined;
         }),
+        findAnimeCover: vi.fn(async (): Promise<string | null> => {
+            return null;
+        }),
+        listAnimeSchedule: vi.fn(async (): Promise<AnimeScheduleResponse> => {
+            return { ok: true, entries: [] };
+        }),
         onAnimeJobUpdate: vi.fn((listener: (job: AnimeJob) => void) => {
             return subscribe(animeJobListeners, listener);
         }),
@@ -200,6 +220,9 @@ export function createMockApi(): MockApiHandle {
         }),
         onAnimeMigrationProgress: vi.fn((listener: (progress: AnimeMigrationProgress) => void) => {
             return subscribe(animeMigrationListeners, listener);
+        }),
+        onAnimeCoverUpdate: vi.fn((listener: (update: AnimeCoverUpdate) => void) => {
+            return subscribe(animeCoverListeners, listener);
         }),
         onJobUpdate: vi.fn((listener: (job: DownloadJob) => void) => {
             return subscribe(jobListeners, listener);
@@ -244,6 +267,11 @@ export function createMockApi(): MockApiHandle {
         emitAnimeMigrationProgress: (progress) => {
             animeMigrationListeners.forEach((listener) => {
                 listener(progress);
+            });
+        },
+        emitAnimeCover: (update) => {
+            animeCoverListeners.forEach((listener) => {
+                listener(update);
             });
         },
         emitAnimeLibraryChanged: () => {

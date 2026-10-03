@@ -11,6 +11,7 @@ import type {
     AnimeHistoryRequest,
     AnimeProgressUpdate,
     AnimeRecord,
+    AnimeScheduleEntry,
     LibraryAnime
 } from '@shared/anime';
 import { sameSeries } from '@shared/series';
@@ -58,13 +59,27 @@ const MIGRATIONS: readonly string[] = [
         episode TEXT,
         opened_at INTEGER NOT NULL,
         UNIQUE (title, audio)
+    );`,
+    // What is kept so the network is asked for less: the cover found for an anime by its title (the url is empty where AniList has none) with
+    // when it was last checked, and what AniList said the schedule of a stretch of time was with when it was asked (the entries as JSON).
+    `CREATE TABLE anime_cover (
+        key TEXT PRIMARY KEY,
+        url TEXT,
+        checked_at INTEGER NOT NULL
+    );
+    CREATE TABLE anime_schedule_cache (
+        from_at INTEGER NOT NULL,
+        to_at INTEGER NOT NULL,
+        fetched_at INTEGER NOT NULL,
+        entries TEXT NOT NULL,
+        PRIMARY KEY (from_at, to_at)
     );`
 ];
 
 // The history keeps the most recent anime only.
 export const MAX_HISTORY_ENTRIES = 50;
 
-const EPISODE_STATUSES: readonly AnimeEpisodeStatus[] = ['queued', 'downloading', 'done', 'error', 'cancelled'];
+const EPISODE_STATUSES: readonly AnimeEpisodeStatus[] = ['queued', 'downloading', 'paused', 'done', 'error', 'cancelled'];
 const ERROR_CODES: readonly AniErrorCode[] = [
     'NO_RESULTS',
     'BLOCKED',
@@ -81,6 +96,12 @@ export interface NewAnime {
     query: string;
     searchIndex: number;
     audio: AnimeAudio;
+}
+
+// What is kept of the cover of an anime: its address (null where AniList has none) and when it was last checked, in milliseconds.
+export interface StoredCover {
+    url: string | null;
+    checkedAt: number;
 }
 
 type Row = Record<string, unknown>;
@@ -368,6 +389,12 @@ export class AnimeDb {
         this.run(`UPDATE episode SET status = 'downloading', error_code = NULL, error_raw = NULL WHERE id = ?`, episodeId);
     }
 
+    // A paused episode keeps its partial file and goes on from it when resumed; unlike the ones that were waiting or downloading it is not
+    // failed when the app is closed.
+    markPaused(episodeId: number): void {
+        this.run(`UPDATE episode SET status = 'paused', error_code = NULL, error_raw = NULL WHERE id = ?`, episodeId);
+    }
+
     markDone(episodeId: number, filePath: string, sizeBytes: number | null): void {
         this.run(
             `UPDATE episode SET status = 'done', file_path = ?, size_bytes = ?, error_code = NULL, error_raw = NULL, downloaded_at = ? WHERE id = ?`,
@@ -433,6 +460,59 @@ export class AnimeDb {
 
     clearHistory(): void {
         this.run('DELETE FROM anime_history');
+    }
+
+    // The episodes of the stretch, if a listing that covers it was asked for at `since` or later (in milliseconds); null when there is none.
+    findScheduleCache(from: number, to: number, since: number): AnimeScheduleEntry[] | null {
+        const row = this.one(
+            'SELECT entries FROM anime_schedule_cache WHERE from_at <= ? AND to_at >= ? AND fetched_at >= ? ORDER BY fetched_at DESC LIMIT 1',
+            from,
+            to,
+            since
+        );
+        if (!row) {
+            return null;
+        }
+        try {
+            const entries: unknown = JSON.parse(text(row, 'entries'));
+            if (!Array.isArray(entries)) {
+                return null;
+            }
+            return (entries as AnimeScheduleEntry[]).filter((entry) => {
+                return typeof entry.airingAt === 'number' && entry.airingAt >= from && entry.airingAt < to;
+            });
+        } catch {
+            return null;
+        }
+    }
+
+    // Keeps the listing of the stretch, asked now, and forgets the ones asked before `since` (in milliseconds).
+    saveScheduleCache(from: number, to: number, entries: readonly AnimeScheduleEntry[], since: number): void {
+        this.run(
+            `INSERT INTO anime_schedule_cache (from_at, to_at, fetched_at, entries) VALUES (?, ?, ?, ?)
+             ON CONFLICT (from_at, to_at) DO UPDATE SET fetched_at = excluded.fetched_at, entries = excluded.entries`,
+            from,
+            to,
+            this.now(),
+            JSON.stringify(entries)
+        );
+        this.run('DELETE FROM anime_schedule_cache WHERE fetched_at < ?', since);
+    }
+
+    getCover(key: string): StoredCover | null {
+        const row = this.one('SELECT * FROM anime_cover WHERE key = ?', key);
+        return row ? { url: nullableText(row, 'url'), checkedAt: numeric(row, 'checked_at') } : null;
+    }
+
+    // Keeps the cover (null: none) of the title and the moment it was checked, now.
+    saveCover(key: string, url: string | null): void {
+        this.run(
+            `INSERT INTO anime_cover (key, url, checked_at) VALUES (?, ?, ?)
+             ON CONFLICT (key) DO UPDATE SET url = excluded.url, checked_at = excluded.checked_at`,
+            key,
+            url,
+            this.now()
+        );
     }
 
     // Both remove the records and give back the files they pointed at, so the caller can delete them if asked to.

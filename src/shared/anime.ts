@@ -1,4 +1,4 @@
-// Types of the anime section (ani-cli). It exists on Linux only.
+// Types of the anime section (ani-cli). It exists on Linux and Windows.
 
 export type AnimeAudio = 'sub' | 'dub';
 
@@ -46,7 +46,7 @@ export type AnimeSubtitleSetting = (typeof ANIME_SUBTITLE_SETTINGS)[number];
 
 // An episode in the library. `queued` and `downloading` only live while the app is open: after a restart what was
 // unfinished is marked `error`.
-export type AnimeEpisodeStatus = 'queued' | 'downloading' | 'done' | 'error' | 'cancelled';
+export type AnimeEpisodeStatus = 'queued' | 'downloading' | 'paused' | 'done' | 'error' | 'cancelled';
 
 export interface AnimeRecord {
     id: number;
@@ -114,7 +114,7 @@ export interface AnimeJob {
     animeId: number;
     animeTitle: string;
     episode: string;
-    status: 'queued' | 'running' | 'done' | 'error' | 'cancelled';
+    status: 'queued' | 'running' | 'paused' | 'done' | 'error' | 'cancelled';
     percent: number;
     speed: string;
     eta: string;
@@ -130,7 +130,7 @@ export interface AniCliInfo {
 }
 
 export interface AnimeStatus {
-    // The section exists on Linux only.
+    // The section exists on Linux and Windows.
     supported: boolean;
     // The files ani-cli needs are in place.
     available: boolean;
@@ -154,7 +154,35 @@ export interface AnimeDownloadRequest {
     seasonName?: string | null;
 }
 
-export type AnimeSeriesResponse = { ok: true } | { ok: false; reason: 'invalid' | 'season-taken' };
+// An episode that airs: the anime it belongs to, when it airs and a cover to tell the anime by.
+export interface AnimeScheduleEntry {
+    anilistId: number;
+    title: string;
+    // Every name the anime is known by, without repeating any (the title first): they are what the anime is looked up by in the search.
+    names: string[];
+    episode: number;
+    // In seconds since the epoch.
+    airingAt: number;
+    coverUrl: string | null;
+}
+
+// The stretch of time to list, in seconds since the epoch: from its first moment up to (not including) the end. What was listed in the
+// last day is answered from what is kept, unless `refresh` asks AniList again.
+export interface AnimeScheduleRequest {
+    from: number;
+    to: number;
+    refresh: boolean;
+}
+
+export type AnimeScheduleResponse = { ok: true; entries: AnimeScheduleEntry[] } | { ok: false; error: AniError };
+
+// The cover of an anime turned out to be another one when it was checked again: the new address, by the title it was asked for.
+export interface AnimeCoverUpdate {
+    title: string;
+    url: string;
+}
+
+export type AnimeSeriesResponse ={ ok: true } | { ok: false; reason: 'invalid' | 'season-taken' };
 
 export type AnimeDownloadResponse = { ok: true; anime: LibraryAnime } | { ok: false; message: string };
 
@@ -233,12 +261,23 @@ export interface AnimeStreamRequest {
     episode: string;
 }
 
-// What the player needs to watch an episode without downloading it: both addresses go through the app, which adds what the
-// source asks of a request (the referer).
+// A subtitle of a stream: the language the source names it by (the screen writes it in its own language) and where the player gets it
+// from (through the app, like the video).
+export interface AnimeStreamSubtitle {
+    id: string;
+    label: string;
+    url: string;
+}
+
+// What the player needs to watch an episode without downloading it: the addresses go through the app, which adds what the source asks
+// of a request (the referer).
 export interface AnimeStream {
     sessionId: string;
     url: string;
+    // The subtitle ani-cli picked (the language of the app, when the source has it).
     subtitleUrl: string | null;
+    // Every subtitle the source offers, in the order it gives them; empty when this copy of ani-cli does not report them.
+    subtitles: AnimeStreamSubtitle[];
 }
 
 export type AnimeStreamResponse = { ok: true; stream: AnimeStream } | { ok: false; error: AniError };

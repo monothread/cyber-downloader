@@ -1,4 +1,4 @@
-import type { AnimeSubtitleImportResponse, AnimeSubtitleTrack } from '@shared/anime';
+import type { AnimeStream, AnimeStreamSubtitle, AnimeSubtitleImportResponse, AnimeSubtitleTrack } from '@shared/anime';
 import type { MessageKey } from '@shared/i18n';
 import type { LanguageCode } from '@shared/types';
 import { subtitleDisplayNames } from './subtitleName';
@@ -39,6 +39,44 @@ export function optionsOf(tracks: readonly AnimeSubtitleTrack[], language?: Lang
     );
     return tracks.map((track, position) => {
         return { id: optionIdOf(track), label: track.kind === 'imported' ? track.label : (labels[position] as string) };
+    });
+}
+
+// The id of the only subtitle a stream has when the source does not list them (the one ani-cli picked).
+export const STREAM_SUBTITLE_ID = 'stream';
+
+// The subtitles of a stream, the one ani-cli picked first (it is the one shown at first). Without a list from the source, the one that
+// was picked is all there is.
+export function streamTracks(stream: AnimeStream): AnimeStreamSubtitle[] {
+    if (stream.subtitles.length === 0) {
+        return stream.subtitleUrl === null ? [] : [{ id: STREAM_SUBTITLE_ID, label: 'Subtitles', url: stream.subtitleUrl }];
+    }
+    const picked = stream.subtitles.findIndex((subtitle) => {
+        return subtitle.url === stream.subtitleUrl;
+    });
+    return picked > 0 ? [stream.subtitles[picked] as AnimeStreamSubtitle, ...stream.subtitles.filter((_subtitle, position) => {
+        return position !== picked;
+    })] : stream.subtitles;
+}
+
+// The options of the menu of subtitles of a stream, written in the language of the screen (see subtitleName.ts). A stream whose
+// subtitles the source does not list keeps its one generic name.
+export function streamOptionsOf(tracks: readonly AnimeStreamSubtitle[], language: LanguageCode): SubtitleOption[] {
+    const listed = tracks.some((track) => {
+        return track.id !== STREAM_SUBTITLE_ID;
+    });
+    const labels = listed
+        ? subtitleDisplayNames(
+              tracks.map((track) => {
+                  return track.label;
+              }),
+              language
+          )
+        : tracks.map((track) => {
+              return track.label;
+          });
+    return tracks.map((track, position) => {
+        return { id: track.id, label: labels[position] as string };
     });
 }
 

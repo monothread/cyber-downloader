@@ -42,6 +42,8 @@ export class AnimeDownloadQueue {
     private readonly jobs = new Map<number, AnimeJob>();
     private readonly handles = new Map<number, AniDownloadHandle>();
     private readonly lastReported = new Map<number, number>();
+    // Episodes asked to pause: the run is ended on purpose, and its partial file is kept for the next one to go on from.
+    private readonly pauseRequested = new Set<number>();
 
     constructor(private readonly deps: AnimeQueueDependencies) {}
 
@@ -79,8 +81,32 @@ export class AnimeDownloadQueue {
         this.pump();
     }
 
+    // Ends the run of a download that is going on, keeping what it downloaded so far.
+    pause(episodeId: number): void {
+        const job = this.jobs.get(episodeId);
+        const handle = this.handles.get(episodeId);
+        if (job?.status !== 'running' || !handle) {
+            return;
+        }
+        this.pauseRequested.add(episodeId);
+        handle.cancel();
+    }
+
+    // Queues a paused episode again (also after the app was restarted): the download finds its partial file and goes on from it.
+    resume(episodeId: number): void {
+        if (this.deps.db.getEpisode(episodeId)?.status === 'paused') {
+            this.retry(episodeId);
+        }
+    }
+
     cancel(episodeId: number): void {
         const job = this.jobs.get(episodeId);
+        if (job?.status === 'paused') {
+            this.deps.db.markFailed(episodeId, 'cancelled', null);
+            this.update(job, { status: 'cancelled' });
+            this.deps.onLibraryChanged();
+            return;
+        }
         if (!job || !isActive(job)) {
             return;
         }
@@ -110,6 +136,7 @@ export class AnimeDownloadQueue {
             this.handles.delete(episodeId);
             this.jobs.delete(episodeId);
             this.lastReported.delete(episodeId);
+            this.pauseRequested.delete(episodeId);
         });
         this.pump();
     }
@@ -199,10 +226,15 @@ export class AnimeDownloadQueue {
         this.handles.set(job.episodeId, handle);
         void handle.result.then((result) => {
             this.handles.delete(job.episodeId);
+            // The pause only counts for the run it was asked of, whichever way that run ended.
+            const paused = this.pauseRequested.delete(job.episodeId);
             if (!this.jobs.has(job.episodeId)) {
                 return;
             }
-            if (result.status === 'cancelled') {
+            if (result.status === 'cancelled' && paused) {
+                db.markPaused(job.episodeId);
+                this.update(job, { status: 'paused', speed: '', eta: '' });
+            } else if (result.status === 'cancelled') {
                 db.markFailed(job.episodeId, 'cancelled', null);
                 this.update(job, { status: 'cancelled', speed: '', eta: '' });
             } else if (result.status === 'error') {

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import { AnimePanel } from '@renderer/components/AnimePanel';
 import { SETTINGS_ICON } from '@renderer/components/TabButton';
-import { INITIAL_SEARCH, useAnimeStore } from '@renderer/store/animeStore';
+import { INITIAL_SCHEDULE, INITIAL_SEARCH, useAnimeStore } from '@renderer/store/animeStore';
 import { useAppStore } from '@renderer/store/appStore';
 import { makeAnime, makeAnimeJob, makeEpisode, makeStatus } from '../../helpers/animeFixtures';
 import { installMockApi } from '../../helpers/mockApi';
@@ -22,6 +22,7 @@ beforeEach(() => {
         jobs: [],
         library: [],
         search: INITIAL_SEARCH,
+        schedule: INITIAL_SCHEDULE,
         selection: null,
         playing: null
     });
@@ -41,7 +42,41 @@ describe('AnimePanel', () => {
         expect(screen.queryByLabelText('Anime name')).not.toBeInTheDocument();
     });
 
-    it('shows the search first and marks it as the current view', () => {
+    it('opens on the schedule, the first tab, to the left of the search', () => {
+        useAnimeStore.setState({ view: initialAnime.view });
+        render(<AnimePanel />);
+        expect(
+            within(subNav())
+                .getAllByRole('button')
+                .map((button) => {
+                    return button.getAttribute('aria-label') ?? button.textContent;
+                })
+                .slice(0, 2)
+        ).toEqual(['SCHEDULE', 'SEARCH']);
+        expect(within(subNav()).getByRole('button', { name: 'SCHEDULE' })).toHaveAttribute('aria-current', 'page');
+        expect(within(subNav()).getByRole('button', { name: 'SEARCH' })).not.toHaveAttribute('aria-current');
+        expect(screen.getByRole('region', { name: 'Anime schedule' })).toBeInTheDocument();
+        expect(screen.queryByLabelText('Anime name')).not.toBeInTheDocument();
+    });
+
+    it('switches between the schedule and the search', async () => {
+        const user = userEvent.setup();
+        useAnimeStore.setState({ view: 'schedule' });
+        render(<AnimePanel />);
+
+        await user.click(within(subNav()).getByRole('button', { name: 'SEARCH' }));
+        expect(screen.getByLabelText('Anime name')).toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: 'Anime schedule' })).not.toBeInTheDocument();
+        expect(useAnimeStore.getState()).toMatchObject({ view: 'search', returnView: 'search' });
+
+        await user.click(within(subNav()).getByRole('button', { name: 'SCHEDULE' }));
+        expect(screen.getByRole('region', { name: 'Anime schedule' })).toBeInTheDocument();
+        expect(screen.queryByLabelText('Anime name')).not.toBeInTheDocument();
+        expect(within(subNav()).getByRole('button', { name: 'SCHEDULE' })).toHaveAttribute('aria-current', 'page');
+        expect(useAnimeStore.getState()).toMatchObject({ view: 'schedule', returnView: 'schedule' });
+    });
+
+    it('shows the search as the current view when it is chosen', () => {
         render(<AnimePanel />);
         expect(screen.getByRole('region', { name: 'Anime' })).toBeInTheDocument();
         expect(within(subNav()).getByRole('button', { name: 'SEARCH' })).toHaveAttribute('aria-current', 'page');
@@ -72,7 +107,7 @@ describe('AnimePanel', () => {
                 .map((button) => {
                     return button.getAttribute('aria-label') ?? button.textContent;
                 })
-        ).toEqual(['SEARCH', 'LIBRARY', 'HISTORY', 'SETTINGS']);
+        ).toEqual(['SCHEDULE', 'SEARCH', 'LIBRARY', 'HISTORY', 'SETTINGS']);
         // The settings are a gear at the right end of the bar, not a word.
         const settings = within(subNav()).getByRole('button', { name: 'SETTINGS' });
         expect(settings).toHaveClass('tab--icon');

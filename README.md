@@ -56,7 +56,7 @@ The top bar has **VIDEO DOWNLOADER**, **ANIME** and a ⚙ for the settings of th
 | Part | Screens |
 |---|---|
 | VIDEO DOWNLOADER | QUEUE · HISTORY · ⚙ |
-| ANIME | SEARCH · LIBRARY · HISTORY · ⚙ (and a DOWNLOADS button) |
+| ANIME | SCHEDULE · SEARCH · LIBRARY · HISTORY · ⚙ (and a DOWNLOADS button) |
 
 The back and forward buttons of the mouse take you through the screens you have been to.
 
@@ -65,7 +65,8 @@ The back and forward buttons of the mouse take you through the screens you have 
 
 ### Queue
 - Paste a link, or several: **+ ADD LINK** gives you one field per link. **FOLDER** sends that download to another folder, and **OPTIONS** changes the quality, the format and the live-stream behavior for that download only.
-- Every download shows its progress, speed and time left, and can be cancelled or retried. Downloads run one at a time. When one finishes you get a notice, and it moves to the history.
+- Every download shows its progress, speed and time left, and can be paused, resumed, cancelled or retried. Downloads run one at a time. When one finishes you get a notice, and it moves to the history.
+- **PAUSE** stops a download and keeps what was already downloaded; **RESUME** goes on from there, and a paused download leaves its place in the queue to the next one. A live recording cannot be paused (STOP & SAVE ends it). A paused download is not kept when the app is closed, although its partial files stay in the folder.
 - If something goes wrong, a clear message explains what happened, with the details one click away.
 
   ![An error explained in the queue](docs/screenshots/cyberpunk-error.png)
@@ -106,11 +107,21 @@ Where downloads are saved and how files are named, quality and format, playlists
 ## Anime
 Pullwave includes [ani-cli](https://github.com/pystardust/ani-cli) and everything it needs, so the anime section works as soon as the app is installed.
 
+### Schedule
+The first tab of ANIME shows the episodes that air, as [AniList](https://anilist.co) schedules them, as cards with the cover of each anime, in the order they air, at the time of the time zone you pick (the one of your computer to begin with).
+
+- **VIEW** switches between **DAY** (today) and **WEEK** (the seven days that start with today, one section for each day).
+- **TIME ZONE** decides where each day starts and the time shown on the cards.
+- Click a card to go to the **SEARCH** tab, which looks the anime up by its name (and by its other names, if the first finds nothing); from there you choose the anime and download its episodes as usual.
+
+What AniList says is kept for a day, so showing the same day again (or a day of a week you already looked at) does not ask it again, and it is still there when you open the app again; **REFRESH** asks again. The schedule is only AniList's: it does not say whether the source already has the episode. The names AniList and the source use may differ, in which case the search finds nothing and you can type the name yourself.
+
 ### Search and download
 ![Search](docs/screenshots/anime-search.png)
 
 - **Search** an anime, subtitled or dubbed, and click a result to see its episodes.
-- **Download** the episodes you pick, or a whole season. The DOWNLOADS button at the top shows how many are running or waiting and opens the list.
+- **Download** the episodes you pick, or a whole season. The DOWNLOADS button at the top shows how many are running or waiting and opens the list, where each download can be **paused** and resumed.
+- **Covers:** every anime in the search, the library, the history and the schedule has its cover, found at AniList by the title (a block that says COVER NOT FOUND shows when there is none). Covers are kept on your computer and checked again the first time each day.
 - **Watch without downloading:** pick an episode and press WATCH.
 
 ### Library
@@ -119,6 +130,7 @@ Pullwave includes [ani-cli](https://github.com/pystardust/ani-cli) and everythin
 Everything you downloaded, with sizes, where you stopped watching and what failed. Each episode is kept with its subtitles.
 
 - The library shows one card per series. Click it to open the series.
+- A paused episode shows as PAUSED, with a RESUME button, and stays paused when the app is closed.
 - Search the library by title, open the folder of an anime, and mark episodes as watched (an episode is also marked once you have watched most of it).
 - Go from the search to the library, and back, for the same anime (VIEW IN LIBRARY / GET MORE EPISODES).
 - Removing an episode or an anime also deletes its files.
@@ -137,6 +149,7 @@ Play and pause, seek (the arrow keys jump 5 seconds), volume, previous and next 
 
 ### Subtitles
 - Subtitles in the language of the app, or the one you choose in the ⚙ of the ANIME tab, when the source has it. Every language the source offers is saved with the episode and can be picked in the player.
+- **Watching without downloading** offers every language the source lists in the ⚙ of the player, with the one that fits the language of the app shown first.
 - **CHECK SUBTITLES** looks again for languages the episode does not have yet and adds them.
 - Language names appear in the language of the app ("Português (Brasil)").
 - **LOAD SUBTITLE** adds your own `.vtt` or `.srt` file to an episode.

@@ -126,7 +126,7 @@ test('nothing is cut, misaligned or out of its box on any screen, at any size fr
     const app = await electron.launch({
         executablePath: ELECTRON_PATH,
         args: [ROOT, '--no-sandbox', `--user-data-dir=${userData}`],
-        env: { ...process.env, PULLWAVE_ANI_CLI: FAKE_ANI_CLI, FAKE_YTDLP_LOG: join(work, 'y.log') }
+        env: { ...process.env, PULLWAVE_ANI_CLI: FAKE_ANI_CLI, PULLWAVE_ANILIST_URL: 'http://127.0.0.1:9/graphql', FAKE_YTDLP_LOG: join(work, 'y.log') }
     });
     const page = await app.firstWindow();
     const resize = async (w: number, h: number): Promise<void> => {
@@ -172,6 +172,8 @@ test('nothing is cut, misaligned or out of its box on any screen, at any size fr
     // Anime
     await resize(1366, 768);
     await page.getByRole('button', { name: 'ANIME', exact: true }).click();
+    await sweep('anime-schedule');
+    await page.getByRole('navigation', { name: 'Anime' }).getByRole('button', { name: 'SEARCH', exact: true }).click();
     await sweep('anime-search-empty');
     await page.getByLabel('Anime name').fill('fake');
     await page.getByLabel('Anime name').press('Enter');

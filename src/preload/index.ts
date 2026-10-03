@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IPC } from '@shared/constants';
-import type { AnimeJob, AnimeMigrationProgress } from '@shared/anime';
+import type { AnimeCoverUpdate, AnimeJob, AnimeMigrationProgress } from '@shared/anime';
 import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -28,6 +28,12 @@ const api: CyberApi = {
     },
     cancelJob: (id) => {
         return ipcRenderer.invoke(IPC.queueCancel, id);
+    },
+    pauseJob: (id) => {
+        return ipcRenderer.invoke(IPC.queuePause, id);
+    },
+    resumeJob: (id) => {
+        return ipcRenderer.invoke(IPC.queueResume, id);
     },
     stopJob: (id) => {
         return ipcRenderer.invoke(IPC.queueStop, id);
@@ -122,6 +128,12 @@ const api: CyberApi = {
     cancelAnimeJob: (episodeId) => {
         return ipcRenderer.invoke(IPC.animeCancel, episodeId);
     },
+    pauseAnimeJob: (episodeId) => {
+        return ipcRenderer.invoke(IPC.animePause, episodeId);
+    },
+    resumeAnimeJob: (episodeId) => {
+        return ipcRenderer.invoke(IPC.animeResume, episodeId);
+    },
     retryAnimeJob: (episodeId) => {
         return ipcRenderer.invoke(IPC.animeRetry, episodeId);
     },
@@ -167,6 +179,12 @@ const api: CyberApi = {
     closeAnimeStream: (sessionId) => {
         return ipcRenderer.invoke(IPC.animeStreamClose, sessionId);
     },
+    listAnimeSchedule: (request) => {
+        return ipcRenderer.invoke(IPC.animeSchedule, request);
+    },
+    findAnimeCover: (title) => {
+        return ipcRenderer.invoke(IPC.animeCover, title);
+    },
     onAnimeJobUpdate: (listener) => {
         return subscribe<AnimeJob>(IPC.eventAnimeJob, listener);
     },
@@ -177,6 +195,9 @@ const api: CyberApi = {
     },
     onAnimeMigrationProgress: (listener) => {
         return subscribe<AnimeMigrationProgress>(IPC.eventAnimeMigration, listener);
+    },
+    onAnimeCoverUpdate: (listener) => {
+        return subscribe<AnimeCoverUpdate>(IPC.eventAnimeCover, listener);
     },
     onJobUpdate: (listener) => {
         return subscribe<DownloadJob>(IPC.eventJobUpdate, listener);

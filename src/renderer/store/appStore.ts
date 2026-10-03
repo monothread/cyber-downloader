@@ -60,6 +60,8 @@ export interface AppState {
     init: () => Promise<() => void>;
     addUrls: (links: LinkRequest[]) => Promise<AddJobResult[]>;
     cancelJob: (id: string) => Promise<void>;
+    pauseJob: (id: string) => Promise<void>;
+    resumeJob: (id: string) => Promise<void>;
     stopJob: (id: string) => Promise<void>;
     retryJob: (id: string) => Promise<void>;
     removeJob: (id: string) => Promise<void>;
@@ -226,6 +228,14 @@ export const useAppStore = create<AppState>((set, get) => {
 
         cancelJob: async (id) => {
             await window.api.cancelJob(id);
+        },
+
+        pauseJob: async (id) => {
+            await window.api.pauseJob(id);
+        },
+
+        resumeJob: async (id) => {
+            await window.api.resumeJob(id);
         },
 
         stopJob: async (id) => {

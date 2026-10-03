@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import type { AniError, AnimeAudio, AnimeHistoryEntry, AnimeHistoryRequest, AnimeMigrationFailure, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeProgressUpdate, AnimeRecord, AnimeSearchResult, AnimeStatus, AnimeStream, LibraryAnime } from '@shared/anime';
+import type { AniError, AnimeAudio, AnimeHistoryEntry, AnimeHistoryRequest, AnimeMigrationFailure, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeProgressUpdate, AnimeRecord, AnimeScheduleEntry, AnimeSearchResult, AnimeStatus, AnimeStream, LibraryAnime } from '@shared/anime';
 import { cleanSeasonName, cleanSeriesName, isValidSeason, type SeriesChoice } from '@shared/series';
+import { machineTimeZone, zonedDayLimits } from '@shared/timezone';
 import { createTranslator, type MessageKey, type MessageParams } from '@shared/i18n';
 import { resolveAppLanguage } from '../i18n/language';
 import { useAppStore } from './appStore';
 
-export type AnimeView = 'search' | 'library' | 'history' | 'settings' | 'downloads';
+export type AnimeView = 'schedule' | 'search' | 'library' | 'history' | 'settings' | 'downloads';
 // The views the downloads screen can go back to.
 export type AnimeBrowseView = Exclude<AnimeView, 'downloads'>;
 
@@ -19,6 +20,25 @@ export interface AnimeSearchState {
     // What the results belong to: positions mean something only for the search that produced them.
     searchedQuery: string;
     searchedAudio: AnimeAudio;
+}
+
+// What is known about the cover of an anime: it was found, AniList has none, or it could not be asked for (it is asked again the next
+// time the card is shown).
+export type AnimeCoverState = { status: 'found'; url: string } | { status: 'none' } | { status: 'failed' };
+
+// How much of the schedule is shown: the day of today, or the week that starts with it.
+export type AnimeScheduleView = 'day' | 'week';
+
+// The episodes that air today or this week, by the days of a time zone.
+export interface AnimeScheduleState {
+    status: 'idle' | 'loading' | 'ready' | 'error';
+    entries: AnimeScheduleEntry[];
+    error: AniError | null;
+    view: AnimeScheduleView;
+    // The time zone the days are counted in (the one of the machine until the user picks another).
+    timeZone: string;
+    // Where each day of what is listed starts, and where the last one ends, in seconds since the epoch.
+    limits: number[];
 }
 
 export interface AnimeSelection {
@@ -58,6 +78,9 @@ export interface AnimeState {
     // What was opened or watched, the most recent first.
     history: AnimeHistoryEntry[];
     search: AnimeSearchState;
+    schedule: AnimeScheduleState;
+    // What is known so far about the cover of each anime, by its title (see `coverKey`).
+    covers: Record<string, AnimeCoverState>;
     selection: AnimeSelection | null;
     playing: PlayingEpisode | null;
     streaming: StreamingEpisode | null;
@@ -71,6 +94,15 @@ export interface AnimeState {
     setQuery: (query: string) => void;
     setAudio: (audio: AnimeAudio) => void;
     runSearch: () => Promise<void>;
+    // Looks the cover of an anime up by its title (once: what was asked is not asked again while the app is open).
+    loadCover: (title: string) => Promise<void>;
+    // Lists the episodes of the day (or of the week) in the time zone that is set.
+    // `refresh` asks AniList again instead of using what was listed in the last day.
+    loadSchedule: (refresh?: boolean) => Promise<void>;
+    setScheduleView: (view: AnimeScheduleView) => void;
+    setScheduleTimeZone: (timeZone: string) => void;
+    // Goes to the search and looks the anime of an episode of the schedule up by its names.
+    openScheduleEntry: (entry: AnimeScheduleEntry) => Promise<void>;
     openResult: (result: AnimeSearchResult) => Promise<void>;
     // Opens an anime of the library in the search, as if it had been found there, so more episodes can be downloaded.
     openLibraryAnime: (anime: Pick<AnimeRecord, 'title' | 'query' | 'searchIndex' | 'audio'>) => Promise<void>;
@@ -87,6 +119,9 @@ export interface AnimeState {
     setSeries: (animeId: number, series: string | null, season: number | null, seasonName: string | null) => Promise<AnimeSeriesResponse>;
     cancelJob: (episodeId: number) => Promise<void>;
     retryJob: (episodeId: number) => Promise<void>;
+    // Stops a download that is going on keeping what it downloaded, and goes on from there later.
+    pauseJob: (episodeId: number) => Promise<void>;
+    resumeJob: (episodeId: number) => Promise<void>;
     clearFinishedJobs: () => Promise<void>;
     removeEpisode: (episodeId: number) => Promise<void>;
     removeAnime: (animeId: number) => Promise<void>;
@@ -112,6 +147,27 @@ export const INITIAL_SEARCH: AnimeSearchState = {
     searchedQuery: '',
     searchedAudio: 'sub'
 };
+
+export const INITIAL_SCHEDULE: AnimeScheduleState = {
+    status: 'idle',
+    entries: [],
+    error: null,
+    view: 'day',
+    timeZone: machineTimeZone(),
+    limits: []
+};
+
+// The names of an anime that are tried in the search, one after the other, until one finds it.
+export const MAX_SCHEDULE_SEARCH_NAMES = 3;
+// What the covers are kept by: the title without the case and the spaces around it.
+export function coverKey(title: string): string {
+    return title.trim().toLowerCase();
+}
+
+// The covers being looked for now.
+const coversAsked = new Set<string>();
+// The last listing that was asked for: the answer of an older one is not shown.
+let scheduleRequest = 0;
 
 export const UNSUPPORTED_STATUS: AnimeStatus = { supported: false, available: false, aniCli: null };
 
@@ -165,12 +221,14 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
         status: UNSUPPORTED_STATUS,
         updatingCli: false,
         migration: null,
-        view: 'search',
-        returnView: 'search',
+        view: 'schedule',
+        returnView: 'schedule',
         jobs: [],
         library: [],
         history: [],
         search: INITIAL_SEARCH,
+        schedule: INITIAL_SCHEDULE,
+        covers: {},
         selection: null,
         playing: null,
         streaming: null,
@@ -198,6 +256,11 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
                 }),
                 api.onAnimeMigrationProgress((migration) => {
                     set({ migration });
+                }),
+                api.onAnimeCoverUpdate((update) => {
+                    set((state) => {
+                        return { covers: { ...state.covers, [coverKey(update.title)]: { status: 'found', url: update.url } } };
+                    });
                 })
             ];
             return (): void => {
@@ -271,6 +334,76 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
                 }
                 return { search: { ...state.search, status: 'error', error: response.error, searchedQuery: query, searchedAudio: audio } };
             });
+        },
+
+        loadSchedule: async (refresh = false) => {
+            const { view, timeZone } = get().schedule;
+            const limits = zonedDayLimits(Date.now(), timeZone, view === 'week' ? 7 : 1);
+            const asked = scheduleRequest + 1;
+            scheduleRequest = asked;
+            // What was listed for the same days stays on the screen while it is listed again.
+            set((state) => {
+                return { schedule: { ...state.schedule, status: 'loading', error: null, limits } };
+            });
+            const response = await window.api.listAnimeSchedule({ from: limits[0] as number, to: limits[limits.length - 1] as number, refresh });
+            // Another listing was asked for while this one was loading.
+            if (asked !== scheduleRequest) {
+                return;
+            }
+            set((state) => {
+                if (response.ok) {
+                    return { schedule: { ...state.schedule, status: 'ready', entries: response.entries, error: null } };
+                }
+                return { schedule: { ...state.schedule, status: 'error', entries: [], error: response.error } };
+            });
+        },
+
+        loadCover: async (title) => {
+            const key = coverKey(title);
+            const known = get().covers[key];
+            if (key.length === 0 || (known !== undefined && known.status !== 'failed') || coversAsked.has(key)) {
+                return;
+            }
+            coversAsked.add(key);
+            let state: AnimeCoverState;
+            try {
+                const url = await window.api.findAnimeCover(title);
+                state = url === null ? { status: 'none' } : { status: 'found', url };
+            } catch {
+                state = { status: 'failed' };
+            } finally {
+                coversAsked.delete(key);
+            }
+            set((current) => {
+                return { covers: { ...current.covers, [key]: state } };
+            });
+        },
+
+        setScheduleView: (view) => {
+            set((state) => {
+                return { schedule: { ...state.schedule, view, entries: [] } };
+            });
+        },
+
+        setScheduleTimeZone: (timeZone) => {
+            set((state) => {
+                return { schedule: { ...state.schedule, timeZone, entries: [] } };
+            });
+        },
+
+        openScheduleEntry: async (entry) => {
+            const names = (entry.names.length > 0 ? entry.names : [entry.title]).slice(0, MAX_SCHEDULE_SEARCH_NAMES);
+            set((state) => {
+                return { view: 'search', returnView: 'search', selection: null, search: { ...state.search, query: names[0] as string, status: 'idle', error: null, results: [] } };
+            });
+            for (const name of names) {
+                get().setQuery(name);
+                await get().runSearch();
+                const { search } = get();
+                if (search.status === 'done' && search.results.length > 0) {
+                    return;
+                }
+            }
         },
 
         openResult: async (result) => {
@@ -408,6 +541,14 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
 
         retryJob: async (episodeId) => {
             await window.api.retryAnimeJob(episodeId);
+        },
+
+        pauseJob: async (episodeId) => {
+            await window.api.pauseAnimeJob(episodeId);
+        },
+
+        resumeJob: async (episodeId) => {
+            await window.api.resumeAnimeJob(episodeId);
         },
 
         clearFinishedJobs: async () => {

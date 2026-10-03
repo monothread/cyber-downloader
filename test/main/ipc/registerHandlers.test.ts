@@ -60,6 +60,8 @@ function setup(animeFolderLocked?: () => boolean) {
         getJob: vi.fn(),
         cancel: vi.fn(),
         stop: vi.fn(),
+        pause: vi.fn(),
+        resume: vi.fn(),
         retry: vi.fn(),
         remove: vi.fn(),
         clearPartials: vi.fn(),
@@ -115,7 +117,7 @@ describe('registerHandlers', () => {
         const { handlers } = setup();
         expect([...handlers.keys()].sort()).toEqual(
             [
-                IPC.settingsGet, IPC.settingsSave, IPC.queueAdd, IPC.queueList, IPC.queueCancel, IPC.queueStop, IPC.queueRetry, IPC.queueClearPartials, IPC.queueRemove,
+                IPC.settingsGet, IPC.settingsSave, IPC.queueAdd, IPC.queueList, IPC.queueCancel, IPC.queuePause, IPC.queueResume, IPC.queueStop, IPC.queueRetry, IPC.queueClearPartials, IPC.queueRemove,
                 IPC.queueClearFinished, IPC.historyList, IPC.historyClear, IPC.binariesCheck, IPC.ytdlpUpdate, IPC.appUpdateGet, IPC.appUpdateCheck, IPC.appUpdateDownload, IPC.appUpdateInstall, IPC.traySupport, IPC.browsersList, IPC.streamFind, IPC.streamCancel, IPC.streamDownload, IPC.dialogChooseDir,
                 IPC.shellShowItem
             ].sort()
@@ -369,6 +371,16 @@ describe('registerHandlers', () => {
         expect(queue.cancel).toHaveBeenCalledWith('j1');
         expect(queue.retry).toHaveBeenCalledWith('j2');
         expect(queue.remove).toHaveBeenCalledWith('j3');
+    });
+
+    it('forwards pause and resume with the id, and an empty id when it is not text', () => {
+        const { call, queue } = setup();
+        call(IPC.queuePause, 'j1');
+        call(IPC.queuePause, 42);
+        call(IPC.queueResume, 'j2');
+        call(IPC.queueResume, null);
+        expect(queue.pause.mock.calls).toEqual([['j1'], ['']]);
+        expect(queue.resume.mock.calls).toEqual([['j2'], ['']]);
     });
 
     it('clears the partial files of a download by id', () => {

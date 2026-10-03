@@ -164,15 +164,29 @@ export function VideoControls({ video, subtitles, selectedSubtitle, onSelectSubt
         };
     }, [video]);
 
-    // Shows the chosen subtitle and hides the others. Run again when the list changes: the tracks are added with it.
+    // Shows the chosen subtitle and hides the others. Run again when the list changes: the tracks are added with it. The browser picks
+    // subtitles by itself too (by language, once the video's data is there), possibly after the choice was applied and not only the
+    // one that was chosen, so whenever the tracks change the choice is put back.
     useEffect(() => {
         const element = video.current;
         if (!element) {
-            return;
+            return undefined;
         }
-        Array.from(element.textTracks).forEach((track) => {
-            setTrackMode(track, track.id === selectedSubtitle ? 'showing' : 'disabled');
-        });
+        const apply = (): void => {
+            Array.from(element.textTracks).forEach((track) => {
+                const wanted: TextTrackMode = track.id === selectedSubtitle ? 'showing' : 'disabled';
+                if (track.mode !== wanted) {
+                    setTrackMode(track, wanted);
+                }
+            });
+        };
+        apply();
+        element.textTracks.addEventListener('change', apply);
+        element.textTracks.addEventListener('addtrack', apply);
+        return () => {
+            element.textTracks.removeEventListener('change', apply);
+            element.textTracks.removeEventListener('addtrack', apply);
+        };
     }, [video, subtitles, selectedSubtitle]);
 
     function togglePlay(): void {

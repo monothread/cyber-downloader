@@ -1,5 +1,7 @@
 import { useAppLanguage, useTranslator } from '../i18n/useTranslator';
 import { useAnimeStore } from '../store/animeStore';
+import { AnimeCover } from './AnimeCover';
+import { RowLink } from './RowLink';
 
 // The anime the viewer opened or watched, the most recent first. Opening one goes back to its episodes, in the search.
 export function AnimeHistory() {
@@ -36,40 +38,41 @@ export function AnimeHistory() {
                     {t('anime.history.clear')}
                 </button>
             </div>
-            <ul className="history__list">
+            <ul className="cover-grid">
                 {history.map((entry) => {
                     return (
-                        <li key={entry.id} className="history__item">
+                        <li key={entry.id} className="history__item cover-card row--link">
+                            <AnimeCover title={entry.title} />
                             <div className="history__main">
-                                <span className="history__title" title={entry.title}>
-                                    {entry.title}
+                                <span className="history__title">
+                                    <RowLink
+                                        label={t('anime.history.openLabel', { title: entry.title })}
+                                        title={entry.title}
+                                        onClick={() => {
+                                            void openAnime(entry);
+                                        }}
+                                    >
+                                        {entry.title}
+                                    </RowLink>
                                 </span>
-                                <span className="history__meta">
-                                    {entry.audio.toUpperCase()}
-                                    {entry.episode !== null && ` · ${t('anime.history.episode', { episode: entry.episode })}`} · {new Date(entry.openedAt).toLocaleString(language)}
-                                </span>
-                            </div>
-                            <div className="anime__actions">
-                                <button
-                                    type="button"
-                                    className="btn btn--small"
-                                    aria-label={t('anime.history.openLabel', { title: entry.title })}
-                                    onClick={() => {
-                                        void openAnime(entry);
-                                    }}
-                                >
-                                    {t('anime.history.open')}
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn btn--small btn--ghost"
-                                    aria-label={t('anime.history.removeLabel', { title: entry.title })}
-                                    onClick={() => {
-                                        void removeEntry(entry.id);
-                                    }}
-                                >
-                                    {t('anime.history.remove')}
-                                </button>
+                                <div className="cover-card__footer">
+                                    <span className="history__meta">
+                                        {entry.audio.toUpperCase()}
+                                        {entry.episode !== null && ` · ${t('anime.history.episode', { episode: entry.episode })}`} · {new Date(entry.openedAt).toLocaleString(language)}
+                                    </span>
+                                    <div className="anime__actions">
+                                        <button
+                                            type="button"
+                                            className="btn btn--small btn--ghost"
+                                            aria-label={t('anime.history.removeLabel', { title: entry.title })}
+                                            onClick={() => {
+                                                void removeEntry(entry.id);
+                                            }}
+                                        >
+                                            {t('anime.history.remove')}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </li>
                     );

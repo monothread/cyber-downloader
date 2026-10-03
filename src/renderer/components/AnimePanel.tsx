@@ -5,12 +5,14 @@ import { AnimeHistory } from './AnimeHistory';
 import { AnimeJobs } from './AnimeJobs';
 import { AnimeLibrary } from './AnimeLibrary';
 import { AnimePlayer } from './AnimePlayer';
+import { AnimeSchedule } from './AnimeSchedule';
 import { AnimeSearch } from './AnimeSearch';
 import { AnimeStreamPlayer } from './AnimeStreamPlayer';
 import { SettingsPanel } from './SettingsPanel';
 import { SETTINGS_ICON, TabButton } from './TabButton';
 
-const VIEWS: ReadonlyArray<{ id: AnimeBrowseView; label: 'anime.nav.search' | 'anime.nav.library' | 'anime.nav.history' | 'anime.nav.settings'; icon?: string }> = [
+const VIEWS: ReadonlyArray<{ id: AnimeBrowseView; label: 'anime.nav.schedule' | 'anime.nav.search' | 'anime.nav.library' | 'anime.nav.history' | 'anime.nav.settings'; icon?: string }> = [
+    { id: 'schedule', label: 'anime.nav.schedule' },
     { id: 'search', label: 'anime.nav.search' },
     { id: 'library', label: 'anime.nav.library' },
     { id: 'history', label: 'anime.nav.history' },
@@ -84,6 +86,7 @@ export function AnimePanel() {
                     {t('anime.jobs.label', { count: active })}
                 </button>
             </div>
+            {view === 'schedule' && <AnimeSchedule />}
             {view === 'search' && <AnimeSearch />}
             {view === 'library' && <AnimeLibrary />}
             {view === 'history' && <AnimeHistory />}

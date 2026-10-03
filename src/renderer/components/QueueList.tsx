@@ -11,6 +11,12 @@ export function QueueList() {
     const cancelJob = useAppStore((state) => {
         return state.cancelJob;
     });
+    const pauseJob = useAppStore((state) => {
+        return state.pauseJob;
+    });
+    const resumeJob = useAppStore((state) => {
+        return state.resumeJob;
+    });
     const stopJob = useAppStore((state) => {
         return state.stopJob;
     });
@@ -57,6 +63,12 @@ export function QueueList() {
                         job={job}
                         onCancel={(id) => {
                             void cancelJob(id);
+                        }}
+                        onPause={(id) => {
+                            void pauseJob(id);
+                        }}
+                        onResume={(id) => {
+                            void resumeJob(id);
                         }}
                         onStop={(id) => {
                             void stopJob(id);

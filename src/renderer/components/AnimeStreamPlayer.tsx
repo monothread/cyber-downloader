@@ -1,13 +1,11 @@
 import Hls from 'hls.js';
 import { useEffect, useRef, useState } from 'react';
 import type { AnimeStream } from '@shared/anime';
-import { useTranslator } from '../i18n/useTranslator';
+import { useAppLanguage, useTranslator } from '../i18n/useTranslator';
 import { useAnimeStore, type StreamingEpisode } from '../store/animeStore';
 import { animeErrorKey } from './animeText';
-import { VideoControls, type SubtitleOption } from './VideoControls';
-
-// The only subtitle a stream has (the one ani-cli picked).
-const STREAM_SUBTITLE_ID = 'stream';
+import { streamOptionsOf, streamTracks } from './subtitleChoice';
+import { VideoControls } from './VideoControls';
 
 // How much of the episode hls.js loads ahead of what is playing (its default is 30 seconds), so a jump to somewhere near is answered
 // from what is already loaded.
@@ -24,8 +22,10 @@ function StreamVideo({ stream }: StreamVideoProps) {
     const video = useRef<HTMLVideoElement | null>(null);
     const [failed, setFailed] = useState(false);
     const supported = Hls.isSupported();
-    const [subtitle, setSubtitle] = useState<string | null>(STREAM_SUBTITLE_ID);
-    const subtitles: SubtitleOption[] = stream.subtitleUrl === null ? [] : [{ id: STREAM_SUBTITLE_ID, label: 'Subtitles' }];
+    const language = useAppLanguage();
+    // Every subtitle the source offers, the one ani-cli picked first and shown at first.
+    const tracks = streamTracks(stream);
+    const [subtitle, setSubtitle] = useState<string | null>(tracks[0]?.id ?? null);
 
     useEffect(() => {
         const element = video.current;
@@ -54,11 +54,11 @@ function StreamVideo({ stream }: StreamVideoProps) {
             )}
             <div className="player__stage">
                 <video ref={video} className="player__video" crossOrigin="anonymous" autoPlay>
-                    {stream.subtitleUrl !== null && (
-                        <track id={STREAM_SUBTITLE_ID} kind="subtitles" src={stream.subtitleUrl} label="Subtitles" default />
-                    )}
+                    {tracks.map((track) => {
+                        return <track key={track.id} id={track.id} kind="subtitles" src={track.url} label={track.label} default={track.id === subtitle} />;
+                    })}
                 </video>
-                <VideoControls video={video} subtitles={subtitles} selectedSubtitle={subtitle} onSelectSubtitle={setSubtitle} />
+                <VideoControls video={video} subtitles={streamOptionsOf(tracks, language)} selectedSubtitle={subtitle} onSelectSubtitle={setSubtitle} />
             </div>
         </>
     );

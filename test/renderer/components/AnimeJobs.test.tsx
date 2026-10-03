@@ -127,3 +127,75 @@ describe('AnimeJobs', () => {
         expect(screen.getByRole('button', { name: 'CLEAR FINISHED' })).toBeInTheDocument();
     });
 });
+
+describe('AnimeJobs pause and resume', () => {
+    it('offers PAUSE for a download that is going on, and pauses it by the episode', async () => {
+        const user = userEvent.setup();
+        useAnimeStore.setState({ jobs: [makeAnimeJob({ episodeId: 7, status: 'running' })] });
+        render(<AnimeJobs />);
+
+        await user.click(screen.getByRole('button', { name: 'PAUSE' }));
+
+        expect(mock.api.pauseAnimeJob).toHaveBeenCalledTimes(1);
+        expect(mock.api.pauseAnimeJob).toHaveBeenCalledWith(7);
+        expect(screen.getByRole('button', { name: 'CANCEL' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'RESUME' })).not.toBeInTheDocument();
+    });
+
+    it.each(['queued', 'done', 'error', 'cancelled'] as const)('does not offer PAUSE for a download that is %s', (status) => {
+        useAnimeStore.setState({ jobs: [makeAnimeJob({ status })] });
+        render(<AnimeJobs />);
+
+        expect(screen.queryByRole('button', { name: 'PAUSE' })).not.toBeInTheDocument();
+    });
+
+    it('shows a paused download as PAUSED, with its progress, and offers RESUME and CANCEL', async () => {
+        const user = userEvent.setup();
+        useAnimeStore.setState({ jobs: [makeAnimeJob({ episodeId: 9, status: 'paused', percent: 61.5, speed: '', eta: '' })] });
+        render(<AnimeJobs />);
+
+        const job = screen.getByTestId('anime-job');
+        expect(job).toHaveClass('job', 'job--paused');
+        expect(within(job).getByText('PAUSED')).toHaveClass('badge', 'badge--paused');
+        expect(within(job).getByText('61.5%')).toBeInTheDocument();
+        await user.click(within(job).getByRole('button', { name: 'RESUME' }));
+        expect(mock.api.resumeAnimeJob).toHaveBeenCalledTimes(1);
+        expect(mock.api.resumeAnimeJob).toHaveBeenCalledWith(9);
+        await user.click(within(job).getByRole('button', { name: 'CANCEL' }));
+        expect(mock.api.cancelAnimeJob).toHaveBeenCalledWith(9);
+        expect(within(job).queryByRole('button', { name: 'PAUSE' })).not.toBeInTheDocument();
+        expect(within(job).queryByRole('button', { name: 'RETRY' })).not.toBeInTheDocument();
+    });
+
+    it('does not offer RESUME for a download that is not paused', () => {
+        useAnimeStore.setState({ jobs: [makeAnimeJob({ status: 'running' })] });
+        render(<AnimeJobs />);
+
+        expect(screen.queryByRole('button', { name: 'RESUME' })).not.toBeInTheDocument();
+    });
+
+    it('orders the paused downloads after the running ones and before the waiting ones', () => {
+        useAnimeStore.setState({
+            jobs: [
+                makeAnimeJob({ episodeId: 1, episode: '1', status: 'queued' }),
+                makeAnimeJob({ episodeId: 2, episode: '2', status: 'paused' }),
+                makeAnimeJob({ episodeId: 3, episode: '3', status: 'running' }),
+                makeAnimeJob({ episodeId: 4, episode: '4', status: 'done' })
+            ]
+        });
+        render(<AnimeJobs />);
+
+        expect(
+            screen.getAllByRole('heading', { level: 3 }).map((heading) => {
+                return heading.textContent;
+            })
+        ).toEqual(['Naruto · EP 3', 'Naruto · EP 2', 'Naruto · EP 1', 'Naruto · EP 4']);
+    });
+
+    it('does not count a paused download as finished for the button that clears them', () => {
+        useAnimeStore.setState({ jobs: [makeAnimeJob({ status: 'paused' })] });
+        render(<AnimeJobs />);
+
+        expect(screen.queryByRole('button', { name: 'CLEAR FINISHED' })).not.toBeInTheDocument();
+    });
+});

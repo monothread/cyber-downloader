@@ -2068,3 +2068,426 @@ describe('QueueManager download options', () => {
         expect(runs[0]?.args).toEqual(buildYtdlpArgs(URL_A, effective({ maxResolution: '1080' }), '/dl', '/bundled/bin', { downloadDir: '/media/videos' }));
     });
 });
+
+describe('QueueManager pause and resume', () => {
+    const FILE = '/dl/Video A [abc].mp4';
+    const PARTIALS = [`${FILE}.part`, '/dl/Video A [abc].f137.mp4.part', `${FILE}.ytdl`];
+
+    function setupWithPartials(settings: Partial<Settings> = {}) {
+        const findPartialFiles = vi.fn((finalPath: string) => {
+            return finalPath === FILE ? PARTIALS : [];
+        });
+        const deleteFiles = vi.fn();
+        return { ...setup(settings, { findPartialFiles, deleteFiles }), findPartialFiles, deleteFiles };
+    }
+
+    async function startAndPause(result: ReturnType<typeof setupWithPartials>): Promise<void> {
+        result.queue.add(URL_A);
+        result.runs[0]?.onInfo({ live: false, filePath: FILE });
+        result.runs[0]?.onProgress(progress({ percent: 42.5, speed: '1MiB/s', eta: '00:10', title: 'Video A' }));
+        result.queue.pause('job-1');
+        await flush();
+    }
+
+    describe('pause', () => {
+        it('ends the run of a download that is going on, as a cancel does, and not the other way', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+
+            queue.pause('job-1');
+
+            expect(runs[0]?.cancel).toHaveBeenCalledTimes(1);
+            expect(runs[0]?.stop).not.toHaveBeenCalled();
+        });
+
+        it('leaves the download paused, with the percent it had and no speed or time, instead of cancelled', async () => {
+            const result = setupWithPartials();
+
+            await startAndPause(result);
+
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'paused', percent: 42.5, speed: '', eta: '', error: null });
+        });
+
+        it('keeps the partial files, so the download can go on from them, whatever the setting says', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: true });
+
+            await startAndPause(result);
+
+            expect(result.findPartialFiles).toHaveBeenCalledWith(FILE);
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+            expect(result.queue.getJob('job-1')?.hasPartial).toBe(true);
+        });
+
+        it('says there is no partial file when yt-dlp had not written one yet', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.onInfo({ live: false, filePath: '/dl/other.mp4' });
+
+            result.queue.pause('job-1');
+            await flush();
+
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'paused', hasPartial: false });
+        });
+
+        it('does not record it in the history: it is not over', async () => {
+            const result = setupWithPartials();
+
+            await startAndPause(result);
+
+            expect(result.history).toEqual([]);
+            expect(result.onHistoryChanged).not.toHaveBeenCalled();
+        });
+
+        it('tells the screen, in the update, that the card is paused', async () => {
+            const result = setupWithPartials();
+
+            await startAndPause(result);
+
+            expect(result.updates.at(-1)).toMatchObject({ id: 'job-1', status: 'paused', percent: 42.5, speed: '', eta: '' });
+        });
+
+        it('frees its place in the queue for the next download', async () => {
+            const { queue, runs } = setup({ maxConcurrent: 1 });
+            queue.add(URL_A);
+            queue.add(URL_B);
+            expect(runs).toHaveLength(1);
+
+            queue.pause('job-1');
+            await flush();
+
+            expect(runs).toHaveLength(2);
+            expect(runs[1]?.args).toContain(URL_B);
+            expect(queue.list().map((job) => {
+                return job.status;
+            })).toEqual(['paused', 'running']);
+        });
+
+        it('does nothing for a download that is waiting for its turn: it has no run to end', () => {
+            const { queue, runs } = setup({ maxConcurrent: 1 });
+            queue.add(URL_A);
+            queue.add(URL_B);
+            const before = queue.list();
+
+            queue.pause('job-2');
+
+            expect(queue.list()).toEqual(before);
+            expect(runs).toHaveLength(1);
+            expect(runs[0]?.cancel).not.toHaveBeenCalled();
+        });
+
+        it('does nothing for a download that is over, or one that does not exist', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+            runs[0]?.resolve({ status: 'done', filePath: '/dl/a.mp4' });
+            await flush();
+
+            queue.pause('job-1');
+            queue.pause('missing');
+            await flush();
+
+            expect(queue.list()[0]?.status).toBe('done');
+            expect(runs[0]?.cancel).not.toHaveBeenCalled();
+        });
+
+        it('does not pause a live recording: it is stopped and saved instead', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+            runs[0]?.onInfo({ live: true, filePath: '/dl/live.mp4' });
+
+            queue.pause('job-1');
+            await flush();
+
+            expect(runs[0]?.cancel).not.toHaveBeenCalled();
+            expect(queue.list()[0]?.status).toBe('running');
+            expect(queue.canPause(queue.getJob('job-1') as DownloadJob)).toBe(false);
+        });
+
+        it('does not pause a download that waits for a live stream to start', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+            runs[0]?.onWaiting?.();
+
+            queue.pause('job-1');
+            await flush();
+
+            expect(runs[0]?.cancel).not.toHaveBeenCalled();
+            expect(queue.list()[0]?.waitingForLive).toBe(true);
+        });
+
+        it('does not pause a download that is already converting or joining its file', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+            runs[0]?.onPostProcess?.({ status: 'started', processor: 'Merger' });
+
+            queue.pause('job-1');
+            await flush();
+
+            expect(runs[0]?.cancel).not.toHaveBeenCalled();
+            expect(queue.list()[0]?.status).toBe('running');
+        });
+
+        it('can pause a download that is going on and is not any of those', () => {
+            const { queue } = setup();
+            queue.add(URL_A);
+
+            expect(queue.canPause(queue.getJob('job-1') as DownloadJob)).toBe(true);
+        });
+
+        it('cannot pause a download that is queued, paused or over', async () => {
+            const { queue, runs } = setup({ maxConcurrent: 1 });
+            queue.add(URL_A);
+            queue.add(URL_B);
+            expect(queue.canPause(queue.getJob('job-2') as DownloadJob)).toBe(false);
+            queue.pause('job-1');
+            await flush();
+            expect(queue.canPause(queue.getJob('job-1') as DownloadJob)).toBe(false);
+            runs[1]?.resolve({ status: 'done', filePath: null });
+            await flush();
+            expect(queue.canPause(queue.getJob('job-2') as DownloadJob)).toBe(false);
+        });
+
+        it('ends as done when the download finished before the pause could end it', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+            (runs[0]?.cancel as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                return undefined;
+            });
+
+            queue.pause('job-1');
+            runs[0]?.resolve({ status: 'done', filePath: '/dl/a.mp4' });
+            await flush();
+
+            expect(queue.list()[0]).toMatchObject({ status: 'done', filePath: '/dl/a.mp4' });
+        });
+
+        it('does not turn a later cancel of the same card into a pause', async () => {
+            const { queue, runs } = setup();
+            queue.add(URL_A);
+            (runs[0]?.cancel as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                return undefined;
+            });
+            queue.pause('job-1');
+            runs[0]?.resolve({ status: 'done', filePath: '/dl/a.mp4' });
+            await flush();
+            queue.retry('job-1');
+            queue.cancel('job-1');
+            await flush();
+
+            expect(queue.list()[0]?.status).toBe('done');
+        });
+
+        it('is not counted as pending: closing the app does not wait for, or ask about, a paused download', async () => {
+            const result = setupWithPartials();
+
+            await startAndPause(result);
+
+            expect(result.queue.pendingCount()).toBe(0);
+            expect(result.queue.list()).toHaveLength(1);
+        });
+    });
+
+    describe('resume', () => {
+        it('puts the paused download back in the queue and starts it again with the same arguments', async () => {
+            const result = setupWithPartials();
+            await startAndPause(result);
+
+            result.queue.resume('job-1');
+
+            expect(result.runs).toHaveLength(2);
+            expect(result.runs[1]?.args).toEqual(result.runs[0]?.args);
+            expect(result.runs[1]?.binary).toBe(result.runs[0]?.binary);
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'running', percent: 42.5 });
+        });
+
+        it('goes to queued first, and then to running, in the updates', async () => {
+            const result = setupWithPartials();
+            await startAndPause(result);
+            result.updates.length = 0;
+
+            result.queue.resume('job-1');
+
+            expect(result.updates.map((job) => {
+                return job.status;
+            })).toEqual(['queued', 'running']);
+        });
+
+        it('waits for its turn when the queue is full', async () => {
+            const { queue, runs } = setup({ maxConcurrent: 1 });
+            queue.add(URL_A);
+            queue.pause('job-1');
+            await flush();
+            queue.add(URL_B);
+            expect(runs).toHaveLength(2);
+
+            queue.resume('job-1');
+
+            expect(runs).toHaveLength(2);
+            expect(queue.getJob('job-1')?.status).toBe('queued');
+            runs[1]?.resolve({ status: 'done', filePath: null });
+            await flush();
+            expect(runs).toHaveLength(3);
+            expect(queue.getJob('job-1')?.status).toBe('running');
+        });
+
+        it('finishes like any other download, and records it in the history', async () => {
+            const result = setupWithPartials();
+            await startAndPause(result);
+            result.queue.resume('job-1');
+
+            result.runs[1]?.resolve({ status: 'done', filePath: FILE });
+            await flush();
+
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'done', filePath: FILE, percent: 100 });
+            expect(result.history).toHaveLength(1);
+            expect(result.history[0]).toMatchObject({ id: 'job-1', status: 'done', filePath: FILE });
+        });
+
+        it('can be paused again after it was resumed', async () => {
+            const result = setupWithPartials();
+            await startAndPause(result);
+            result.queue.resume('job-1');
+
+            result.queue.pause('job-1');
+            await flush();
+
+            expect(result.runs[1]?.cancel).toHaveBeenCalledTimes(1);
+            expect(result.queue.getJob('job-1')?.status).toBe('paused');
+        });
+
+        it('fails like any other download when it cannot go on, and keeps the partial files for a retry', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: false });
+            await startAndPause(result);
+            result.queue.resume('job-1');
+
+            result.runs[1]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+            await flush();
+
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'error', error: DOWNLOAD_ERROR, hasPartial: true });
+        });
+
+        it.each(['queued', 'running', 'done', 'cancelled', 'error'] as const)('does nothing for a download that is %s', async (state) => {
+            const { queue, runs } = setup({ maxConcurrent: 1 });
+            queue.add(URL_A);
+            if (state === 'queued') {
+                queue.add(URL_B);
+            }
+            if (state === 'done') {
+                runs[0]?.resolve({ status: 'done', filePath: null });
+                await flush();
+            }
+            if (state === 'cancelled') {
+                queue.cancel('job-1');
+                await flush();
+            }
+            if (state === 'error') {
+                runs[0]?.resolve({ status: 'error', error: DOWNLOAD_ERROR });
+                await flush();
+            }
+            const target = state === 'queued' ? 'job-2' : 'job-1';
+            const before = queue.list();
+            const runCount = runs.length;
+
+            queue.resume(target);
+
+            expect(queue.list()).toEqual(before);
+            expect(runs).toHaveLength(runCount);
+        });
+
+        it('does nothing for a download that does not exist', () => {
+            const { queue, runs } = setup();
+
+            queue.resume('missing');
+
+            expect(runs).toHaveLength(0);
+        });
+    });
+
+    describe('cancel, remove and clear on a paused download', () => {
+        it('cancels it, deleting the partial files when the setting is on', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: true });
+            await startAndPause(result);
+
+            result.queue.cancel('job-1');
+
+            expect(result.deleteFiles).toHaveBeenCalledTimes(1);
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS);
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'cancelled', hasPartial: false, speed: '', eta: '' });
+            expect(result.runs[0]?.cancel).toHaveBeenCalledTimes(1);
+        });
+
+        it('cancels it, keeping the partial files when the setting is off, and says they are there', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: false });
+            await startAndPause(result);
+
+            result.queue.cancel('job-1');
+
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'cancelled', hasPartial: true });
+        });
+
+        it('can be retried after it was cancelled', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: false });
+            await startAndPause(result);
+            result.queue.cancel('job-1');
+
+            result.queue.retry('job-1');
+
+            expect(result.runs).toHaveLength(2);
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'running', percent: 0 });
+        });
+
+        it('removes the card and deletes the partial files with it', async () => {
+            const result = setupWithPartials({ deletePartialsOnFailure: false });
+            await startAndPause(result);
+
+            result.queue.remove('job-1');
+
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS);
+            expect(result.queue.list()).toEqual([]);
+            expect(result.removed).toEqual(['job-1']);
+        });
+
+        it('removes a card that was being paused, and deletes what it left', async () => {
+            const result = setupWithPartials();
+            result.queue.add(URL_A);
+            result.runs[0]?.onInfo({ live: false, filePath: FILE });
+            result.queue.pause('job-1');
+
+            result.queue.remove('job-1');
+            await flush();
+
+            expect(result.queue.list()).toEqual([]);
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS);
+        });
+
+        it('lets the partial files of a paused download be cleared without losing the card', async () => {
+            const result = setupWithPartials();
+            await startAndPause(result);
+
+            result.queue.clearPartials('job-1');
+
+            expect(result.deleteFiles).toHaveBeenCalledWith(PARTIALS);
+            expect(result.queue.getJob('job-1')).toMatchObject({ status: 'paused', hasPartial: false });
+        });
+
+        it('is not removed by the bulk clear of what is finished', async () => {
+            const result = setupWithPartials();
+            await startAndPause(result);
+
+            result.queue.clearFinished();
+
+            expect(result.queue.list()).toHaveLength(1);
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+        });
+
+        it('is left alone when the app is closed: nothing is running for it', async () => {
+            const result = setupWithPartials();
+            await startAndPause(result);
+
+            await result.queue.shutdown();
+
+            expect(result.queue.getJob('job-1')?.status).toBe('paused');
+            expect(result.deleteFiles).not.toHaveBeenCalled();
+        });
+    });
+});

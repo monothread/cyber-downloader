@@ -86,6 +86,12 @@ export function registerHandlers(deps: HandlerDependencies): void {
     ipcMain.handle(IPC.queueCancel, (_event, id): void => {
         queue.cancel(asString(id));
     });
+    ipcMain.handle(IPC.queuePause, (_event, id): void => {
+        queue.pause(asString(id));
+    });
+    ipcMain.handle(IPC.queueResume, (_event, id): void => {
+        queue.resume(asString(id));
+    });
     ipcMain.handle(IPC.queueStop, (_event, id): void => {
         queue.stop(asString(id));
     });

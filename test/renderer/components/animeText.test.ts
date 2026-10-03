@@ -49,6 +49,7 @@ describe('animeStatusKey', () => {
         ['queued', 'anime.status.queued'],
         ['downloading', 'anime.status.downloading'],
         ['running', 'anime.status.downloading'],
+        ['paused', 'anime.status.paused'],
         ['done', 'anime.status.done'],
         ['error', 'anime.status.error'],
         ['cancelled', 'anime.status.cancelled']
