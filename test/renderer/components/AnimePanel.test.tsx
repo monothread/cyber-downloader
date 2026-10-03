@@ -3,6 +3,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import { AnimePanel } from '@renderer/components/AnimePanel';
+import { SETTINGS_ICON } from '@renderer/components/TabButton';
 import { INITIAL_SEARCH, useAnimeStore } from '@renderer/store/animeStore';
 import { useAppStore } from '@renderer/store/appStore';
 import { makeAnime, makeAnimeJob, makeEpisode, makeStatus } from '../../helpers/animeFixtures';
@@ -59,6 +60,57 @@ describe('AnimePanel', () => {
 
         await user.click(within(subNav()).getByRole('button', { name: 'SEARCH' }));
         expect(screen.getByLabelText('Anime name')).toBeInTheDocument();
+    });
+
+    it('has a history and settings between the library and the downloads button, and shows the history in place of the search', async () => {
+        const user = userEvent.setup();
+        useAnimeStore.setState({ history: [{ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'dub', episode: '3', openedAt: 1700000000000 }] });
+        render(<AnimePanel />);
+        expect(
+            within(subNav())
+                .getAllByRole('button')
+                .map((button) => {
+                    return button.getAttribute('aria-label') ?? button.textContent;
+                })
+        ).toEqual(['SEARCH', 'LIBRARY', 'HISTORY', 'SETTINGS']);
+        // The settings are a gear at the right end of the bar, not a word.
+        const settings = within(subNav()).getByRole('button', { name: 'SETTINGS' });
+        expect(settings).toHaveClass('tab--icon');
+        expect(settings).toHaveTextContent(SETTINGS_ICON);
+        expect(settings).not.toHaveTextContent('SETTINGS');
+        expect(settings).toHaveAttribute('title', 'SETTINGS');
+
+        await user.click(within(subNav()).getByRole('button', { name: 'HISTORY' }));
+        expect(within(subNav()).getByRole('button', { name: 'HISTORY' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByRole('region', { name: 'Anime history' })).toBeInTheDocument();
+        expect(screen.getByText('Naruto')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Anime name')).not.toBeInTheDocument();
+        expect(useAnimeStore.getState()).toMatchObject({ view: 'history', returnView: 'history' });
+    });
+
+    it('shows the settings of the anime section, and only them, in place of the search', async () => {
+        const user = userEvent.setup();
+        render(<AnimePanel />);
+
+        await user.click(within(subNav()).getByRole('button', { name: 'SETTINGS' }));
+        expect(within(subNav()).getByRole('button', { name: 'SETTINGS' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByRole('region', { name: 'Settings' })).toBeInTheDocument();
+        expect(screen.getByText('ANIME')).toBeInTheDocument();
+        expect(screen.getByLabelText('Anime download folder')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'UPDATE ANI-CLI' })).toBeInTheDocument();
+        ['APPEARANCE & WINDOW', 'OUTPUT', 'QUALITY & FORMAT', 'YT-DLP', 'ADVANCED'].forEach((legend) => {
+            expect(screen.queryByText(legend)).not.toBeInTheDocument();
+        });
+        expect(screen.queryByLabelText('Anime name')).not.toBeInTheDocument();
+        expect(useAnimeStore.getState()).toMatchObject({ view: 'settings', returnView: 'settings' });
+    });
+
+    it('has no settings to reach while the tools of the section are missing', () => {
+        useAnimeStore.setState({ status: makeStatus({ available: false }), view: 'settings' });
+        render(<AnimePanel />);
+        expect(screen.getByRole('alert')).toHaveTextContent('ANIME TOOLS NOT FOUND');
+        expect(screen.queryByRole('region', { name: 'Settings' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
     });
 
     describe('downloads', () => {

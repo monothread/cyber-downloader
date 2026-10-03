@@ -1,11 +1,11 @@
 import { create } from 'zustand';
-import type { AniError, AnimeAudio, AnimeMigrationFailure, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeProgressUpdate, AnimeSearchResult, AnimeStatus, AnimeStream, LibraryAnime } from '@shared/anime';
+import type { AniError, AnimeAudio, AnimeHistoryEntry, AnimeHistoryRequest, AnimeMigrationFailure, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeProgressUpdate, AnimeRecord, AnimeSearchResult, AnimeStatus, AnimeStream, LibraryAnime } from '@shared/anime';
 import { cleanSeasonName, cleanSeriesName, isValidSeason, type SeriesChoice } from '@shared/series';
 import { createTranslator, type MessageKey, type MessageParams } from '@shared/i18n';
 import { resolveAppLanguage } from '../i18n/language';
 import { useAppStore } from './appStore';
 
-export type AnimeView = 'search' | 'library' | 'downloads';
+export type AnimeView = 'search' | 'library' | 'history' | 'settings' | 'downloads';
 // The views the downloads screen can go back to.
 export type AnimeBrowseView = Exclude<AnimeView, 'downloads'>;
 
@@ -55,6 +55,8 @@ export interface AnimeState {
     returnView: AnimeBrowseView;
     jobs: AnimeJob[];
     library: LibraryAnime[];
+    // What was opened or watched, the most recent first.
+    history: AnimeHistoryEntry[];
     search: AnimeSearchState;
     selection: AnimeSelection | null;
     playing: PlayingEpisode | null;
@@ -71,7 +73,7 @@ export interface AnimeState {
     runSearch: () => Promise<void>;
     openResult: (result: AnimeSearchResult) => Promise<void>;
     // Opens an anime of the library in the search, as if it had been found there, so more episodes can be downloaded.
-    openLibraryAnime: (anime: LibraryAnime) => Promise<void>;
+    openLibraryAnime: (anime: Pick<AnimeRecord, 'title' | 'query' | 'searchIndex' | 'audio'>) => Promise<void>;
     // Asks for a folder of anime and puts what is in it into the library, then says what it did.
     importLibrary: () => Promise<void>;
     // Moves all the anime to a folder the user chooses, then says how it went. Returns what the migration answered.
@@ -96,6 +98,9 @@ export interface AnimeState {
     // Marks an episode of the library as watched (or not), keeping the position it was left at.
     setWatched: (episodeId: number, watched: boolean) => Promise<void>;
     refreshLibrary: () => Promise<void>;
+    refreshHistory: () => Promise<void>;
+    removeHistoryEntry: (id: number) => Promise<void>;
+    clearHistory: () => Promise<void>;
 }
 
 export const INITIAL_SEARCH: AnimeSearchState = {
@@ -117,6 +122,18 @@ export function effectiveAudio(search: AnimeSearchState, settingsAudio: AnimeAud
 
 function translateNow(key: MessageKey, params?: MessageParams): string {
     return createTranslator(resolveAppLanguage(useAppStore.getState().settings.language))(key, params);
+}
+
+// Keeps what was opened or watched in the history, then reads it again. It never stops what the viewer is doing.
+function recordHistory(request: AnimeHistoryRequest): void {
+    void window.api
+        .recordAnimeHistory(request)
+        .then(() => {
+            return useAnimeStore.getState().refreshHistory();
+        })
+        .catch(() => {
+            return undefined;
+        });
 }
 
 function notify(kind: 'error' | 'info', message: string): void {
@@ -152,6 +169,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
         returnView: 'search',
         jobs: [],
         library: [],
+        history: [],
         search: INITIAL_SEARCH,
         selection: null,
         playing: null,
@@ -167,8 +185,8 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
                     return undefined;
                 };
             }
-            const [library, jobs] = await Promise.all([api.listAnimeLibrary(), api.listAnimeJobs()]);
-            set({ library, jobs });
+            const [library, jobs, history] = await Promise.all([api.listAnimeLibrary(), api.listAnimeJobs(), api.listAnimeHistory()]);
+            set({ library, jobs, history });
             const unsubscribers = [
                 api.onAnimeJobUpdate((job) => {
                     set((state) => {
@@ -266,6 +284,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
                 error: null
             };
             set({ selection });
+            recordHistory({ title: result.title, query: selection.query, index: result.index, audio: selection.audio, episode: null });
             const response = await window.api.listAnimeEpisodes(selection.query, result.index, selection.audio);
             set((state) => {
                 // The user may have gone back or opened another result while this one was loading.
@@ -420,6 +439,15 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
 
         play: (animeId, episodeId) => {
             set({ playing: { animeId, episodeId } });
+            const anime = get().library.find((candidate) => {
+                return candidate.id === animeId;
+            });
+            const episode = anime?.episodes.find((candidate) => {
+                return candidate.id === episodeId;
+            });
+            if (anime && episode) {
+                recordHistory({ title: anime.title, query: anime.query, index: anime.searchIndex, audio: anime.audio, episode: episode.number });
+            }
         },
 
         closePlayer: () => {
@@ -433,6 +461,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
             }
             const loading: StreamingEpisode = { title: selection.result.title, episode, status: 'loading', stream: null, error: null };
             set({ streaming: loading });
+            recordHistory({ title: selection.result.title, query: selection.query, index: selection.result.index, audio: selection.audio, episode });
             const response = await window.api.openAnimeStream({ query: selection.query, index: selection.result.index, audio: selection.audio, episode });
             // The user may have closed the player (or started another episode) while the video was being found.
             if (get().streaming !== loading) {
@@ -473,6 +502,20 @@ export const useAnimeStore = create<AnimeState>((set, get) => {
 
         refreshLibrary: async () => {
             set({ library: await window.api.listAnimeLibrary() });
+        },
+
+        refreshHistory: async () => {
+            set({ history: await window.api.listAnimeHistory() });
+        },
+
+        removeHistoryEntry: async (id) => {
+            await window.api.removeAnimeHistory(id);
+            await get().refreshHistory();
+        },
+
+        clearHistory: async () => {
+            await window.api.clearAnimeHistory();
+            set({ history: [] });
         }
     };
 });

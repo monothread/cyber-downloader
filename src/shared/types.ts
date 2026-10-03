@@ -2,6 +2,8 @@ import type {
     AnimeDownloadRequest,
     AnimeDownloadResponse,
     AnimeEpisodesResponse,
+    AnimeHistoryEntry,
+    AnimeHistoryRequest,
     AnimeImportResponse,
     AnimeJob,
     AnimeMigrationProgress,
@@ -293,6 +295,10 @@ export interface CyberApi {
     listAnimeEpisodes: (query: string, index: number, audio: AnimeAudio) => Promise<AnimeEpisodesResponse>;
     downloadAnime: (request: AnimeDownloadRequest) => Promise<AnimeDownloadResponse>;
     listAnimeLibrary: () => Promise<LibraryAnime[]>;
+    listAnimeHistory: () => Promise<AnimeHistoryEntry[]>;
+    recordAnimeHistory: (request: AnimeHistoryRequest) => Promise<void>;
+    removeAnimeHistory: (id: number) => Promise<void>;
+    clearAnimeHistory: () => Promise<void>;
     listAnimeJobs: () => Promise<AnimeJob[]>;
     cancelAnimeJob: (episodeId: number) => Promise<void>;
     retryAnimeJob: (episodeId: number) => Promise<void>;

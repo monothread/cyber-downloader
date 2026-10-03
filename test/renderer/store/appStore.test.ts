@@ -9,7 +9,7 @@ const initial = useAppStore.getState();
 
 beforeEach(() => {
     mock = installMockApi();
-    useAppStore.setState({ ...initial, jobs: [], history: [], settings: DEFAULT_SETTINGS, binaries: null, notice: null, noticeQueue: [], updating: false, appUpdate: INITIAL_APP_UPDATE, traySupport: null, streamSearches: {}, tab: 'downloads' });
+    useAppStore.setState({ ...initial, jobs: [], history: [], settings: DEFAULT_SETTINGS, binaries: null, notice: null, noticeQueue: [], updating: false, appUpdate: INITIAL_APP_UPDATE, traySupport: null, streamSearches: {}, tab: 'downloads', downloadsView: 'queue' });
 });
 
 const HISTORY_ENTRY: HistoryEntry = { id: 'h1', url: 'https://x.com', title: 'T', filePath: '/d/T.mp4', status: 'done', errorTitle: null, finishedAt: 5 };
@@ -28,15 +28,24 @@ describe('upsertJob', () => {
 describe('useAppStore basics', () => {
     it('has the expected initial state', () => {
         expect(initial.tab).toBe('downloads');
+        expect(initial.downloadsView).toBe('queue');
         expect(initial.jobs).toEqual([]);
         expect(initial.binaries).toBeNull();
         expect(initial.notice).toBeNull();
     });
 
+    it('sets the screen of the video downloader', () => {
+        useAppStore.getState().setDownloadsView('history');
+        expect(useAppStore.getState().downloadsView).toBe('history');
+        expect(useAppStore.getState().tab).toBe('downloads');
+        useAppStore.getState().setDownloadsView('queue');
+        expect(useAppStore.getState().downloadsView).toBe('queue');
+    });
+
     it('sets the tab and the notice', () => {
-        useAppStore.getState().setTab('history');
+        useAppStore.getState().setTab('settings');
         useAppStore.getState().setNotice({ kind: 'info', message: 'hi' });
-        expect(useAppStore.getState().tab).toBe('history');
+        expect(useAppStore.getState().tab).toBe('settings');
         expect(useAppStore.getState().notice).toEqual({ kind: 'info', message: 'hi' });
         useAppStore.getState().setNotice(null);
         expect(useAppStore.getState().notice).toBeNull();

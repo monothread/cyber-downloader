@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { AniRunResult, AnimeImportResponse, AnimeMigrationResponse, AnimeSearchResult, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { ResolvedStream } from '@main/services/aniStream';
 import { IPC } from '@shared/constants';
-import { MAX_EPISODES_PER_REQUEST, MAX_TEXT_LENGTH, parseDownloadRequest, parseProgress, registerAnimeHandlers, type AnimeHandlerDependencies } from '@main/ipc/registerAnimeHandlers';
+import { MAX_EPISODES_PER_REQUEST, MAX_TEXT_LENGTH, parseDownloadRequest, parseHistoryRequest, parseProgress, registerAnimeHandlers, type AnimeHandlerDependencies } from '@main/ipc/registerAnimeHandlers';
 import type { IpcMainLike } from '@main/ipc/registerHandlers';
 import { AnimeDb } from '@main/services/animeDb';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
@@ -40,6 +40,10 @@ const ANIME_CHANNELS = [
     IPC.animeClearFinished,
     IPC.animeDownload,
     IPC.animeEpisodes,
+    IPC.animeHistoryClear,
+    IPC.animeHistoryList,
+    IPC.animeHistoryRecord,
+    IPC.animeHistoryRemove,
     IPC.animeImportLibrary,
     IPC.animeJobs,
     IPC.animeLibrary,
@@ -887,13 +891,14 @@ describe('registerAnimeHandlers where the section does not exist', () => {
         expect(ipc.call(IPC.animeDownload, {})).toEqual({ ok: false, message: unsupported.raw });
         expect(ipc.call(IPC.animeLibrary)).toEqual([]);
         expect(ipc.call(IPC.animeJobs)).toEqual([]);
+        expect(ipc.call(IPC.animeHistoryList)).toEqual([]);
         expect(ipc.call(IPC.animeStreamOpen, {})).toEqual({ ok: false, error: unsupported });
         expect(ipc.call(IPC.animeImportLibrary)).toEqual({ ok: false, reason: 'cancelled' });
         expect(ipc.call(IPC.animeMigrateFolder)).toEqual({ ok: false, reason: 'failed' });
         expect(ipc.call(IPC.animeSetSeries, 1, 'Frieren', 1)).toEqual({ ok: false, reason: 'invalid' });
         expect(ipc.call(IPC.animeSubtitles, 1)).toEqual([]);
         expect(ipc.call(IPC.animeSubtitleImport, 1)).toEqual({ ok: false, reason: 'missing' });
-        [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose].forEach((channel) => {
+        [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose, IPC.animeHistoryRecord, IPC.animeHistoryRemove, IPC.animeHistoryClear].forEach((channel) => {
             expect(ipc.call(channel, 1)).toBeUndefined();
         });
     });
@@ -992,5 +997,85 @@ describe('parseProgress', () => {
         expect(parseProgress({ ...valid, durationSeconds: Number.POSITIVE_INFINITY })).toBeNull();
         expect(parseProgress({ ...valid, positionSeconds: -1 })).toBeNull();
         expect(parseProgress({ ...valid, durationSeconds: -1 })).toBeNull();
+    });
+});
+
+describe('the history of the anime section', () => {
+    const opened = { title: 'Naruto', query: 'naruto', index: 2, audio: 'sub', episode: null };
+
+    it('starts empty', () => {
+        expect(setup().call(IPC.animeHistoryList)).toEqual([]);
+    });
+
+    it('keeps what the screen records, most recent first', () => {
+        const { call } = setup();
+        call(IPC.animeHistoryRecord, opened);
+        call(IPC.animeHistoryRecord, { title: 'Bleach', query: 'bleach', index: 0, audio: 'dub', episode: '12' });
+
+        expect(call(IPC.animeHistoryList)).toEqual([
+            { id: 2, title: 'Bleach', query: 'bleach', searchIndex: 0, audio: 'dub', episode: '12', openedAt: 5 },
+            { id: 1, title: 'Naruto', query: 'naruto', searchIndex: 2, audio: 'sub', episode: null, openedAt: 5 }
+        ]);
+    });
+
+    it('does not keep what is invalid', () => {
+        const { call, db } = setup();
+        [null, 'x', { ...opened, title: '  ' }, { ...opened, query: '--' }, { ...opened, audio: 'raw' }, { ...opened, index: -1 }, { ...opened, index: 1.5 }, { ...opened, index: '2' }, { ...opened, episode: 'abc' }].forEach((input) => {
+            call(IPC.animeHistoryRecord, input);
+        });
+        expect(db.listHistory()).toEqual([]);
+    });
+
+    it('removes one entry by its id and ignores an invalid id', () => {
+        const { call, db } = setup();
+        call(IPC.animeHistoryRecord, opened);
+        call(IPC.animeHistoryRecord, { ...opened, title: 'Bleach' });
+
+        call(IPC.animeHistoryRemove, 0);
+        call(IPC.animeHistoryRemove, '1');
+        expect(db.listHistory()).toHaveLength(2);
+        call(IPC.animeHistoryRemove, 1);
+        expect(
+            db.listHistory().map((entry) => {
+                return entry.title;
+            })
+        ).toEqual(['Bleach']);
+    });
+
+    it('clears the history', () => {
+        const { call, db } = setup();
+        call(IPC.animeHistoryRecord, opened);
+        call(IPC.animeHistoryClear);
+        expect(db.listHistory()).toEqual([]);
+    });
+});
+
+describe('parseHistoryRequest', () => {
+    const valid = { title: 'Naruto', query: 'naruto', index: 2, audio: 'dub', episode: '3' };
+
+    it('accepts a valid request and cleans it', () => {
+        expect(parseHistoryRequest(valid)).toEqual({ title: 'Naruto', query: 'naruto', index: 2, audio: 'dub', episode: '3' });
+        expect(parseHistoryRequest({ ...valid, title: '  Naruto  ' })?.title).toBe('Naruto');
+        expect(parseHistoryRequest({ ...valid, title: 'N'.repeat(MAX_TEXT_LENGTH + 20) })?.title).toHaveLength(MAX_TEXT_LENGTH);
+    });
+
+    it('takes a missing episode as none, and a position of 0 as unknown', () => {
+        expect(parseHistoryRequest({ ...valid, episode: null })?.episode).toBeNull();
+        expect(parseHistoryRequest({ ...valid, episode: undefined })?.episode).toBeNull();
+        expect(parseHistoryRequest({ ...valid, index: 0 })?.index).toBe(0);
+    });
+
+    it('rejects everything else', () => {
+        expect(parseHistoryRequest(null)).toBeNull();
+        expect(parseHistoryRequest('x')).toBeNull();
+        expect(parseHistoryRequest({ ...valid, title: '' })).toBeNull();
+        expect(parseHistoryRequest({ ...valid, query: '' })).toBeNull();
+        expect(parseHistoryRequest({ ...valid, audio: 'raw' })).toBeNull();
+        expect(parseHistoryRequest({ ...valid, index: -1 })).toBeNull();
+        expect(parseHistoryRequest({ ...valid, index: 1.5 })).toBeNull();
+        expect(parseHistoryRequest({ ...valid, index: Number.NaN })).toBeNull();
+        expect(parseHistoryRequest({ ...valid, index: '1' })).toBeNull();
+        expect(parseHistoryRequest({ ...valid, episode: 'x' })).toBeNull();
+        expect(parseHistoryRequest({ ...valid, episode: 3 })).toBeNull();
     });
 });

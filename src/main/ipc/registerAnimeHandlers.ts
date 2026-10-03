@@ -3,6 +3,8 @@ import {
     type AniError,
     type AnimeAudio,
     type AnimeEpisodeRecord,
+    type AnimeHistoryEntry,
+    type AnimeHistoryRequest,
     type AnimeDownloadRequest,
     type AnimeDownloadResponse,
     type AnimeImportResponse,
@@ -134,6 +136,25 @@ function parseSeries(series: unknown, season: unknown, seasonName: unknown): { s
     return name === undefined ? 'invalid' : { series: cleaned, season, seasonName: name };
 }
 
+// Checks what the screen says it opened or watched before it is kept in the history. The episode is optional (null when it was only
+// opened).
+export function parseHistoryRequest(input: unknown): AnimeHistoryRequest | null {
+    const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
+    const title = asText(raw.title).trim().slice(0, MAX_TEXT_LENGTH);
+    const query = validQuery(raw.query);
+    const audio = asAudio(raw.audio);
+    const { index } = raw;
+    const episode = raw.episode === null || raw.episode === undefined ? null : asText(raw.episode);
+    // The position 0 is an anime whose place in the search is not known: it is searched by its title when it is opened again.
+    if (title.length === 0 || query === null || audio === null || typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
+        return null;
+    }
+    if (episode !== null && !isValidEpisode(episode)) {
+        return null;
+    }
+    return { title, query, index, audio, episode };
+}
+
 export function parseProgress(input: unknown): AnimeProgressUpdate | null {
     const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
     const episodeId = asId(raw.episodeId);
@@ -193,6 +214,9 @@ function registerUnsupported(ipcMain: IpcMainLike): void {
     ipcMain.handle(IPC.animeJobs, () => {
         return [];
     });
+    ipcMain.handle(IPC.animeHistoryList, (): AnimeHistoryEntry[] => {
+        return [];
+    });
     ipcMain.handle(IPC.animeStreamOpen, (): AnimeStreamResponse => {
         return { ok: false, error: UNSUPPORTED };
     });
@@ -214,7 +238,7 @@ function registerUnsupported(ipcMain: IpcMainLike): void {
     ipcMain.handle(IPC.animeSubtitleImport, (): AnimeSubtitleImportResponse => {
         return { ok: false, reason: 'missing' };
     });
-    [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose].forEach((channel) => {
+    [IPC.animeCancel, IPC.animeRetry, IPC.animeClearFinished, IPC.animeRemoveEpisode, IPC.animeRemoveAnime, IPC.animeOpenFolder, IPC.animeProgress, IPC.animeStreamClose, IPC.animeHistoryRecord, IPC.animeHistoryRemove, IPC.animeHistoryClear].forEach((channel) => {
         ipcMain.handle(channel, (): void => {
             return undefined;
         });
@@ -308,6 +332,24 @@ export function registerAnimeHandlers(ipcMain: IpcMainLike, deps: AnimeHandlerDe
     });
     ipcMain.handle(IPC.animeJobs, () => {
         return queue.list();
+    });
+    ipcMain.handle(IPC.animeHistoryList, (): AnimeHistoryEntry[] => {
+        return db.listHistory();
+    });
+    ipcMain.handle(IPC.animeHistoryRecord, (_event, input): void => {
+        const request = parseHistoryRequest(input);
+        if (request !== null) {
+            db.recordHistory(request);
+        }
+    });
+    ipcMain.handle(IPC.animeHistoryRemove, (_event, id): void => {
+        const entryId = asId(id);
+        if (entryId !== null) {
+            db.removeHistory(entryId);
+        }
+    });
+    ipcMain.handle(IPC.animeHistoryClear, (): void => {
+        db.clearHistory();
     });
     ipcMain.handle(IPC.animeCancel, (_event, episodeId): void => {
         const id = asId(episodeId);

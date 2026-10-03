@@ -102,6 +102,17 @@ function readSettings(userData: string): Record<string, unknown> {
     return JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf-8')) as Record<string, unknown>;
 }
 
+// The settings are on three screens: the ones of the whole app (a tab), and the ones of the video downloader and of the anime section
+// (a screen of each).
+async function openGlobalSettings(page: Page): Promise<void> {
+    await page.getByRole('button', { name: 'SETTINGS (GLOBAL)', exact: true }).click();
+}
+
+async function openDownloadsSettings(page: Page): Promise<void> {
+    await page.getByRole('button', { name: 'VIDEO DOWNLOADER', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Video downloader' }).getByRole('button', { name: 'SETTINGS', exact: true }).click();
+}
+
 test.beforeEach(async () => {
     session = await launch();
 });
@@ -201,7 +212,7 @@ test('does not offer simultaneous downloads in the settings and always runs one 
     const stale = await launch({ settings: { maxConcurrent: 4 } });
     try {
         const { page, userData } = stale;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await expect(page.locator('.settings legend', { hasText: 'ADVANCED' })).toBeVisible();
         await expect(page.getByLabel('Simultaneous downloads')).toHaveCount(0);
         await expect(page.getByText('Simultaneous downloads')).toHaveCount(0);
@@ -381,9 +392,62 @@ test('handles a very long link without resizing the field or overflowing the pag
     expect(args.at(-1)).toBe(longUrl);
 });
 
+test('the back and forward buttons of the mouse move through the tabs that were visited', async () => {
+    const { page } = session;
+    // Playwright cannot press the side buttons, so the events the browser sends for them are dispatched.
+    const pressSideButton = async (button: 3 | 4): Promise<boolean> => {
+        return page.evaluate((which) => {
+            const event = new MouseEvent('mouseup', { button: which, bubbles: true, cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+        }, button);
+    };
+    const tab = (name: string) => {
+        return page.getByRole('button', { name, exact: true });
+    };
+    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
+    await tab('HISTORY').click();
+    await tab('SETTINGS (GLOBAL)').click();
+    await expect(page.getByText('Changes are saved automatically.')).toBeVisible();
+
+    expect(await pressSideButton(3)).toBe(true);
+    await expect(tab('HISTORY')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByText('// HISTORY IS EMPTY.')).toBeVisible();
+
+    expect(await pressSideButton(3)).toBe(true);
+    await expect(tab('VIDEO DOWNLOADER')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByLabel('Link 1', { exact: true })).toBeVisible();
+
+    expect(await pressSideButton(4)).toBe(true);
+    expect(await pressSideButton(4)).toBe(true);
+    await expect(tab('SETTINGS (GLOBAL)')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByText('Changes are saved automatically.')).toBeVisible();
+});
+
+test('the settings tabs are a gear at the right end of their bar, in the app and in the video downloader', async () => {
+    const { page } = session;
+    // The gear sits against the right end of its bar and every other tab keeps to the left.
+    const gearAtTheEnd = async (bar: Locator, gear: Locator): Promise<void> => {
+        await expect(gear).toHaveText('\u2699\uFE0E');
+        const barBox = await bar.boundingBox();
+        const gearBox = await gear.boundingBox();
+        const tabs = await bar.getByRole('button').evaluateAll((buttons) => {
+            return buttons.map((button) => {
+                return Math.round(button.getBoundingClientRect().right);
+            });
+        });
+        expect(Math.round((barBox?.x ?? 0) + (barBox?.width ?? 0)) - Math.round((gearBox?.x ?? 0) + (gearBox?.width ?? 0))).toBeLessThanOrEqual(1);
+        expect(Math.max(...tabs.slice(0, -1))).toBeLessThan(Math.round(gearBox?.x ?? 0));
+    };
+    const sections = page.getByRole('navigation', { name: 'Sections' });
+    await gearAtTheEnd(sections, sections.getByRole('button', { name: 'SETTINGS (GLOBAL)', exact: true }));
+    const downloads = page.getByRole('navigation', { name: 'Video downloader' });
+    await gearAtTheEnd(downloads, downloads.getByRole('button', { name: 'SETTINGS', exact: true }));
+});
+
 test('settings have no save button and are saved automatically', async () => {
     const { page, userData } = session;
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openDownloadsSettings(page);
     await expect(page.getByRole('button', { name: 'SAVE SETTINGS' })).toHaveCount(0);
     await expect(page.getByText('Changes are saved automatically.')).toBeVisible();
 
@@ -398,11 +462,11 @@ test('settings have no save button and are saved automatically', async () => {
     expect(readSettings(userData).maxTitleLength).toBe(66);
 });
 
-test('pending text edits are saved when leaving the settings tab', async () => {
+test('pending text edits are saved when leaving the settings of the video downloader', async () => {
     const { page, userData } = session;
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openDownloadsSettings(page);
     await page.getByLabel('Subtitle languages').fill('fr,de');
-    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
+    await page.getByRole('button', { name: 'QUEUE', exact: true }).click();
     await expect.poll(() => {
         return readSettings(userData).subtitleLangs;
     }).toBe('fr,de');
@@ -410,7 +474,7 @@ test('pending text edits are saved when leaving the settings tab', async () => {
 
 test('persists edited settings to disk and passes them to yt-dlp', async () => {
     const { page, userData, logPath, downloadDir } = session;
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openDownloadsSettings(page);
     await page.getByLabel('Max title length (characters)').fill('55');
     await page.getByLabel('Video quality').selectOption('720');
     await page.getByLabel('Video container').selectOption('mkv');
@@ -431,7 +495,7 @@ test('persists edited settings to disk and passes them to yt-dlp', async () => {
         ytdlpPath: FAKE_YTDLP
     });
 
-    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
+    await page.getByRole('button', { name: 'QUEUE', exact: true }).click();
     await submitUrl(page, 'https://example.com/ok');
     await expectDownloadsComplete(page);
     const args = readCalls(logPath).find((call) => {
@@ -446,14 +510,14 @@ test('persists edited settings to disk and passes them to yt-dlp', async () => {
 
 test('auto-generated subtitles are saved and passed to yt-dlp together with the chosen languages', async () => {
     const { page, userData, logPath } = session;
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openDownloadsSettings(page);
     await page.getByLabel('Download subtitles').check();
     await page.getByLabel('Include auto-generated subtitles').check();
     await page.getByLabel('Subtitle languages').fill('ja');
     await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
     expect(readSettings(userData)).toMatchObject({ writeSubtitles: true, autoSubtitles: true, subtitleLangs: 'ja' });
 
-    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
+    await page.getByRole('button', { name: 'QUEUE', exact: true }).click();
     await submitUrl(page, 'https://example.com/ok');
     await expectDownloadsComplete(page);
     const args = readCalls(logPath).find((call) => {
@@ -466,7 +530,7 @@ test('auto-generated subtitles are saved and passed to yt-dlp together with the 
 
 test('embedding subtitles passes --embed-subs instead of --write-subs so no separate subtitle file is left', async () => {
     const { page, userData, logPath } = session;
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openDownloadsSettings(page);
     await page.getByLabel('Download subtitles').check();
     await page.getByLabel('Include auto-generated subtitles').check();
     await page.getByLabel('Embed subtitles in the video').check();
@@ -474,7 +538,7 @@ test('embedding subtitles passes --embed-subs instead of --write-subs so no sepa
     await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
     expect(readSettings(userData)).toMatchObject({ writeSubtitles: true, autoSubtitles: true, embedSubtitles: true, subtitleLangs: 'ja' });
 
-    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
+    await page.getByRole('button', { name: 'QUEUE', exact: true }).click();
     await submitUrl(page, 'https://example.com/ok');
     await expectDownloadsComplete(page);
     const args = readCalls(logPath).find((call) => {
@@ -489,14 +553,14 @@ test('auto-generated subtitles without a language warn in the settings and block
     const { page, logPath } = session;
     const message =
         'Auto-generated subtitles need a language. Fill in "Subtitle languages" in Settings (e.g. ja), or turn off "Include auto-generated subtitles".';
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openDownloadsSettings(page);
     await page.getByLabel('Subtitle languages').fill('');
     await page.getByLabel('Download subtitles').check();
     await page.getByLabel('Include auto-generated subtitles').check();
     await expect(page.getByRole('alert')).toHaveText(message);
     await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
 
-    await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
+    await page.getByRole('button', { name: 'QUEUE', exact: true }).click();
     await submitUrl(page, 'https://example.com/ok');
     await expect(page.getByText(message)).toBeVisible();
     await expect(page.locator('.badge')).toHaveCount(0);
@@ -504,7 +568,7 @@ test('auto-generated subtitles without a language warn in the settings and block
         return call.includes('--write-auto-subs');
     })).toEqual([]);
 
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openDownloadsSettings(page);
     await page.getByLabel('Subtitle languages').fill('ja');
     await expect(page.getByRole('alert')).toHaveCount(0);
 });
@@ -611,7 +675,7 @@ test.describe('partial files', () => {
 
     test('the setting is on by default and is saved when turned off', async () => {
         const { page, userData } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         const toggle = page.getByLabel('Delete partial files when a download fails or is cancelled');
         await expect(toggle).toBeChecked();
         await toggle.uncheck();
@@ -679,7 +743,7 @@ test.describe('browser detection', () => {
         addFirefox(fakeHome);
         own = await launchOnFakeHome();
         const { page, userData, logPath } = own;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await expect.poll(() => {
             return browserOptions(page);
         }).toEqual(['Choose a browser…', 'Brave Origin', 'Firefox']);
@@ -690,7 +754,7 @@ test.describe('browser detection', () => {
         expect(readSettings(userData)).toMatchObject({ useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: originDir });
         await expect(page.getByRole('alert')).toHaveCount(0);
 
-        await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
+        await page.getByRole('button', { name: 'QUEUE', exact: true }).click();
         await submitUrl(page, 'https://example.com/ok');
         await expectDownloadsComplete(page);
         const args = readCalls(logPath).find((call) => {
@@ -703,7 +767,7 @@ test.describe('browser detection', () => {
         const originDir = addChromiumBrowser(fakeHome, ORIGIN_FOLDER, { Default: 'Personal', 'Profile 1': 'Work' });
         own = await launchOnFakeHome({ useBrowserCookies: true });
         const { page, userData, logPath } = own;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await expect(page.getByLabel('Browser profile (optional)')).toHaveJSProperty('tagName', 'INPUT');
         await page.getByLabel('Browser', { exact: true }).selectOption({ label: 'Brave Origin' });
         const profile = page.getByLabel('Browser profile (optional)');
@@ -716,7 +780,7 @@ test.describe('browser detection', () => {
         await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
         expect(readSettings(userData)).toMatchObject({ cookiesBrowser: 'brave', cookiesBrowserDir: originDir, cookiesProfile: 'Profile 1' });
 
-        await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
+        await page.getByRole('button', { name: 'QUEUE', exact: true }).click();
         await submitUrl(page, 'https://example.com/ok');
         await expectDownloadsComplete(page);
         const args = readCalls(logPath).find((call) => {
@@ -730,7 +794,7 @@ test.describe('browser detection', () => {
         addFirefox(fakeHome);
         own = await launchOnFakeHome({ useBrowserCookies: true });
         const { page, userData } = own;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await page.getByLabel('Browser', { exact: true }).selectOption({ label: 'Brave Origin' });
         await page.getByLabel('Browser profile (optional)').selectOption({ label: 'Work (Profile 1)' });
         await page.getByLabel('Browser', { exact: true }).selectOption({ label: 'Firefox' });
@@ -746,7 +810,7 @@ test.describe('browser detection', () => {
         writeFileSync(join(fakeApps, 'brave-origin.desktop'), '[Desktop Entry]\nName=Brave Origin Browser\nExec=/usr/bin/brave-origin-stable %U\nMimeType=x-scheme-handler/http;x-scheme-handler/https;\n');
         own = await launchOnFakeHome();
         const { page } = own;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await expect.poll(() => {
             return browserOptions(page);
         }).toEqual(['Choose a browser…', 'Brave Origin Browser']);
@@ -757,7 +821,7 @@ test.describe('browser detection', () => {
         writeFileSync(join(fakeApps, 'editor.desktop'), '[Desktop Entry]\nName=Editor\nExec=editor\nMimeType=text/plain;\n');
         own = await launchOnFakeHome({ useBrowserCookies: true });
         const { page } = own;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await expect(page.getByRole('alert')).toHaveText('No browser with saved cookies was found on this system.');
         expect(await browserOptions(page)).toEqual(['Choose a browser…']);
     });
@@ -779,7 +843,7 @@ test.describe('browser detection', () => {
         writeFileSync(join(fakeHome, '.config', 'Code', 'Network', 'Cookies'), '');
         own = await launchOnFakeHome({ useBrowserCookies: true });
         const { page } = own;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await expect(page.getByRole('alert')).toHaveText('No browser with saved cookies was found on this system.');
         expect(await browserOptions(page)).toEqual(['Choose a browser…']);
     });
@@ -788,7 +852,7 @@ test.describe('browser detection', () => {
         addFirefox(fakeHome);
         own = await launchOnFakeHome({ useBrowserCookies: true, cookiesBrowser: 'brave' });
         const { page } = own;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await expect(page.getByRole('alert')).toHaveText('The saved browser (brave) was not found on this system. Choose one of the detected browsers.');
         await page.getByLabel('Browser', { exact: true }).selectOption({ label: 'Firefox' });
         await expect(page.getByRole('alert')).toHaveCount(0);
@@ -800,7 +864,7 @@ test.describe('browser detection', () => {
         addFirefox(fakeHome);
         own = await launchOnFakeHome();
         const { page } = own;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await expect.poll(() => {
             return browserOptions(page);
         }).toEqual(['Choose a browser…', 'Firefox']);
@@ -828,14 +892,14 @@ test('the yt-dlp update button is in the settings, not in the header', async () 
     const { page } = session;
     await expect(page.getByRole('button', { name: 'UPDATE YT-DLP' })).toHaveCount(0);
     await expect(page.locator('.binary-status').getByRole('button')).toHaveCount(0);
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openDownloadsSettings(page);
     await expect(page.getByRole('button', { name: 'UPDATE YT-DLP' })).toBeVisible();
     await expect(page.getByText('Installed version: fake-1.0')).toBeVisible();
 });
 
 test('updating yt-dlp from the settings shows the command output in a notice', async () => {
     const { page } = session;
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openDownloadsSettings(page);
     await page.getByRole('button', { name: 'UPDATE YT-DLP' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Fake yt-dlp is up to date' })).toBeVisible();
 });
@@ -857,20 +921,20 @@ test.describe('themes', () => {
         await page.emulateMedia({ colorScheme: 'light' });
         await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
         expect(await backgroundOf(page)).toBe(BACKGROUNDS.light);
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await expect(page.getByLabel('Theme')).toHaveValue('device');
     });
 
     test('offers device, cyberpunk, dark and light', async () => {
         const { page } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         const options = await page.getByLabel('Theme').locator('option').allTextContents();
         expect(options).toEqual(['Device (follows the system)', 'Cyberpunk (neon)', 'Dark', 'Light']);
     });
 
     test('choosing a theme changes the look right away and saves it', async () => {
         const { page, userData } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await page.getByLabel('Theme').selectOption('cyberpunk');
         await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
         expect(await backgroundOf(page)).toBe(BACKGROUNDS.cyberpunk);
@@ -902,7 +966,7 @@ test.describe('themes', () => {
 
     test('no theme has a neon glow that follows the mouse, the cyberpunk one included', async () => {
         const { page } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         for (const theme of ['cyberpunk', 'dark', 'light']) {
             await page.getByLabel('Theme').selectOption(theme);
             await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
@@ -915,7 +979,7 @@ test.describe('themes', () => {
 
     test('a fixed theme ignores the system mode', async () => {
         const { page } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await page.getByLabel('Theme').selectOption('light');
         await page.emulateMedia({ colorScheme: 'dark' });
         await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -924,7 +988,7 @@ test.describe('themes', () => {
 
     test('the simple themes have no scanlines and no glow on the logo', async () => {
         const { page } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await page.getByLabel('Theme').selectOption('dark');
         const style = await page.evaluate(() => {
             return {
@@ -937,7 +1001,7 @@ test.describe('themes', () => {
 
     test('the chosen theme is still there after closing and opening the app again', async () => {
         const { page, app, userData, downloadDir } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await page.getByLabel('Theme').selectOption('cyberpunk');
         await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
         await app.close();
@@ -951,7 +1015,7 @@ test.describe('themes', () => {
             await reopenedPage.waitForSelector('.logo');
             await expect(reopenedPage.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
             expect(await backgroundOf(reopenedPage)).toBe(BACKGROUNDS.cyberpunk);
-            await reopenedPage.getByRole('button', { name: 'SETTINGS' }).click();
+            await openGlobalSettings(reopenedPage);
             await expect(reopenedPage.getByLabel('Theme')).toHaveValue('cyberpunk');
             expect(readSettings(userData)).toMatchObject({ theme: 'cyberpunk', downloadDir });
         } finally {
@@ -965,7 +1029,7 @@ test.describe('languages', () => {
         const { page, userData } = session;
         await expect(page.locator('html')).toHaveAttribute('lang', 'en');
         await expect(page.getByRole('button', { name: 'VIDEO DOWNLOADER' })).toHaveAttribute('aria-current', 'page');
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await expect(page.getByLabel('Language', { exact: true })).toHaveValue('en');
         const options = await page.getByLabel('Language', { exact: true }).locator('option').allTextContents();
         expect(options).toEqual(['Device (follows the system)', 'English', 'Português', 'Español', '中文', '日本語']);
@@ -974,10 +1038,10 @@ test.describe('languages', () => {
 
     test('choosing a language translates the whole interface right away and saves it', async () => {
         const { page, userData } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await page.getByLabel('Language', { exact: true }).selectOption('pt');
         await expect(page.locator('html')).toHaveAttribute('lang', 'pt');
-        await expect(page.getByRole('button', { name: 'CONFIGURAÇÕES' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByRole('button', { name: 'CONFIGURAÇÕES (GLOBAIS)' })).toHaveAttribute('aria-current', 'page');
         await expect(page.getByLabel('Idioma', { exact: true })).toHaveValue('pt');
         await expect(page.getByText('APARÊNCIA E JANELA')).toBeVisible();
         await expect(page.getByText('Todas as alterações foram salvas.')).toBeVisible({ timeout: 6000 });
@@ -985,28 +1049,28 @@ test.describe('languages', () => {
 
         await page.getByLabel('Idioma', { exact: true }).selectOption('ja');
         await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
-        await expect(page.getByRole('button', { name: '設定' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByRole('button', { name: '設定（全体）' })).toHaveAttribute('aria-current', 'page');
         await expect(page.getByText('外観とウィンドウ')).toBeVisible();
         await expect.poll(() => {
             return readSettings(userData).language;
         }).toBe('ja');
 
         await page.getByLabel('言語', { exact: true }).selectOption('zh');
-        await expect(page.getByRole('button', { name: '设置' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByRole('button', { name: '设置（全局）' })).toHaveAttribute('aria-current', 'page');
         await expect(page.getByText('外观与窗口')).toBeVisible();
 
         await page.getByLabel('语言', { exact: true }).selectOption('es');
-        await expect(page.getByRole('button', { name: 'AJUSTES' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByRole('button', { name: 'AJUSTES (GLOBALES)' })).toHaveAttribute('aria-current', 'page');
         await expect(page.getByText('APARIENCIA Y VENTANA')).toBeVisible();
 
         await page.getByLabel('Idioma', { exact: true }).selectOption('en');
-        await expect(page.getByRole('button', { name: 'SETTINGS' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByRole('button', { name: 'SETTINGS (GLOBAL)' })).toHaveAttribute('aria-current', 'page');
         await expect(page.getByText('APPEARANCE & WINDOW')).toBeVisible();
     });
 
     test('messages written by the main process use the chosen language', async () => {
         const { page } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await page.getByLabel('Language', { exact: true }).selectOption('pt');
         await expect(page.getByText('Todas as alterações foram salvas.')).toBeVisible({ timeout: 6000 });
         await page.getByRole('button', { name: 'BAIXADOR DE VÍDEOS' }).click();
@@ -1019,7 +1083,7 @@ test.describe('languages', () => {
 
     test('a download error is explained in the language chosen when it happened', async () => {
         const { page, userData } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await page.getByLabel('Language', { exact: true }).selectOption('es');
         await expect(page.getByText('Todos los cambios guardados.')).toBeVisible({ timeout: 6000 });
         expect(readSettings(userData).language).toBe('es');
@@ -1035,7 +1099,7 @@ test.describe('languages', () => {
 
     test('the chosen language is still there after closing and opening the app again', async () => {
         const { page, app, userData, downloadDir } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openGlobalSettings(page);
         await page.getByLabel('Language', { exact: true }).selectOption('ja');
         await expect.poll(() => {
             return readSettings(userData).language;
@@ -1051,7 +1115,7 @@ test.describe('languages', () => {
             await reopenedPage.waitForSelector('.logo');
             await expect(reopenedPage.locator('html')).toHaveAttribute('lang', 'ja');
             await expect(reopenedPage.getByRole('navigation', { name: 'セクション' }).getByRole('button', { name: '動画ダウンローダー' })).toHaveAttribute('aria-current', 'page');
-            await reopenedPage.getByRole('button', { name: '設定' }).click();
+            await reopenedPage.getByRole('button', { name: '設定（全体）' }).click();
             await expect(reopenedPage.getByLabel('言語', { exact: true })).toHaveValue('ja');
             expect(readSettings(userData)).toMatchObject({ language: 'ja', downloadDir });
         } finally {
@@ -1073,7 +1137,7 @@ test.describe('languages', () => {
             await spanishPage.waitForSelector('.logo');
             await expect(spanishPage.locator('html')).toHaveAttribute('lang', 'es');
             await expect(spanishPage.getByRole('button', { name: 'DESCARGADOR DE VÍDEOS' })).toHaveAttribute('aria-current', 'page');
-            await spanishPage.getByRole('button', { name: 'AJUSTES' }).click();
+            await spanishPage.getByRole('button', { name: 'AJUSTES (GLOBALES)' }).click();
             await expect(spanishPage.getByLabel('Idioma', { exact: true })).toHaveValue('device');
             expect(readSettings(userData).language).toBe('device');
         } finally {
@@ -1101,12 +1165,13 @@ test.describe('settings layout', () => {
         });
     }
 
-    const LEGENDS = ['APPEARANCE & WINDOW', 'OUTPUT', 'ANIME', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'APP UPDATES', 'ADVANCED'];
+    // The panels of the settings of the video downloader (the ones of the whole app and of the anime section are on screens of their own).
+    const LEGENDS = ['OUTPUT', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'ADVANCED'];
 
     test('the panels have all the same width and flow in two even columns, with no panel on a row of its own', async () => {
         const { page } = session;
         await page.setViewportSize({ width: 1100, height: 900 });
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         const boxes = await panelBoxes(page);
 
         expect(boxes.map((box) => {
@@ -1151,7 +1216,7 @@ test.describe('settings layout', () => {
     test('the panels are one column of the same width in a narrow window', async () => {
         const { page } = session;
         await page.setViewportSize({ width: 800, height: 900 });
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         const boxes = await panelBoxes(page);
         expect(boxes).toHaveLength(LEGENDS.length);
         expect(new Set(boxes.map((box) => {
@@ -1165,7 +1230,7 @@ test.describe('settings layout', () => {
     test('no panel has columns of its own: the fields of every panel are stacked on the same left edge', async () => {
         const { page } = session;
         await page.setViewportSize({ width: 1100, height: 900 });
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         const lefts = await page.locator('.settings .panel').evaluateAll((panels) => {
             return panels.map((panel) => {
                 const fields = Array.from(panel.querySelectorAll(':scope > .field, :scope > .field-row'));
@@ -1439,7 +1504,7 @@ test.describe('folder for one download', () => {
 
 test('app updates are reported as unsupported outside the installed app', async () => {
     const { page } = session;
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openGlobalSettings(page);
     await expect(page.getByText(/^Current version: \d+\.\d+\.\d+/)).toBeVisible();
     await page.getByRole('button', { name: 'CHECK FOR UPDATES' }).click();
     await expect(page.getByText('Updates are only available in the installed app.')).toBeVisible();
@@ -1448,7 +1513,7 @@ test('app updates are reported as unsupported outside the installed app', async 
 
 test('the startup update check setting is saved', async () => {
     const { page, userData } = session;
-    await page.getByRole('button', { name: 'SETTINGS' }).click();
+    await openGlobalSettings(page);
     await expect(page.getByLabel('Check for updates on startup')).toBeChecked();
     await page.getByLabel('Check for updates on startup').uncheck();
     await expect(page.getByText('All changes saved.')).toBeVisible();
@@ -1606,7 +1671,7 @@ test.describe('close to tray', () => {
     test('can be turned on from the settings without a warning when a tray exists', async () => {
         const own = await launch({ env: KDE_ENV });
         try {
-            await own.page.getByRole('button', { name: 'SETTINGS' }).click();
+            await openGlobalSettings(own.page);
             const toggle = own.page.getByLabel('Keep running in the system tray when the window is closed');
             await expect(toggle).not.toBeChecked();
             await toggle.check();
@@ -1628,7 +1693,7 @@ test.describe('close to tray', () => {
     test('on GNOME without a tray it warns and closing the window still quits the app', async () => {
         const own = await launch({ env: GNOME_WITHOUT_TRAY_ENV, settings: { closeToTray: true } });
         try {
-            await own.page.getByRole('button', { name: 'SETTINGS' }).click();
+            await openGlobalSettings(own.page);
             await expect(own.page.getByRole('alert')).toContainText('AppIndicator and KStatusNotifierItem Support');
 
             await closeMainWindow(own);
@@ -1874,13 +1939,13 @@ test.describe('live streams', () => {
 
     test('the live settings are saved and passed to yt-dlp', async () => {
         const { page, userData, logPath } = session;
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         await page.getByLabel('Record live streams from the start').check();
         await page.getByLabel('Wait for scheduled live streams to start').check();
         await expect(page.getByText('All changes saved.')).toBeVisible({ timeout: 6000 });
         expect(readSettings(userData)).toMatchObject({ liveFromStart: true, waitForLive: true });
 
-        await page.getByRole('button', { name: 'VIDEO DOWNLOADER' }).click();
+        await page.getByRole('button', { name: 'QUEUE', exact: true }).click();
         await submitUrl(page, 'https://example.com/watch?v=live-settings');
         await expectDownloadsComplete(page);
         const args = lastYtdlpCall(logPath, 'live-settings');
@@ -1916,7 +1981,7 @@ test.describe('end of live check and waiting for a live stream', () => {
 
     test('is on by default for 10 seconds and its seconds follow the checkbox', async () => {
         const { page, userData } = await relaunchWith({ verifyLiveEnd: undefined });
-        await page.getByRole('button', { name: 'SETTINGS' }).click();
+        await openDownloadsSettings(page);
         const checkbox = page.getByLabel('Double-check that a live stream really ended');
         const seconds = page.getByLabel('Seconds to keep checking');
         await expect(checkbox).toBeChecked();

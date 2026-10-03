@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { AnimeDb, INTERRUPTED_MESSAGE, type NewAnime } from '@main/services/animeDb';
+import type { AnimeHistoryRequest } from '@shared/anime';
+import { AnimeDb, INTERRUPTED_MESSAGE, MAX_HISTORY_ENTRIES, type NewAnime } from '@main/services/animeDb';
 import { cleanTempDirs, makeTempDir } from '../../helpers/tempDir';
 
 const NARUTO: NewAnime = { title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub' };
@@ -18,7 +19,7 @@ afterEach(() => {
 
 describe('AnimeDb schema', () => {
     it('applies the migrations and remembers the version', () => {
-        expect(makeDb().schemaVersion).toBe(3);
+        expect(makeDb().schemaVersion).toBe(4);
     });
 
     it('keeps the data and does not migrate again when the file is opened twice', () => {
@@ -31,7 +32,7 @@ describe('AnimeDb schema', () => {
         first.close();
 
         const second = new AnimeDb(path);
-        expect(second.schemaVersion).toBe(3);
+        expect(second.schemaVersion).toBe(4);
         expect(second.list()).toEqual([
             {
                 id: anime.id,
@@ -428,7 +429,7 @@ describe('AnimeDb series and seasons', () => {
         const db = new AnimeDb(path, () => {
             return NOW;
         });
-        expect(db.schemaVersion).toBe(3);
+        expect(db.schemaVersion).toBe(4);
         expect(db.list()).toEqual([{ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub', createdAt: 5, series: null, season: null, seasonName: null, episodes: [] }]);
         db.close();
     });
@@ -564,12 +565,151 @@ describe('AnimeDb series and seasons', () => {
         first.setSeries(anime.id, 'Series', 2);
         first.close();
         const raw = new DatabaseSync(path);
-        raw.exec('ALTER TABLE anime DROP COLUMN season_name; PRAGMA user_version = 2;');
+        raw.exec('ALTER TABLE anime DROP COLUMN season_name; DROP TABLE anime_history; PRAGMA user_version = 2;');
         raw.close();
 
         const db = new AnimeDb(path);
-        expect(db.schemaVersion).toBe(3);
+        expect(db.schemaVersion).toBe(4);
         expect(db.getAnime(anime.id)).toMatchObject({ series: 'Series', season: 2, seasonName: null });
+        db.close();
+    });
+});
+
+describe('AnimeDb history', () => {
+    const NARUTO_OPENED: AnimeHistoryRequest = { title: 'Naruto', query: 'naruto', index: 1, audio: 'sub', episode: null };
+    const BLEACH_WATCHED: AnimeHistoryRequest = { title: 'Bleach', query: 'bleach', index: 4, audio: 'dub', episode: '12' };
+
+    function makeClockedDb(): AnimeDb {
+        let tick = NOW;
+        return new AnimeDb(':memory:', () => {
+            tick += 1000;
+            return tick;
+        });
+    }
+
+    it('is empty at first', () => {
+        expect(makeDb().listHistory()).toEqual([]);
+    });
+
+    it('keeps an anime that was only opened, with no episode', () => {
+        const db = makeClockedDb();
+        db.recordHistory(NARUTO_OPENED);
+        expect(db.listHistory()).toEqual([{ id: 1, title: 'Naruto', query: 'naruto', searchIndex: 1, audio: 'sub', episode: null, openedAt: NOW + 1000 }]);
+    });
+
+    it('keeps an anime that was watched, with its episode, and does not need it to be in the library', () => {
+        const db = makeClockedDb();
+        db.recordHistory(BLEACH_WATCHED);
+        expect(db.listHistory()).toEqual([{ id: 1, title: 'Bleach', query: 'bleach', searchIndex: 4, audio: 'dub', episode: '12', openedAt: NOW + 1000 }]);
+        expect(db.list()).toEqual([]);
+    });
+
+    it('lists the most recent first', () => {
+        const db = makeClockedDb();
+        db.recordHistory(NARUTO_OPENED);
+        db.recordHistory(BLEACH_WATCHED);
+        expect(
+            db.listHistory().map((entry) => {
+                return entry.title;
+            })
+        ).toEqual(['Bleach', 'Naruto']);
+    });
+
+    it('moves an anime that is opened again to the top, as one entry, refreshing its search data', () => {
+        const db = makeClockedDb();
+        db.recordHistory(NARUTO_OPENED);
+        db.recordHistory(BLEACH_WATCHED);
+        db.recordHistory({ ...NARUTO_OPENED, query: 'naruto shippuden', index: 3 });
+
+        expect(db.listHistory()).toEqual([
+            { id: 1, title: 'Naruto', query: 'naruto shippuden', searchIndex: 3, audio: 'sub', episode: null, openedAt: NOW + 3000 },
+            { id: 2, title: 'Bleach', query: 'bleach', searchIndex: 4, audio: 'dub', episode: '12', openedAt: NOW + 2000 }
+        ]);
+    });
+
+    it('keeps the last episode watched when the anime is opened again without one, and replaces it with a new one', () => {
+        const db = makeClockedDb();
+        db.recordHistory(BLEACH_WATCHED);
+        db.recordHistory({ ...BLEACH_WATCHED, episode: null });
+        expect(db.listHistory()[0]?.episode).toBe('12');
+        db.recordHistory({ ...BLEACH_WATCHED, episode: '13' });
+        expect(db.listHistory()[0]?.episode).toBe('13');
+    });
+
+    it('tells the same title apart by audio', () => {
+        const db = makeClockedDb();
+        db.recordHistory(NARUTO_OPENED);
+        db.recordHistory({ ...NARUTO_OPENED, audio: 'dub' });
+        expect(
+            db.listHistory().map((entry) => {
+                return `${entry.title}:${entry.audio}`;
+            })
+        ).toEqual(['Naruto:dub', 'Naruto:sub']);
+    });
+
+    it('keeps the 50 most recent anime and drops the oldest', () => {
+        const db = makeClockedDb();
+        expect(MAX_HISTORY_ENTRIES).toBe(50);
+        for (let number = 1; number <= MAX_HISTORY_ENTRIES + 3; number += 1) {
+            db.recordHistory({ ...NARUTO_OPENED, title: `Anime ${number}` });
+        }
+        const titles = db.listHistory().map((entry) => {
+            return entry.title;
+        });
+        expect(titles).toHaveLength(MAX_HISTORY_ENTRIES);
+        expect(titles[0]).toBe('Anime 53');
+        expect(titles[MAX_HISTORY_ENTRIES - 1]).toBe('Anime 4');
+    });
+
+    it('removes one entry and leaves the others', () => {
+        const db = makeClockedDb();
+        db.recordHistory(NARUTO_OPENED);
+        db.recordHistory(BLEACH_WATCHED);
+        db.removeHistory(1);
+        expect(
+            db.listHistory().map((entry) => {
+                return entry.title;
+            })
+        ).toEqual(['Bleach']);
+        db.removeHistory(99);
+        expect(db.listHistory()).toHaveLength(1);
+    });
+
+    it('clears every entry', () => {
+        const db = makeClockedDb();
+        db.recordHistory(NARUTO_OPENED);
+        db.recordHistory(BLEACH_WATCHED);
+        db.clearHistory();
+        expect(db.listHistory()).toEqual([]);
+    });
+
+    it('is not touched by removing the anime from the library', () => {
+        const db = makeClockedDb();
+        const anime = db.upsertAnime(NARUTO);
+        db.recordHistory(NARUTO_OPENED);
+        db.removeAnime(anime.id);
+        expect(db.listHistory()).toHaveLength(1);
+    });
+
+    it('is added to a library of the previous version without touching what it holds', () => {
+        const path = join(makeTempDir(), 'anime.db');
+        const old = new AnimeDb(path, () => {
+            return NOW;
+        });
+        const anime = old.upsertAnime(NARUTO);
+        old.ensureEpisode(anime.id, '1');
+        old.close();
+        const raw = new DatabaseSync(path);
+        raw.exec('DROP TABLE anime_history; PRAGMA user_version = 3;');
+        raw.close();
+
+        const db = new AnimeDb(path, () => {
+            return NOW;
+        });
+        expect(db.schemaVersion).toBe(4);
+        expect(db.listHistory()).toEqual([]);
+        expect(db.list()).toHaveLength(1);
+        expect(db.list()[0]?.episodes).toHaveLength(1);
         db.close();
     });
 });

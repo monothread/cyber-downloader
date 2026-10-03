@@ -106,7 +106,8 @@ for (const theme of ['cyberpunk', 'light']) {
         test('the fields of the anime settings are stacked, with the same width, and the buttons keep the height of the fields', async () => {
             test.skip(!HAS_ANI_TOOLS, 'the anime section needs `npm run fetch-binaries`');
             await page.setViewportSize({ width: 1100, height: 900 });
-            await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+            await page.getByRole('button', { name: 'ANIME', exact: true }).click();
+            await page.getByRole('navigation', { name: 'Anime' }).getByRole('button', { name: 'SETTINGS', exact: true }).click();
             const box = async (label: string): Promise<{ x: number; y: number; width: number; height: number }> => {
                 const found = await page.getByLabel(label, { exact: true }).boundingBox();
                 return { x: Math.round(found?.x ?? -1), y: Math.round(found?.y ?? -1), width: Math.round(found?.width ?? -1), height: Math.round(found?.height ?? -1) };

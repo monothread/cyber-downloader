@@ -165,7 +165,9 @@ test('nothing is cut, misaligned or out of its box on any screen, at any size fr
     await page.getByRole('button', { name: 'HISTORY', exact: true }).click();
     await sweep('history');
     await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
-    await sweep('settings');
+    await sweep('downloads-settings');
+    await page.getByRole('button', { name: 'SETTINGS (GLOBAL)', exact: true }).click();
+    await sweep('global-settings');
 
     // Anime
     await resize(1366, 768);
@@ -205,6 +207,10 @@ test('nothing is cut, misaligned or out of its box on any screen, at any size fr
     });
     await expect(page.locator('.job .badge--done')).toHaveCount(13, { timeout: 60000 });
     await page.getByRole('button', { name: 'BACK' }).click();
+    await page.getByRole('button', { name: 'HISTORY', exact: true }).click();
+    await sweep('anime-history');
+    await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+    await sweep('anime-settings');
     await page.getByRole('button', { name: 'LIBRARY', exact: true }).click();
     await sweep('library-cards');
     await page.getByRole('button', { name: 'OPEN SERIES: Long Series' }).click();

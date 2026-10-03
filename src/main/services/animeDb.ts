@@ -7,6 +7,8 @@ import type {
     AnimeAudio,
     AnimeEpisodeRecord,
     AnimeEpisodeStatus,
+    AnimeHistoryEntry,
+    AnimeHistoryRequest,
     AnimeProgressUpdate,
     AnimeRecord,
     LibraryAnime
@@ -45,8 +47,22 @@ const MIGRATIONS: readonly string[] = [
     `ALTER TABLE anime ADD COLUMN series TEXT;
     ALTER TABLE anime ADD COLUMN season INTEGER;`,
     // The name an anime is shown with inside its series (the season number only orders them).
-    `ALTER TABLE anime ADD COLUMN season_name TEXT;`
+    `ALTER TABLE anime ADD COLUMN season_name TEXT;`,
+    // What the viewer opened or watched, apart from the library (it also covers anime that were only searched or streamed).
+    `CREATE TABLE anime_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        query TEXT NOT NULL,
+        search_index INTEGER NOT NULL,
+        audio TEXT NOT NULL,
+        episode TEXT,
+        opened_at INTEGER NOT NULL,
+        UNIQUE (title, audio)
+    );`
 ];
+
+// The history keeps the most recent anime only.
+export const MAX_HISTORY_ENTRIES = 50;
 
 const EPISODE_STATUSES: readonly AnimeEpisodeStatus[] = ['queued', 'downloading', 'done', 'error', 'cancelled'];
 const ERROR_CODES: readonly AniErrorCode[] = [
@@ -131,6 +147,18 @@ function toEpisode(row: Row): AnimeEpisodeRecord {
         watched: numeric(row, 'watched') === 1,
         downloadedAt: nullableNumeric(row, 'downloaded_at'),
         fileMissing: false
+    };
+}
+
+function toHistoryEntry(row: Row): AnimeHistoryEntry {
+    return {
+        id: numeric(row, 'id'),
+        title: text(row, 'title'),
+        query: text(row, 'query'),
+        searchIndex: numeric(row, 'search_index'),
+        audio: text(row, 'audio') === 'dub' ? 'dub' : 'sub',
+        episode: nullableText(row, 'episode'),
+        openedAt: numeric(row, 'opened_at')
     };
 }
 
@@ -370,6 +398,41 @@ export class AnimeDb {
             update.watched ? 1 : 0,
             update.episodeId
         );
+    }
+
+    // The anime goes to the top of the history. Opening it without an episode keeps the last episode watched; the oldest entries beyond
+    // the limit are dropped.
+    recordHistory(request: AnimeHistoryRequest): void {
+        this.run(
+            `INSERT INTO anime_history (title, query, search_index, audio, episode, opened_at) VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT (title, audio) DO UPDATE SET
+                query = excluded.query,
+                search_index = excluded.search_index,
+                episode = COALESCE(excluded.episode, anime_history.episode),
+                opened_at = excluded.opened_at`,
+            request.title,
+            request.query,
+            request.index,
+            request.audio,
+            request.episode,
+            this.now()
+        );
+        this.run(
+            `DELETE FROM anime_history WHERE id NOT IN (SELECT id FROM anime_history ORDER BY opened_at DESC, id DESC LIMIT ?)`,
+            MAX_HISTORY_ENTRIES
+        );
+    }
+
+    listHistory(): AnimeHistoryEntry[] {
+        return this.all('SELECT * FROM anime_history ORDER BY opened_at DESC, id DESC').map(toHistoryEntry);
+    }
+
+    removeHistory(id: number): void {
+        this.run('DELETE FROM anime_history WHERE id = ?', id);
+    }
+
+    clearHistory(): void {
+        this.run('DELETE FROM anime_history');
     }
 
     // Both remove the records and give back the files they pointed at, so the caller can delete them if asked to.

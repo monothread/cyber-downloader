@@ -104,6 +104,18 @@ const api: CyberApi = {
     listAnimeLibrary: () => {
         return ipcRenderer.invoke(IPC.animeLibrary);
     },
+    listAnimeHistory: () => {
+        return ipcRenderer.invoke(IPC.animeHistoryList);
+    },
+    recordAnimeHistory: (request) => {
+        return ipcRenderer.invoke(IPC.animeHistoryRecord, request);
+    },
+    removeAnimeHistory: (id) => {
+        return ipcRenderer.invoke(IPC.animeHistoryRemove, id);
+    },
+    clearAnimeHistory: () => {
+        return ipcRenderer.invoke(IPC.animeHistoryClear);
+    },
     listAnimeJobs: () => {
         return ipcRenderer.invoke(IPC.animeJobs);
     },

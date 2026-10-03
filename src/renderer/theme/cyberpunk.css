@@ -171,6 +171,9 @@ body::after {
 
 .tab:hover { color: var(--cyan); }
 
+/* The settings tabs are a gear at the right end of their bar. */
+.tab--icon { margin-left: auto; padding: 8px 14px; font-size: 18px; line-height: 1; letter-spacing: 0; }
+
 .tab--active {
     color: var(--cyan);
     border-bottom-color: var(--magenta);
@@ -707,6 +710,9 @@ body::after {
 .modal__actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 
 /* Anime section */
+/* The video downloader keeps the spacing its parts had when they were direct children of the page. */
+.downloads { display: flex; flex-direction: column; gap: 18px; }
+.downloads > .tabs { margin-top: 0; }
 .anime { display: flex; flex-direction: column; gap: 14px; }
 .anime__bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
 .anime__bar .tabs { flex: 1; margin-top: 0; border-bottom: 0; }
@@ -775,7 +781,16 @@ body::after {
     border-top: 1px solid var(--line);
     color: var(--text);
     font-family: var(--font);
+    transition: opacity 0.25s ease;
 }
+
+/* In fullscreen the controls go away when the mouse stands still (see useFullscreenIdle), and so does the cursor. */
+.player__stage:fullscreen { position: relative; }
+
+/* Hidden, the bar leaves the layout so the video grows into its place. */
+.player__controls[data-hidden='true'] { position: absolute; left: 0; right: 0; bottom: 0; opacity: 0; pointer-events: none; }
+.player__stage:has(.player__controls[data-hidden='true']),
+.player__stage:has(.player__controls[data-hidden='true']) .player__video { cursor: none; }
 
 .player__button {
     min-width: 34px;
@@ -847,6 +862,44 @@ html[data-theme='cyberpunk'] .player__controls[data-playing='true'] .player__see
 
 @media (prefers-reduced-motion: reduce) {
     html[data-theme='cyberpunk'] .player__controls[data-playing='true'] .player__seek { animation: none; }
+}
+
+/* Cyberpunk in fullscreen: the bar floats over the video with no background, only the buttons and the timeline glow. */
+html[data-theme='cyberpunk'] .player__stage:fullscreen { position: relative; }
+
+html[data-theme='cyberpunk'] .player__stage:fullscreen .player__controls {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    border-top: 0;
+    text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+html[data-theme='cyberpunk'] .player__stage:fullscreen .player__button {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.45);
+    text-shadow: 0 0 6px var(--cyan);
+}
+
+html[data-theme='cyberpunk'] .player__stage:fullscreen .player__select { background: transparent; border-color: var(--cyan); }
+
+/* The wave runs even when the video is paused; it only stands still then. */
+html[data-theme='cyberpunk'] .player__stage:fullscreen .player__controls .player__seek {
+    background:
+        linear-gradient(to right, transparent var(--progress), rgba(255, 255, 255, 0.16) var(--progress)),
+        repeating-linear-gradient(90deg, var(--cyan) 0, var(--magenta) 40px, var(--cyan) 80px, #ffffff 100px, var(--cyan) 120px, var(--magenta) 160px);
+    background-size: 100% 100%, 160px 100%;
+    animation: player-wave 1.6s linear infinite, player-wave-glow 2.4s ease-in-out infinite;
+    animation-play-state: paused;
+}
+
+html[data-theme='cyberpunk'] .player__stage:fullscreen .player__controls[data-playing='true'] .player__seek { animation-play-state: running; }
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-theme='cyberpunk'] .player__stage:fullscreen .player__controls .player__seek { animation: none; }
 }
 .player__volume { width: 80px; }
 

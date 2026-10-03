@@ -1,15 +1,20 @@
 import { useTranslator } from '../i18n/useTranslator';
 import { useAnimeStore, type AnimeBrowseView } from '../store/animeStore';
 import { activeJobCount } from './animeText';
+import { AnimeHistory } from './AnimeHistory';
 import { AnimeJobs } from './AnimeJobs';
 import { AnimeLibrary } from './AnimeLibrary';
 import { AnimePlayer } from './AnimePlayer';
 import { AnimeSearch } from './AnimeSearch';
 import { AnimeStreamPlayer } from './AnimeStreamPlayer';
+import { SettingsPanel } from './SettingsPanel';
+import { SETTINGS_ICON, TabButton } from './TabButton';
 
-const VIEWS: ReadonlyArray<{ id: AnimeBrowseView; label: 'anime.nav.search' | 'anime.nav.library' }> = [
+const VIEWS: ReadonlyArray<{ id: AnimeBrowseView; label: 'anime.nav.search' | 'anime.nav.library' | 'anime.nav.history' | 'anime.nav.settings'; icon?: string }> = [
     { id: 'search', label: 'anime.nav.search' },
-    { id: 'library', label: 'anime.nav.library' }
+    { id: 'library', label: 'anime.nav.library' },
+    { id: 'history', label: 'anime.nav.history' },
+    { id: 'settings', label: 'anime.nav.settings', icon: SETTINGS_ICON }
 ];
 
 export function AnimePanel() {
@@ -63,17 +68,15 @@ export function AnimePanel() {
                 <nav className="tabs" aria-label={t('anime.aria')}>
                     {VIEWS.map((item) => {
                         return (
-                            <button
+                            <TabButton
                                 key={item.id}
-                                type="button"
-                                className={`tab ${view === item.id ? 'tab--active' : ''}`}
-                                aria-current={view === item.id ? 'page' : undefined}
+                                label={t(item.label)}
+                                icon={item.icon}
+                                active={view === item.id}
                                 onClick={() => {
                                     setView(item.id);
                                 }}
-                            >
-                                {t(item.label)}
-                            </button>
+                            />
                         );
                     })}
                 </nav>
@@ -81,7 +84,10 @@ export function AnimePanel() {
                     {t('anime.jobs.label', { count: active })}
                 </button>
             </div>
-            {view === 'search' ? <AnimeSearch /> : <AnimeLibrary />}
+            {view === 'search' && <AnimeSearch />}
+            {view === 'library' && <AnimeLibrary />}
+            {view === 'history' && <AnimeHistory />}
+            {view === 'settings' && <SettingsPanel scope="anime" />}
             <AnimePlayer />
             <AnimeStreamPlayer />
         </section>

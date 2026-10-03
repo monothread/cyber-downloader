@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DEFAULT_SETTINGS } from '@shared/constants';
 import { App } from '@renderer/App';
+import { SETTINGS_ICON } from '@renderer/components/TabButton';
 import { UNSUPPORTED_STATUS, useAnimeStore } from '@renderer/store/animeStore';
 import { useAppStore } from '@renderer/store/appStore';
 import { makeStatus } from '../helpers/animeFixtures';
@@ -40,12 +41,36 @@ describe('App', () => {
         expect(screen.getByText('// HISTORY IS EMPTY.')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'HISTORY' })).toHaveAttribute('aria-current', 'page');
 
-        await user.click(screen.getByRole('button', { name: 'SETTINGS' }));
+        await user.click(screen.getByRole('button', { name: 'SETTINGS (GLOBAL)' }));
         expect(screen.getByText('Changes are saved automatically.')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'SAVE SETTINGS' })).not.toBeInTheDocument();
 
+        // The video downloader opens on the screen it was left on.
         await user.click(screen.getByRole('button', { name: 'VIDEO DOWNLOADER' }));
+        expect(screen.getByText('// HISTORY IS EMPTY.')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'QUEUE' }));
         expect(screen.getByLabelText('Link 1')).toBeInTheDocument();
+    });
+
+    it('goes back and forward through the visited tabs with the side buttons of the mouse', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await screen.findByLabelText('Link 1');
+        await user.click(screen.getByRole('button', { name: 'HISTORY' }));
+        await user.click(screen.getByRole('button', { name: 'SETTINGS (GLOBAL)' }));
+
+        fireEvent.mouseUp(window, { button: 3 });
+        expect(screen.getByRole('button', { name: 'HISTORY' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByText('// HISTORY IS EMPTY.')).toBeInTheDocument();
+
+        fireEvent.mouseUp(window, { button: 3 });
+        expect(screen.getByRole('button', { name: 'VIDEO DOWNLOADER' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByLabelText('Link 1')).toBeInTheDocument();
+
+        fireEvent.mouseUp(window, { button: 4 });
+        fireEvent.mouseUp(window, { button: 4 });
+        expect(screen.getByRole('button', { name: 'SETTINGS (GLOBAL)' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByText('Changes are saved automatically.')).toBeInTheDocument();
     });
 
     it('renders jobs pushed from the main process', async () => {
@@ -183,7 +208,7 @@ describe('App theme', () => {
         const user = userEvent.setup();
         render(<App />);
         await screen.findByLabelText('Link 1');
-        await user.click(screen.getByRole('button', { name: 'SETTINGS' }));
+        await user.click(screen.getByRole('button', { name: 'SETTINGS (GLOBAL)' }));
         await user.selectOptions(screen.getByLabelText('Theme'), 'cyberpunk');
         await waitFor(() => {
             expect(document.documentElement.dataset.theme).toBe('cyberpunk');
@@ -195,7 +220,7 @@ describe('App theme', () => {
         const user = userEvent.setup();
         render(<App />);
         await screen.findByLabelText('Link 1');
-        await user.click(screen.getByRole('button', { name: 'SETTINGS' }));
+        await user.click(screen.getByRole('button', { name: 'SETTINGS (GLOBAL)' }));
         await user.selectOptions(screen.getByLabelText('Theme'), 'dark');
         await waitFor(() => {
             expect(document.documentElement.dataset.theme).toBe('dark');
@@ -248,10 +273,10 @@ describe('App anime section', () => {
         render(<App />);
         await screen.findByLabelText('Link 1');
         expect(screen.queryByRole('button', { name: 'ANIME' })).not.toBeInTheDocument();
-        expect(screen.getAllByRole('button', { name: /^(VIDEO DOWNLOADER|HISTORY|SETTINGS)$/ })).toHaveLength(3);
+        expect(within(screen.getByRole('navigation', { name: 'Sections' })).getAllByRole('button')).toHaveLength(2);
     });
 
-    it('adds the anime tab, between downloads and history, where it exists', async () => {
+    it('adds the anime tab, between downloads and settings, where it exists', async () => {
         mock.api.getAnimeStatus.mockResolvedValue(supported);
         render(<App />);
         await screen.findByRole('button', { name: 'ANIME' });
@@ -259,9 +284,15 @@ describe('App anime section', () => {
             within(screen.getByRole('navigation', { name: 'Sections' }))
                 .getAllByRole('button')
                 .map((button) => {
-                    return button.textContent;
+                    return button.getAttribute('aria-label') ?? button.textContent;
                 })
-        ).toEqual(['VIDEO DOWNLOADER', 'ANIME', 'HISTORY', 'SETTINGS']);
+        ).toEqual(['VIDEO DOWNLOADER', 'ANIME', 'SETTINGS (GLOBAL)']);
+        // The settings are a gear at the right end of the bar, not a word.
+        const settings = screen.getByRole('button', { name: 'SETTINGS (GLOBAL)' });
+        expect(settings).toHaveClass('tab--icon');
+        expect(settings).toHaveTextContent(SETTINGS_ICON);
+        expect(settings).not.toHaveTextContent('SETTINGS');
+        expect(settings).toHaveAttribute('title', 'SETTINGS (GLOBAL)');
     });
 
     it('shows the anime section when its tab is chosen', async () => {

@@ -52,7 +52,17 @@ describe('translations', () => {
         const titles = LANGUAGE_CODES.map((language) => {
             return createTranslator(language)('tab.settings');
         });
-        expect(titles).toEqual(['SETTINGS', 'CONFIGURAÇÕES', 'AJUSTES', '设置', '設定']);
+        expect(titles).toEqual(['SETTINGS (GLOBAL)', 'CONFIGURAÇÕES (GLOBAIS)', 'AJUSTES (GLOBALES)', '设置（全局）', '設定（全体）']);
+    });
+
+    it('names the settings of the video downloader and of the anime section in every language', () => {
+        const names = (key: 'downloads.nav.settings' | 'anime.nav.settings'): string[] => {
+            return LANGUAGE_CODES.map((language) => {
+                return createTranslator(language)(key);
+            });
+        };
+        expect(names('downloads.nav.settings')).toEqual(['SETTINGS', 'CONFIGURAÇÕES', 'AJUSTES', '设置', '設定']);
+        expect(names('anime.nav.settings')).toEqual(['SETTINGS', 'CONFIGURAÇÕES', 'AJUSTES', '设置', '設定']);
     });
 });
 
@@ -72,8 +82,8 @@ describe('interpolate', () => {
 
 describe('createTranslator', () => {
     it('returns the message of the language', () => {
-        expect(createTranslator('en')('tab.history')).toBe('HISTORY');
-        expect(createTranslator('ja')('tab.history')).toBe('履歴');
+        expect(createTranslator('en')('downloads.nav.history')).toBe('HISTORY');
+        expect(createTranslator('ja')('downloads.nav.history')).toBe('履歴');
     });
 
     it('interpolates the params', () => {

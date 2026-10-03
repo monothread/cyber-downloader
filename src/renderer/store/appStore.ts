@@ -16,7 +16,9 @@ import type {
     TraySupport
 } from '@shared/types';
 
-export type Tab = 'downloads' | 'anime' | 'history' | 'settings';
+export type Tab = 'downloads' | 'anime' | 'settings';
+// The screens of the video downloader: the queue with the field for links, what was downloaded, and its settings.
+export type DownloadsView = 'queue' | 'history' | 'settings';
 export type NoticeKind = 'error' | 'info';
 
 export interface Notice {
@@ -36,6 +38,7 @@ export const INITIAL_APP_UPDATE: AppUpdateState = { status: 'idle', currentVersi
 
 export interface AppState {
     tab: Tab;
+    downloadsView: DownloadsView;
     jobs: DownloadJob[];
     history: HistoryEntry[];
     settings: Settings;
@@ -49,6 +52,7 @@ export interface AppState {
     browsers: DetectedBrowser[] | null;
     streamSearches: Record<string, StreamSearchState>;
     setTab: (tab: Tab) => void;
+    setDownloadsView: (view: DownloadsView) => void;
     // Shows a notice, or puts it in the queue when another one is on the screen. Passing null takes the one on the screen away and
     // shows the next one in the queue.
     setNotice: (notice: Notice | null) => void;
@@ -114,6 +118,7 @@ export function upsertJob(jobs: DownloadJob[], job: DownloadJob): DownloadJob[] 
 export const useAppStore = create<AppState>((set, get) => {
     return {
         tab: 'downloads',
+        downloadsView: 'queue',
         jobs: [],
         history: [],
         settings: DEFAULT_SETTINGS,
@@ -128,6 +133,10 @@ export const useAppStore = create<AppState>((set, get) => {
 
         setTab: (tab) => {
             set({ tab });
+        },
+
+        setDownloadsView: (downloadsView) => {
+            set({ downloadsView });
         },
 
         setNotice: (notice) => {

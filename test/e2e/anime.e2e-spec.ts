@@ -56,6 +56,12 @@ async function openAnimeTab(page: Page): Promise<void> {
     await page.getByRole('button', { name: 'ANIME', exact: true }).click();
 }
 
+// The settings of the anime section are a screen of the section.
+async function openAnimeSettings(page: Page): Promise<void> {
+    await openAnimeTab(page);
+    await page.getByRole('navigation', { name: 'Anime' }).getByRole('button', { name: 'SETTINGS', exact: true }).click();
+}
+
 async function showDownloads(page: Page): Promise<void> {
     await page.getByRole('button', { name: /^DOWNLOADS \(\d+\)$/ }).click();
 }
@@ -96,11 +102,55 @@ test.afterEach(async () => {
 
 test('adds the anime tab and opens its search', async () => {
     const { page } = session;
-    await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('button')).toHaveText(['VIDEO DOWNLOADER', 'ANIME', 'HISTORY', 'SETTINGS']);
+    // The settings are a gear, named for the screen readers, not a word.
+    const sections = page.getByRole('navigation', { name: 'Sections' });
+    await expect(sections.getByRole('button')).toHaveText(['VIDEO DOWNLOADER', 'ANIME', '\u2699\uFE0E']);
+    await expect(sections.getByRole('button', { name: 'SETTINGS (GLOBAL)', exact: true })).toHaveAttribute('title', 'SETTINGS (GLOBAL)');
     await openAnimeTab(page);
     await expect(page.getByRole('button', { name: 'ANIME', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByLabel('Anime name')).toBeVisible();
     await expect(page.getByLabel('Audio')).toHaveValue('sub');
+});
+
+test('keeps the anime that was opened in the history, opens it again from there and removes it', async () => {
+    const { page } = session;
+    await openAnimeTab(page);
+    const subNav = page.getByRole('navigation', { name: 'Anime' });
+    await subNav.getByRole('button', { name: 'HISTORY', exact: true }).click();
+    await expect(subNav.getByRole('button', { name: 'HISTORY', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByText('// NOTHING OPENED YET. SEARCH AN ANIME OR PLAY AN EPISODE.')).toBeVisible();
+
+    await subNav.getByRole('button', { name: 'SEARCH', exact: true }).click();
+    await openFirstResult(page);
+    await subNav.getByRole('button', { name: 'HISTORY', exact: true }).click();
+    const history = page.getByRole('region', { name: 'Anime history' });
+    await expect(history.getByText('HISTORY [1]')).toBeVisible();
+    await expect(history.locator('.history__title')).toHaveText(['Fake Anime']);
+    await expect(history.locator('.history__meta')).toContainText('SUB');
+
+    await history.getByRole('button', { name: 'OPEN: Fake Anime', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'EP 3', exact: true })).toBeVisible();
+
+    await subNav.getByRole('button', { name: 'HISTORY', exact: true }).click();
+    await history.getByRole('button', { name: 'REMOVE FROM HISTORY: Fake Anime', exact: true }).click();
+    await expect(page.getByText('// NOTHING OPENED YET. SEARCH AN ANIME OR PLAY AN EPISODE.')).toBeVisible();
+});
+
+test('the history of the anime survives closing the app and can be cleared', async () => {
+    const { page } = session;
+    await openAnimeTab(page);
+    await openFirstResult(page);
+    await session.app.close();
+
+    session = await launch(join(workDir, 'user-data'));
+    const reopened = session.page;
+    await openAnimeTab(reopened);
+    const subNav = reopened.getByRole('navigation', { name: 'Anime' });
+    await subNav.getByRole('button', { name: 'HISTORY', exact: true }).click();
+    await expect(reopened.locator('.history__title')).toHaveText(['Fake Anime']);
+
+    await reopened.getByRole('button', { name: 'CLEAR HISTORY', exact: true }).click();
+    await expect(reopened.getByText('// NOTHING OPENED YET. SEARCH AN ANIME OR PLAY AN EPISODE.')).toBeVisible();
 });
 
 test('searches an anime, lists the results and reports when nothing is found', async () => {
@@ -239,7 +289,7 @@ test('asks for the subtitles in the language of the app, and in another one when
     // The app is in English: English, nothing else to fall back to.
     expect(labels().at(-1)).toBe('English');
 
-    await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+    await openAnimeSettings(page);
     await page.getByLabel('Anime subtitles').selectOption('Spanish');
     await expect.poll(() => {
         return (JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf-8')) as Record<string, unknown>).animeSubtitles;
@@ -838,7 +888,7 @@ test('shows the version of ani-cli at the top and in the settings, and does not 
     await expect(chip).toHaveClass(/chip--ok/);
     await expect(chip).toHaveAttribute('title', `${FAKE_ANI_CLI} (custom)`);
 
-    await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+    await openAnimeSettings(page);
     await expect(page.getByText('ani-cli version: 0.0.0-fake')).toBeVisible();
     await page.getByRole('button', { name: 'UPDATE ANI-CLI' }).click();
     await expect(page.locator('.toast--error .toast__message')).toHaveText('You chose your own ani-cli in the settings, so the app does not update it.');
@@ -848,7 +898,7 @@ test('shows the version of ani-cli at the top and in the settings, and does not 
 
 test('shows the anime settings and saves them', async () => {
     const { page, userData } = session;
-    await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+    await openAnimeSettings(page);
     await expect(page.locator('.settings legend', { hasText: /^ANIME$/ })).toBeVisible();
     await expect(page.getByLabel('Anime quality')).toHaveValue('720p');
     await page.getByLabel('Anime quality').selectOption('worst');
@@ -894,21 +944,21 @@ test.describe('only anime inside the anime folder', () => {
     test('keeps the folder fixed in the settings while there is anime in the library', async () => {
         const { page, animeDir, userData } = session;
         await downloadFirstEpisode(page);
-        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await openAnimeSettings(page);
 
         await expect(page.getByLabel('Anime download folder')).toHaveValue(animeDir);
         await expect(page.getByLabel('Anime download folder')).toBeDisabled();
         await expect(page.getByText('With anime in the library, the folder only changes through MIGRATE FOLDER, which moves the files too.')).toBeVisible();
-        await expect(page.getByRole('button', { name: 'BROWSE' }).nth(1)).toBeDisabled();
+        await expect(page.getByRole('button', { name: 'BROWSE' })).toBeDisabled();
         await expect(page.getByRole('button', { name: 'MIGRATE FOLDER' })).toBeEnabled();
         expect((JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf-8')) as Record<string, unknown>).animeDownloadDir).toBe(animeDir);
     });
 
     test('leaves the folder free to change while the library is empty', async () => {
         const { page } = session;
-        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await openAnimeSettings(page);
         await expect(page.getByLabel('Anime download folder')).toBeEnabled();
-        await expect(page.getByRole('button', { name: 'BROWSE' }).nth(1)).toBeEnabled();
+        await expect(page.getByRole('button', { name: 'BROWSE' })).toBeEnabled();
         await expect(page.getByRole('button', { name: 'MIGRATE FOLDER' })).toBeEnabled();
     });
 });
@@ -931,7 +981,7 @@ test.describe('migrating the folder of the anime', () => {
         await relaunchToMigrateTo(target);
         const { page } = session;
 
-        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await openAnimeSettings(page);
         await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
 
         await expect(page.locator('.toast .toast__message')).toHaveText(`MIGRATION DONE: 1 EPISODES MOVED TO ${target}`);
@@ -958,12 +1008,12 @@ test.describe('migrating the folder of the anime', () => {
         const target = join(workDir, 'migrated');
         await relaunchToMigrateTo(target);
         const { page } = session;
-        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await openAnimeSettings(page);
         await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
         await expect(page.locator('.toast .toast__message')).toHaveText(`MIGRATION DONE: 1 EPISODES MOVED TO ${target}`);
         await expect(page.locator('.toast')).toHaveClass(/toast--info/);
 
-        await openAnimeTab(page);
+        await page.getByRole('navigation', { name: 'Anime' }).getByRole('button', { name: 'SEARCH', exact: true }).click();
         await openFirstResult(page);
         await page.getByRole('button', { name: 'EP 2', exact: true }).click();
         await page.getByRole('button', { name: 'DOWNLOAD SELECTED (1)' }).click();
@@ -980,7 +1030,7 @@ test.describe('migrating the folder of the anime', () => {
         await relaunchToMigrateTo(animeDir);
         const { page } = session;
 
-        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await openAnimeSettings(page);
         await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
 
         await expect(page.locator('.toast--error .toast__message')).toHaveText('That is already the anime folder.');
@@ -995,7 +1045,7 @@ test.describe('migrating the folder of the anime', () => {
         await relaunchToMigrateTo(join(animeDir, 'inner'));
         const { page } = session;
 
-        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await openAnimeSettings(page);
         await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
 
         await expect(page.locator('.toast--error .toast__message')).toHaveText('Choose a folder that is not inside the current anime folder.');
@@ -1013,7 +1063,7 @@ test.describe('migrating the folder of the anime', () => {
         await relaunchToMigrateTo(target);
         const { page } = session;
 
-        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await openAnimeSettings(page);
         await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
 
         await expect(page.locator('.toast--error .toast__message')).toHaveText('The new folder already has files where the anime would be copied. Choose another folder.');
@@ -1027,7 +1077,7 @@ test.describe('migrating the folder of the anime', () => {
         await relaunchToMigrateTo(target);
         const { page } = session;
 
-        await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+        await openAnimeSettings(page);
         await page.getByRole('button', { name: 'MIGRATE FOLDER' }).click();
 
         await expect(page.locator('.toast--info .toast__message')).toHaveText(`MIGRATION DONE: 0 EPISODES MOVED TO ${target}`);

@@ -37,7 +37,7 @@ src/
       aniArgsBuilder.ts / aniOutputParser.ts   # validated arguments; parse the menu, progress and errors
       aniSubtitles.ts / aniStream.ts / aniPatches.ts   # run-time patches of ani-cli (subtitle language, referer in debug output)
       aniCliUpdater.ts / aniVersion.ts         # update ani-cli from its repository, versions
-      animeDb.ts                # node:sqlite library (anime, episode, progress), migrations by user_version
+      animeDb.ts                # node:sqlite library (anime, episode, progress, anime_history), migrations by user_version
       animeDownloadQueue.ts     # one job per episode, concurrency, progress, retry
       animeFiles.ts             # file/folder names (anime folder, `Episode N` folder), what is removed with an episode or an anime
       subtitleFiles.ts          # subtitles next to a video (default, source, imported), .srt to .vtt, importing a file
@@ -53,11 +53,11 @@ src/
   renderer/
     App.tsx, theme/cyberpunk.css, theme/themes.css, theme/responsive.css (scale, width and columns by size of window, D-042)
     i18n/ language (system locale), useTranslator (React hook)
-    components/ UrlInput, QueueList, JobCard, SettingsPanel, HistoryList, ErrorBanner, BinaryStatus,
+    components/ DownloadsPanel (QUEUE / HISTORY / SETTINGS of the video downloader), UrlInput, QueueList, JobCard, SettingsPanel (scope: global / downloads / anime), HistoryList, ErrorBanner, BinaryStatus,
                 Toast, UpdateBanner, UpdateActions, StreamFinder, fields,
-                AnimePanel, AnimeSearch, AnimeDetail, AnimeJobs, AnimeLibrary, AnimePlayer, AnimeStreamPlayer, AnimeRemove,
+                AnimePanel, AnimeSearch, AnimeDetail, AnimeJobs, AnimeLibrary, AnimeHistory, AnimePlayer, AnimeStreamPlayer, AnimeRemove,
                 VideoControls (the player's own control bar), subtitleChoice / subtitleScale (what the viewer chose), SeriesFields (series name and season)
-    hooks/ useAutoSaveSettings (debounced settings auto-save)
+    hooks/ useAutoSaveSettings (debounced settings auto-save), useMouseNavigation + navigationHistory (back/forward buttons of the mouse), useFullscreenIdle (controls hide in fullscreen)
     store/ (zustand): appStore.ts, animeStore.ts
 test/            # unit tests mirroring src
 test/e2e/        # Playwright-Electron (fake yt-dlp via stub)

@@ -70,7 +70,7 @@ describe('useAppLanguage and useTranslator', () => {
             return { language: useAppLanguage(), t: useTranslator() };
         });
         expect(result.current.language).toBe('es');
-        expect(result.current.t('tab.history')).toBe('HISTORIAL');
+        expect(result.current.t('downloads.nav.history')).toBe('HISTORIAL');
     });
 
     it('follow the browser language for "device"', () => {
@@ -79,7 +79,7 @@ describe('useAppLanguage and useTranslator', () => {
             return { language: useAppLanguage(), t: useTranslator() };
         });
         expect(result.current.language).toBe('zh');
-        expect(result.current.t('tab.history')).toBe('历史');
+        expect(result.current.t('downloads.nav.history')).toBe('历史');
     });
 
     it('update when the language changes', () => {
@@ -87,31 +87,33 @@ describe('useAppLanguage and useTranslator', () => {
         const { result } = renderHook(() => {
             return useTranslator();
         });
-        expect(result.current('tab.settings')).toBe('SETTINGS');
+        expect(result.current('tab.settings')).toBe('SETTINGS (GLOBAL)');
         act(() => {
             useLanguage('ja');
         });
-        expect(result.current('tab.settings')).toBe('設定');
+        expect(result.current('tab.settings')).toBe('設定（全体）');
     });
 });
 
 describe('App in another language', () => {
     it.each([
-        ['en', 'VIDEO DOWNLOADER', 'HISTORY', 'SETTINGS', 'Sections', 'TARGET LINKS'],
-        ['pt', 'BAIXADOR DE VÍDEOS', 'HISTÓRICO', 'CONFIGURAÇÕES', 'Seções', 'LINKS DE DESTINO'],
-        ['es', 'DESCARGADOR DE VÍDEOS', 'HISTORIAL', 'AJUSTES', 'Secciones', 'ENLACES DE DESTINO'],
-        ['zh', '视频下载器', '历史', '设置', '栏目', '目标链接'],
-        ['ja', '動画ダウンローダー', '履歴', '設定', 'セクション', '対象リンク']
+        ['en', 'VIDEO DOWNLOADER', 'HISTORY', 'SETTINGS (GLOBAL)', 'Sections', 'TARGET LINKS'],
+        ['pt', 'BAIXADOR DE VÍDEOS', 'HISTÓRICO', 'CONFIGURAÇÕES (GLOBAIS)', 'Seções', 'LINKS DE DESTINO'],
+        ['es', 'DESCARGADOR DE VÍDEOS', 'HISTORIAL', 'AJUSTES (GLOBALES)', 'Secciones', 'ENLACES DE DESTINO'],
+        ['zh', '视频下载器', '历史', '设置（全局）', '栏目', '目标链接'],
+        ['ja', '動画ダウンローダー', '履歴', '設定（全体）', 'セクション', '対象リンク']
     ] as const)('shows the tabs in "%s" and sets the document language', async (language, downloads, history, settings, sections, targetLinks) => {
         useLanguage(language);
         mock.api.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS, language });
         render(<App />);
         expect(screen.getByRole('navigation', { name: sections })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: downloads })).toHaveAttribute('aria-current', 'page');
-        expect(screen.getByRole('button', { name: history })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: settings })).toBeInTheDocument();
         expect(document.documentElement.lang).toBe(language);
         expect(await screen.findByText(targetLinks)).toBeInTheDocument();
+        // The history is a screen of the video downloader, not a tab of its own.
+        expect(within(screen.getByRole('navigation', { name: sections })).queryByRole('button', { name: history })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: history })).toBeInTheDocument();
     });
 
     it('shows the boot message in the saved language', () => {
@@ -124,7 +126,7 @@ describe('App in another language', () => {
         const user = userEvent.setup();
         render(<App />);
         await screen.findByLabelText('Link 1');
-        await user.click(screen.getByRole('button', { name: 'SETTINGS' }));
+        await user.click(screen.getByRole('button', { name: 'SETTINGS (GLOBAL)' }));
         await user.selectOptions(screen.getByLabelText('Language'), 'es');
         await waitFor(() => {
             expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, language: 'es' });

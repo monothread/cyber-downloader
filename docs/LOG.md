@@ -52,4 +52,5 @@
 - Release 0.13.0, 2026-10-02: Test Windows failed twice (the migration refused with a false conflict because Windows lists one file with slashes and backslashes, fixed by moving each destination once in `483f957`; and the seek test needed a longer wait) and then ran green; Release Linux and Release Windows ran green from `483f957`, one draft with 8 files, published. Tag `v0.13.0` = `483f957`.
 - Settings layout and screen support (D-045), 2026-10-02: panels of the settings in even columns, no wide panels, and no special treatment of screens bigger than 1920x1080.
 - Release 0.13.1, 2026-10-02: settings in even columns and support only up to 1920x1080 (D-045). Test Windows ran green at the first run; Release Linux and Release Windows ran green from `fe82bb7`, one draft with 8 files, published. Tag `v0.13.1` = `fe82bb7`.
-
+- Player in fullscreen, side buttons of the mouse and histories (D-046), 2026-10-02: controls hide after 3 s in fullscreen (transparent neon bar in cyberpunk), back/forward buttons of the mouse move through the pages, the history of downloads moved inside the VIDEO DOWNLOADER tab and the anime section got its own history (migration 4).
+- Settings by context (D-047), 2026-10-02: SETTINGS (GLOBAL) tab, plus a SETTINGS screen in the VIDEO DOWNLOADER tab and one in the anime section, each with the panels of its context.

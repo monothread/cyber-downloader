@@ -87,7 +87,14 @@ function formatBrowser(browsers: readonly DetectedBrowser[], dataDir: string, t:
     return findBrowserByDir(browsers, dataDir)?.label ?? t('settings.browser.choose');
 }
 
-export function SettingsPanel() {
+// Where the settings are shown: the ones of the whole app, and the ones of the video downloader and of the anime section.
+export type SettingsScope = 'global' | 'downloads' | 'anime';
+
+interface SettingsPanelProps {
+    scope: SettingsScope;
+}
+
+export function SettingsPanel({ scope }: SettingsPanelProps) {
     const t = useTranslator();
     const stored = useAppStore((state) => {
         return state.settings;
@@ -157,13 +164,18 @@ export function SettingsPanel() {
     const unboundedAutoSubtitles = hasUnboundedAutoSubtitles(draft);
     const trayWarning = draft.closeToTray && traySupport !== null && !traySupport.available ? traySupport.reason : null;
 
+    // The browsers are for the cookies of the video downloader; the tray is a setting of the whole app.
     useEffect(() => {
-        void loadBrowsers();
-    }, [loadBrowsers]);
+        if (scope === 'downloads') {
+            void loadBrowsers();
+        }
+    }, [scope, loadBrowsers]);
 
     useEffect(() => {
-        void refreshTraySupport();
-    }, [draft.closeToTray, refreshTraySupport]);
+        if (scope === 'global') {
+            void refreshTraySupport();
+        }
+    }, [scope, draft.closeToTray, refreshTraySupport]);
     const updateInProgress = appUpdate.status === 'checking' || appUpdate.status === 'downloading';
 
     async function handleChooseDirectory(): Promise<void> {
@@ -197,96 +209,386 @@ export function SettingsPanel() {
                 {formatSaveStatus(status, t)}
             </p>
 
-            <fieldset className="panel">
-                <legend>{t('settings.appearance')}</legend>
-                <SelectField
-                    label={t('settings.theme')}
-                    value={draft.theme}
-                    options={THEMES}
-                    formatOption={(theme) => {
-                        return formatTheme(theme, t);
-                    }}
-                    hint={t('settings.theme.hint')}
-                    onChange={(value) => {
-                        change('theme', value);
-                    }}
-                />
-                <SelectField
-                    label={t('settings.language')}
-                    value={draft.language}
-                    options={LANGUAGE_SETTINGS}
-                    formatOption={(language) => {
-                        return formatLanguage(language, t);
-                    }}
-                    hint={t('settings.language.hint')}
-                    onChange={(value) => {
-                        change('language', value);
-                    }}
-                />
-                <ToggleField
-                    label={t('settings.closeToTray')}
-                    checked={draft.closeToTray}
-                    hint={t('settings.closeToTray.hint')}
-                    onChange={(value) => {
-                        change('closeToTray', value);
-                    }}
-                />
-                {trayWarning && (
-                    <p className="field__warning" role="alert">
-                        {trayWarning}
-                    </p>
-                )}
-            </fieldset>
+            {scope === 'global' && (
+                <>
+                    <fieldset className="panel">
+                        <legend>{t('settings.appearance')}</legend>
+                        <SelectField
+                            label={t('settings.theme')}
+                            value={draft.theme}
+                            options={THEMES}
+                            formatOption={(theme) => {
+                                return formatTheme(theme, t);
+                            }}
+                            hint={t('settings.theme.hint')}
+                            onChange={(value) => {
+                                change('theme', value);
+                            }}
+                        />
+                        <SelectField
+                            label={t('settings.language')}
+                            value={draft.language}
+                            options={LANGUAGE_SETTINGS}
+                            formatOption={(language) => {
+                                return formatLanguage(language, t);
+                            }}
+                            hint={t('settings.language.hint')}
+                            onChange={(value) => {
+                                change('language', value);
+                            }}
+                        />
+                        <ToggleField
+                            label={t('settings.closeToTray')}
+                            checked={draft.closeToTray}
+                            hint={t('settings.closeToTray.hint')}
+                            onChange={(value) => {
+                                change('closeToTray', value);
+                            }}
+                        />
+                        {trayWarning && (
+                            <p className="field__warning" role="alert">
+                                {trayWarning}
+                            </p>
+                        )}
+                    </fieldset>
 
-            <fieldset className="panel">
-                <legend>{t('settings.output')}</legend>
-                <div className="field-row">
-                    <TextField
-                        label={t('settings.downloadDir')}
-                        value={draft.downloadDir}
-                        placeholder={t('settings.downloadDir.placeholder')}
-                        onChange={(value) => {
-                            edit('downloadDir', value);
-                        }}
-                    />
-                    <button
-                        type="button"
-                        className="btn btn--small"
-                        onClick={() => {
-                            void handleChooseDirectory();
-                        }}
-                    >
-                        {t('settings.browse')}
-                    </button>
-                </div>
-                <NumberField
-                    label={t('settings.maxTitleLength')}
-                    value={draft.maxTitleLength}
-                    min={MIN_TITLE_LENGTH}
-                    max={MAX_TITLE_LENGTH}
-                    hint={t('settings.maxTitleLength.hint')}
-                    onChange={(value) => {
-                        edit('maxTitleLength', value);
-                    }}
-                />
-                <ToggleField
-                    label={t('settings.restrictFilenames')}
-                    checked={draft.restrictFilenames}
-                    onChange={(value) => {
-                        change('restrictFilenames', value);
-                    }}
-                />
-                <ToggleField
-                    label={t('settings.deletePartials')}
-                    checked={draft.deletePartialsOnFailure}
-                    hint={t('settings.deletePartials.hint')}
-                    onChange={(value) => {
-                        change('deletePartialsOnFailure', value);
-                    }}
-                />
-            </fieldset>
+                    <fieldset className="panel">
+                        <legend>{t('settings.appUpdates')}</legend>
+                        <p className="update-status" aria-live="polite">
+                            {updateSummary(appUpdate, t)}
+                        </p>
+                        <div className="field-row">
+                            <button
+                                type="button"
+                                className="btn btn--small"
+                                disabled={updateInProgress}
+                                onClick={() => {
+                                    void checkAppUpdate();
+                                }}
+                            >
+                                {t('settings.checkUpdates')}
+                            </button>
+                            <UpdateActions />
+                        </div>
+                        <ToggleField
+                            label={t('settings.checkOnStart')}
+                            checked={draft.checkUpdatesOnStart}
+                            onChange={(value) => {
+                                change('checkUpdatesOnStart', value);
+                            }}
+                        />
+                    </fieldset>
+                </>
+            )}
 
-            {animeSupported && (
+            {scope === 'downloads' && (
+                <>
+                    <fieldset className="panel">
+                        <legend>{t('settings.output')}</legend>
+                        <div className="field-row">
+                            <TextField
+                                label={t('settings.downloadDir')}
+                                value={draft.downloadDir}
+                                placeholder={t('settings.downloadDir.placeholder')}
+                                onChange={(value) => {
+                                    edit('downloadDir', value);
+                                }}
+                            />
+                            <button
+                                type="button"
+                                className="btn btn--small"
+                                onClick={() => {
+                                    void handleChooseDirectory();
+                                }}
+                            >
+                                {t('settings.browse')}
+                            </button>
+                        </div>
+                        <NumberField
+                            label={t('settings.maxTitleLength')}
+                            value={draft.maxTitleLength}
+                            min={MIN_TITLE_LENGTH}
+                            max={MAX_TITLE_LENGTH}
+                            hint={t('settings.maxTitleLength.hint')}
+                            onChange={(value) => {
+                                edit('maxTitleLength', value);
+                            }}
+                        />
+                        <ToggleField
+                            label={t('settings.restrictFilenames')}
+                            checked={draft.restrictFilenames}
+                            onChange={(value) => {
+                                change('restrictFilenames', value);
+                            }}
+                        />
+                        <ToggleField
+                            label={t('settings.deletePartials')}
+                            checked={draft.deletePartialsOnFailure}
+                            hint={t('settings.deletePartials.hint')}
+                            onChange={(value) => {
+                                change('deletePartialsOnFailure', value);
+                            }}
+                        />
+                    </fieldset>
+
+                    <fieldset className="panel">
+                        <legend>{t('settings.quality')}</legend>
+                        <SelectField
+                            label={t('settings.maxResolution')}
+                            value={draft.maxResolution}
+                            options={RESOLUTIONS}
+                            formatOption={(resolution) => {
+                                return formatResolution(resolution, t);
+                            }}
+                            hint={t('settings.maxResolution.hint')}
+                            onChange={(value) => {
+                                change('maxResolution', value);
+                            }}
+                        />
+                        <SelectField
+                            label={t('settings.videoContainer')}
+                            value={draft.videoContainer}
+                            options={VIDEO_CONTAINERS}
+                            onChange={(value) => {
+                                change('videoContainer', value);
+                            }}
+                        />
+                        <ToggleField
+                            label={t('settings.audioOnly')}
+                            checked={draft.audioOnly}
+                            onChange={(value) => {
+                                change('audioOnly', value);
+                            }}
+                        />
+                        <SelectField
+                            label={t('settings.audioFormat')}
+                            value={draft.audioFormat}
+                            options={AUDIO_FORMATS}
+                            onChange={(value) => {
+                                change('audioFormat', value);
+                            }}
+                        />
+                    </fieldset>
+
+                    <fieldset className="panel">
+                        <legend>{t('settings.subtitles')}</legend>
+                        <ToggleField
+                            label={t('settings.playlist')}
+                            checked={draft.downloadPlaylist}
+                            onChange={(value) => {
+                                change('downloadPlaylist', value);
+                            }}
+                        />
+                        <ToggleField
+                            label={t('settings.writeSubtitles')}
+                            checked={draft.writeSubtitles}
+                            onChange={(value) => {
+                                change('writeSubtitles', value);
+                            }}
+                        />
+                        <TextField
+                            label={t('settings.subtitleLangs')}
+                            value={draft.subtitleLangs}
+                            hint={t('settings.subtitleLangs.hint')}
+                            onChange={(value) => {
+                                edit('subtitleLangs', value);
+                            }}
+                        />
+                        <ToggleField
+                            label={t('settings.autoSubtitles')}
+                            checked={draft.autoSubtitles}
+                            hint={t('settings.autoSubtitles.hint')}
+                            onChange={(value) => {
+                                change('autoSubtitles', value);
+                            }}
+                        />
+                        {unboundedAutoSubtitles && (
+                            <p className="field__warning" role="alert">
+                                {t('subtitles.unbounded')}
+                            </p>
+                        )}
+                        <ToggleField
+                            label={t('settings.embedSubtitles')}
+                            checked={draft.embedSubtitles}
+                            onChange={(value) => {
+                                change('embedSubtitles', value);
+                            }}
+                        />
+                    </fieldset>
+
+                    <fieldset className="panel">
+                        <legend>{t('settings.live')}</legend>
+                        <ToggleField
+                            label={t('settings.liveFromStart')}
+                            checked={draft.liveFromStart}
+                            hint={t('settings.liveFromStart.hint')}
+                            onChange={(value) => {
+                                change('liveFromStart', value);
+                            }}
+                        />
+                        <ToggleField
+                            label={t('settings.waitForLive')}
+                            checked={draft.waitForLive}
+                            hint={t('settings.waitForLive.hint')}
+                            onChange={(value) => {
+                                change('waitForLive', value);
+                            }}
+                        />
+                        <ToggleField
+                            label={t('settings.verifyLiveEnd')}
+                            checked={draft.verifyLiveEnd}
+                            hint={t('settings.verifyLiveEnd.hint')}
+                            onChange={(value) => {
+                                change('verifyLiveEnd', value);
+                            }}
+                        />
+                        <NumberField
+                            label={t('settings.verifyLiveEndSeconds')}
+                            value={draft.verifyLiveEndSeconds}
+                            min={MIN_LIVE_END_CHECK_SECONDS}
+                            max={MAX_LIVE_END_CHECK_SECONDS}
+                            hint={t('settings.verifyLiveEndSeconds.hint')}
+                            disabled={!draft.verifyLiveEnd}
+                            onChange={(value) => {
+                                edit('verifyLiveEndSeconds', value);
+                            }}
+                        />
+                    </fieldset>
+
+                    <fieldset className="panel">
+                        <legend>{t('settings.cookies')}</legend>
+                        <ToggleField
+                            label={t('settings.useCookies')}
+                            checked={draft.useBrowserCookies}
+                            hint={t('settings.useCookies.hint')}
+                            onChange={(value) => {
+                                change('useBrowserCookies', value);
+                            }}
+                        />
+                        <SelectField
+                            label={t('settings.browser')}
+                            value={chosenBrowser?.dataDir ?? NO_BROWSER_CHOSEN}
+                            options={browserOptions}
+                            formatOption={(dataDir) => {
+                                return formatBrowser(detectedBrowsers, dataDir, t);
+                            }}
+                            hint={t('settings.browser.hint')}
+                            onChange={(dataDir) => {
+                                const browser = findBrowserByDir(detectedBrowsers, dataDir);
+                                if (browser) {
+                                    changeMany({ cookiesBrowser: browser.engine, cookiesBrowserDir: browser.dataDir, cookiesProfile: '' });
+                                }
+                            }}
+                        />
+                        {browserWarning && (
+                            <p className="field__warning" role="alert">
+                                {browserWarning}
+                            </p>
+                        )}
+                        <div className="field-row">
+                            <button
+                                type="button"
+                                className="btn btn--small"
+                                onClick={() => {
+                                    void loadBrowsers(true);
+                                }}
+                            >
+                                {t('settings.rescan')}
+                            </button>
+                        </div>
+                        {chosenBrowser && chosenBrowser.profiles.length > 0 ? (
+                            <SelectField
+                                label={t('settings.profile')}
+                                value={draft.cookiesProfile}
+                                options={profileOptions(chosenBrowser, draft.cookiesProfile)}
+                                formatOption={(id) => {
+                                    return formatProfile(chosenBrowser, id, t);
+                                }}
+                                onChange={(id) => {
+                                    change('cookiesProfile', id);
+                                }}
+                            />
+                        ) : (
+                            <TextField
+                                label={t('settings.profile')}
+                                value={draft.cookiesProfile}
+                                onChange={(value) => {
+                                    edit('cookiesProfile', value);
+                                }}
+                            />
+                        )}
+                    </fieldset>
+
+                    <fieldset className="panel">
+                        <legend>YT-DLP</legend>
+                        <p className="update-status" aria-live="polite">
+                            {binaries?.ytdlp.found
+                                ? t('settings.ytdlp.installed', { version: binaries.ytdlp.version ?? t('settings.ytdlp.versionUnknown') })
+                                : t('settings.ytdlp.notFound')}
+                        </p>
+                        <div className="field-row">
+                            <button
+                                type="button"
+                                className="btn btn--small"
+                                disabled={updatingYtdlp}
+                                onClick={() => {
+                                    void updateYtdlp();
+                                }}
+                            >
+                                {updatingYtdlp ? t('settings.ytdlp.updating') : t('settings.ytdlp.update')}
+                            </button>
+                        </div>
+                        <span className="field__hint">{t('settings.ytdlp.hint')}</span>
+                    </fieldset>
+
+                    <fieldset className="panel">
+                        <legend>{t('settings.advanced')}</legend>
+                        <TextField
+                            label={t('settings.rateLimit')}
+                            value={draft.rateLimit}
+                            placeholder={t('settings.rateLimit.placeholder')}
+                            onChange={(value) => {
+                                edit('rateLimit', value);
+                            }}
+                        />
+                        <TextField
+                            label={t('settings.ytdlpPath')}
+                            value={draft.ytdlpPath}
+                            placeholder={t('settings.ytdlpPath.placeholder')}
+                            onChange={(value) => {
+                                edit('ytdlpPath', value);
+                            }}
+                        />
+                        <TextField
+                            label={t('settings.ffmpegPath')}
+                            value={draft.ffmpegPath}
+                            placeholder={t('settings.ffmpegPath.placeholder')}
+                            onChange={(value) => {
+                                edit('ffmpegPath', value);
+                            }}
+                        />
+                        <TextField
+                            label={t('settings.jsRuntime')}
+                            value={draft.jsRuntime}
+                            placeholder={t('settings.jsRuntime.placeholder')}
+                            hint={t('settings.jsRuntime.hint')}
+                            onChange={(value) => {
+                                edit('jsRuntime', value);
+                            }}
+                        />
+                        <TextField
+                            label={t('settings.extraArgs')}
+                            value={draft.extraArgs}
+                            hint={t('settings.extraArgs.hint')}
+                            onChange={(value) => {
+                                edit('extraArgs', value);
+                            }}
+                        />
+                    </fieldset>
+                </>
+            )}
+
+            {scope === 'anime' && animeSupported && (
                 <fieldset className="panel">
                     <legend>{t('settings.anime')}</legend>
                     <div className="field-row">
@@ -383,288 +685,6 @@ export function SettingsPanel() {
                     </div>
                 </fieldset>
             )}
-
-            <fieldset className="panel">
-                <legend>{t('settings.quality')}</legend>
-                <SelectField
-                    label={t('settings.maxResolution')}
-                    value={draft.maxResolution}
-                    options={RESOLUTIONS}
-                    formatOption={(resolution) => {
-                        return formatResolution(resolution, t);
-                    }}
-                    hint={t('settings.maxResolution.hint')}
-                    onChange={(value) => {
-                        change('maxResolution', value);
-                    }}
-                />
-                <SelectField
-                    label={t('settings.videoContainer')}
-                    value={draft.videoContainer}
-                    options={VIDEO_CONTAINERS}
-                    onChange={(value) => {
-                        change('videoContainer', value);
-                    }}
-                />
-                <ToggleField
-                    label={t('settings.audioOnly')}
-                    checked={draft.audioOnly}
-                    onChange={(value) => {
-                        change('audioOnly', value);
-                    }}
-                />
-                <SelectField
-                    label={t('settings.audioFormat')}
-                    value={draft.audioFormat}
-                    options={AUDIO_FORMATS}
-                    onChange={(value) => {
-                        change('audioFormat', value);
-                    }}
-                />
-            </fieldset>
-
-            <fieldset className="panel">
-                <legend>{t('settings.subtitles')}</legend>
-                <ToggleField
-                    label={t('settings.playlist')}
-                    checked={draft.downloadPlaylist}
-                    onChange={(value) => {
-                        change('downloadPlaylist', value);
-                    }}
-                />
-                <ToggleField
-                    label={t('settings.writeSubtitles')}
-                    checked={draft.writeSubtitles}
-                    onChange={(value) => {
-                        change('writeSubtitles', value);
-                    }}
-                />
-                <TextField
-                    label={t('settings.subtitleLangs')}
-                    value={draft.subtitleLangs}
-                    hint={t('settings.subtitleLangs.hint')}
-                    onChange={(value) => {
-                        edit('subtitleLangs', value);
-                    }}
-                />
-                <ToggleField
-                    label={t('settings.autoSubtitles')}
-                    checked={draft.autoSubtitles}
-                    hint={t('settings.autoSubtitles.hint')}
-                    onChange={(value) => {
-                        change('autoSubtitles', value);
-                    }}
-                />
-                {unboundedAutoSubtitles && (
-                    <p className="field__warning" role="alert">
-                        {t('subtitles.unbounded')}
-                    </p>
-                )}
-                <ToggleField
-                    label={t('settings.embedSubtitles')}
-                    checked={draft.embedSubtitles}
-                    onChange={(value) => {
-                        change('embedSubtitles', value);
-                    }}
-                />
-            </fieldset>
-
-            <fieldset className="panel">
-                <legend>{t('settings.live')}</legend>
-                <ToggleField
-                    label={t('settings.liveFromStart')}
-                    checked={draft.liveFromStart}
-                    hint={t('settings.liveFromStart.hint')}
-                    onChange={(value) => {
-                        change('liveFromStart', value);
-                    }}
-                />
-                <ToggleField
-                    label={t('settings.waitForLive')}
-                    checked={draft.waitForLive}
-                    hint={t('settings.waitForLive.hint')}
-                    onChange={(value) => {
-                        change('waitForLive', value);
-                    }}
-                />
-                <ToggleField
-                    label={t('settings.verifyLiveEnd')}
-                    checked={draft.verifyLiveEnd}
-                    hint={t('settings.verifyLiveEnd.hint')}
-                    onChange={(value) => {
-                        change('verifyLiveEnd', value);
-                    }}
-                />
-                <NumberField
-                    label={t('settings.verifyLiveEndSeconds')}
-                    value={draft.verifyLiveEndSeconds}
-                    min={MIN_LIVE_END_CHECK_SECONDS}
-                    max={MAX_LIVE_END_CHECK_SECONDS}
-                    hint={t('settings.verifyLiveEndSeconds.hint')}
-                    disabled={!draft.verifyLiveEnd}
-                    onChange={(value) => {
-                        edit('verifyLiveEndSeconds', value);
-                    }}
-                />
-            </fieldset>
-
-            <fieldset className="panel">
-                <legend>{t('settings.cookies')}</legend>
-                <ToggleField
-                    label={t('settings.useCookies')}
-                    checked={draft.useBrowserCookies}
-                    hint={t('settings.useCookies.hint')}
-                    onChange={(value) => {
-                        change('useBrowserCookies', value);
-                    }}
-                />
-                <SelectField
-                    label={t('settings.browser')}
-                    value={chosenBrowser?.dataDir ?? NO_BROWSER_CHOSEN}
-                    options={browserOptions}
-                    formatOption={(dataDir) => {
-                        return formatBrowser(detectedBrowsers, dataDir, t);
-                    }}
-                    hint={t('settings.browser.hint')}
-                    onChange={(dataDir) => {
-                        const browser = findBrowserByDir(detectedBrowsers, dataDir);
-                        if (browser) {
-                            changeMany({ cookiesBrowser: browser.engine, cookiesBrowserDir: browser.dataDir, cookiesProfile: '' });
-                        }
-                    }}
-                />
-                {browserWarning && (
-                    <p className="field__warning" role="alert">
-                        {browserWarning}
-                    </p>
-                )}
-                <div className="field-row">
-                    <button
-                        type="button"
-                        className="btn btn--small"
-                        onClick={() => {
-                            void loadBrowsers(true);
-                        }}
-                    >
-                        {t('settings.rescan')}
-                    </button>
-                </div>
-                {chosenBrowser && chosenBrowser.profiles.length > 0 ? (
-                    <SelectField
-                        label={t('settings.profile')}
-                        value={draft.cookiesProfile}
-                        options={profileOptions(chosenBrowser, draft.cookiesProfile)}
-                        formatOption={(id) => {
-                            return formatProfile(chosenBrowser, id, t);
-                        }}
-                        onChange={(id) => {
-                            change('cookiesProfile', id);
-                        }}
-                    />
-                ) : (
-                    <TextField
-                        label={t('settings.profile')}
-                        value={draft.cookiesProfile}
-                        onChange={(value) => {
-                            edit('cookiesProfile', value);
-                        }}
-                    />
-                )}
-            </fieldset>
-
-            <fieldset className="panel">
-                <legend>YT-DLP</legend>
-                <p className="update-status" aria-live="polite">
-                    {binaries?.ytdlp.found
-                        ? t('settings.ytdlp.installed', { version: binaries.ytdlp.version ?? t('settings.ytdlp.versionUnknown') })
-                        : t('settings.ytdlp.notFound')}
-                </p>
-                <div className="field-row">
-                    <button
-                        type="button"
-                        className="btn btn--small"
-                        disabled={updatingYtdlp}
-                        onClick={() => {
-                            void updateYtdlp();
-                        }}
-                    >
-                        {updatingYtdlp ? t('settings.ytdlp.updating') : t('settings.ytdlp.update')}
-                    </button>
-                </div>
-                <span className="field__hint">{t('settings.ytdlp.hint')}</span>
-            </fieldset>
-
-            <fieldset className="panel">
-                <legend>{t('settings.appUpdates')}</legend>
-                <p className="update-status" aria-live="polite">
-                    {updateSummary(appUpdate, t)}
-                </p>
-                <div className="field-row">
-                    <button
-                        type="button"
-                        className="btn btn--small"
-                        disabled={updateInProgress}
-                        onClick={() => {
-                            void checkAppUpdate();
-                        }}
-                    >
-                        {t('settings.checkUpdates')}
-                    </button>
-                    <UpdateActions />
-                </div>
-                <ToggleField
-                    label={t('settings.checkOnStart')}
-                    checked={draft.checkUpdatesOnStart}
-                    onChange={(value) => {
-                        change('checkUpdatesOnStart', value);
-                    }}
-                />
-            </fieldset>
-
-            <fieldset className="panel">
-                <legend>{t('settings.advanced')}</legend>
-                <TextField
-                    label={t('settings.rateLimit')}
-                    value={draft.rateLimit}
-                    placeholder={t('settings.rateLimit.placeholder')}
-                    onChange={(value) => {
-                        edit('rateLimit', value);
-                    }}
-                />
-                <TextField
-                    label={t('settings.ytdlpPath')}
-                    value={draft.ytdlpPath}
-                    placeholder={t('settings.ytdlpPath.placeholder')}
-                    onChange={(value) => {
-                        edit('ytdlpPath', value);
-                    }}
-                />
-                <TextField
-                    label={t('settings.ffmpegPath')}
-                    value={draft.ffmpegPath}
-                    placeholder={t('settings.ffmpegPath.placeholder')}
-                    onChange={(value) => {
-                        edit('ffmpegPath', value);
-                    }}
-                />
-                <TextField
-                    label={t('settings.jsRuntime')}
-                    value={draft.jsRuntime}
-                    placeholder={t('settings.jsRuntime.placeholder')}
-                    hint={t('settings.jsRuntime.hint')}
-                    onChange={(value) => {
-                        edit('jsRuntime', value);
-                    }}
-                />
-                <TextField
-                    label={t('settings.extraArgs')}
-                    value={draft.extraArgs}
-                    hint={t('settings.extraArgs.hint')}
-                    onChange={(value) => {
-                        edit('extraArgs', value);
-                    }}
-                />
-            </fieldset>
         </section>
     );
 }

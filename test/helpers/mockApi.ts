@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import type { AnimeImportResponse, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
+import type { AnimeHistoryEntry, AnimeImportResponse, AnimeMigrationProgress, AnimeMigrationResponse, AnimeSeriesResponse, AnimeJob, AnimeSubtitleImportResponse, AnimeSubtitleTrack, LibraryAnime } from '@shared/anime';
 import type { AppUpdateState, CyberApi, DownloadJob, StreamFindProgress } from '@shared/types';
 
 export interface MockApiHandle {
@@ -128,6 +128,18 @@ export function createMockApi(): MockApiHandle {
         }),
         listAnimeLibrary: vi.fn(async (): Promise<LibraryAnime[]> => {
             return [];
+        }),
+        listAnimeHistory: vi.fn(async (): Promise<AnimeHistoryEntry[]> => {
+            return [];
+        }),
+        recordAnimeHistory: vi.fn(async () => {
+            return undefined;
+        }),
+        removeAnimeHistory: vi.fn(async () => {
+            return undefined;
+        }),
+        clearAnimeHistory: vi.fn(async () => {
+            return undefined;
         }),
         listAnimeJobs: vi.fn(async (): Promise<AnimeJob[]> => {
             return [];

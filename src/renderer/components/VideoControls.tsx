@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
+import { useFullscreenIdle } from '../hooks/useFullscreenIdle';
 import { useTranslator } from '../i18n/useTranslator';
 import {
     MAX_SUBTITLE_SCALE,
@@ -115,6 +116,7 @@ export function VideoControls({ video, subtitles, selectedSubtitle, onSelectSubt
     const t = useTranslator();
     const [state, setState] = useState<PlaybackState>(INITIAL_STATE);
     const [subtitleScale, setSubtitleScale] = useState(readSubtitleScale);
+    const hidden = useFullscreenIdle(video);
 
     // The size is a variable on the video, which the style of the subtitles reads (see .player__video::cue).
     useEffect(() => {
@@ -239,7 +241,7 @@ export function VideoControls({ video, subtitles, selectedSubtitle, onSelectSubt
     const volumePercent = silent ? 0 : state.volume * 100;
 
     return (
-        <div className="player__controls" data-playing={!state.paused} onKeyDown={onKeyDown}>
+        <div className="player__controls" data-playing={!state.paused} data-hidden={hidden} onKeyDown={onKeyDown}>
             <button
                 type="button"
                 className="player__button"

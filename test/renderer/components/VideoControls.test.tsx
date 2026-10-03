@@ -340,6 +340,48 @@ describe('VideoControls', () => {
         Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
     });
 
+    describe('in fullscreen', () => {
+        function controls(): HTMLElement {
+            return document.querySelector('.player__controls') as HTMLElement;
+        }
+
+        afterEach(() => {
+            Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+            vi.useRealTimers();
+        });
+
+        it('shows the controls and hides them after 3 seconds without mouse movement, showing them again on movement', () => {
+            vi.useFakeTimers();
+            const { video } = setup();
+            const stage = video.parentElement as HTMLElement;
+            expect(controls()).toHaveAttribute('data-hidden', 'false');
+
+            Object.defineProperty(document, 'fullscreenElement', { value: stage, configurable: true });
+            act(() => {
+                document.dispatchEvent(new Event('fullscreenchange'));
+            });
+            expect(controls()).toHaveAttribute('data-hidden', 'false');
+            act(() => {
+                vi.advanceTimersByTime(3000);
+            });
+            expect(controls()).toHaveAttribute('data-hidden', 'true');
+
+            act(() => {
+                stage.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+            });
+            expect(controls()).toHaveAttribute('data-hidden', 'false');
+        });
+
+        it('keeps the controls visible outside of fullscreen', () => {
+            vi.useFakeTimers();
+            setup();
+            act(() => {
+                vi.advanceTimersByTime(10000);
+            });
+            expect(controls()).toHaveAttribute('data-hidden', 'false');
+        });
+    });
+
     describe('clicking the video', () => {
         beforeEach(() => {
             vi.useFakeTimers();

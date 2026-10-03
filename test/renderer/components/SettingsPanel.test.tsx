@@ -39,11 +39,34 @@ function type(label: string, value: string): void {
 }
 
 describe('SettingsPanel layout', () => {
-    it('renders every section with the stored values', () => {
-        render(<SettingsPanel />);
-        ['APPEARANCE & WINDOW', 'OUTPUT', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'APP UPDATES', 'ADVANCED'].forEach((legend) => {
+    it('renders the sections of the whole app with the stored values', () => {
+        render(<SettingsPanel scope="global" />);
+        ['APPEARANCE & WINDOW', 'APP UPDATES'].forEach((legend) => {
             expect(screen.getByText(legend)).toBeInTheDocument();
         });
+        ['OUTPUT', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'ADVANCED', 'ANIME'].forEach((legend) => {
+            expect(screen.queryByText(legend)).not.toBeInTheDocument();
+        });
+        expect(screen.getByLabelText('Theme')).toHaveValue('device');
+        expect(screen.getByLabelText('Language')).toHaveValue('device');
+        expect(screen.getByLabelText('Keep running in the system tray when the window is closed')).not.toBeChecked();
+        expect(screen.getByLabelText('Check for updates on startup')).toBeChecked();
+        expect(screen.queryByLabelText('Download folder')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Anime download folder')).not.toBeInTheDocument();
+    });
+
+    it('renders the sections of the video downloader with the stored values', () => {
+        render(<SettingsPanel scope="downloads" />);
+        ['OUTPUT', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'ADVANCED'].forEach((legend) => {
+            expect(screen.getByText(legend)).toBeInTheDocument();
+        });
+        ['APPEARANCE & WINDOW', 'APP UPDATES', 'ANIME'].forEach((legend) => {
+            expect(screen.queryByText(legend)).not.toBeInTheDocument();
+        });
+        expect(screen.queryByLabelText('Theme')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Language')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Check for updates on startup')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Anime download folder')).not.toBeInTheDocument();
         expect(screen.getByLabelText('Download folder')).toHaveValue('');
         expect(screen.getByLabelText('Max title length (characters)')).toHaveValue(80);
         expect(screen.getByLabelText('Video quality')).toHaveValue('best');
@@ -56,14 +79,29 @@ describe('SettingsPanel layout', () => {
         expect(screen.queryByText('Simultaneous downloads')).not.toBeInTheDocument();
     });
 
-    it('has no save button and explains that changes are saved automatically', () => {
-        render(<SettingsPanel />);
+    it('renders the section of the anime with the stored values and nothing else', () => {
+        useAnimeStore.setState({ status: makeStatus() });
+        render(<SettingsPanel scope="anime" />);
+        expect(screen.getByText('ANIME')).toBeInTheDocument();
+        ['APPEARANCE & WINDOW', 'APP UPDATES', 'OUTPUT', 'QUALITY & FORMAT', 'PLAYLISTS & SUBTITLES', 'LIVE STREAMS', 'BROWSER COOKIES', 'YT-DLP', 'ADVANCED'].forEach((legend) => {
+            expect(screen.queryByText(legend)).not.toBeInTheDocument();
+        });
+        expect(screen.getByLabelText('Anime download folder')).toHaveValue('');
+        expect(screen.getByLabelText('Anime quality')).toHaveValue('best');
+        expect(screen.getByLabelText('Anime audio')).toHaveValue('sub');
+        expect(screen.queryByLabelText('Download folder')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Theme')).not.toBeInTheDocument();
+    });
+
+    it.each(['global', 'downloads', 'anime'] as const)('has no save button and explains that changes are saved automatically in the %s settings', (scope) => {
+        useAnimeStore.setState({ status: makeStatus() });
+        render(<SettingsPanel scope={scope} />);
         expect(screen.queryByRole('button', { name: 'SAVE SETTINGS' })).not.toBeInTheDocument();
         expect(screen.getByText('Changes are saved automatically.')).toBeInTheDocument();
     });
 
     it('lists the resolution options with readable labels', () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         const options = Array.from(screen.getByLabelText('Video quality').querySelectorAll('option')).map((option) => {
             return option.textContent;
         });
@@ -73,7 +111,7 @@ describe('SettingsPanel layout', () => {
 
 describe('SettingsPanel language', () => {
     it('lists "device" and every language named in itself', () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         const select = screen.getByLabelText('Language');
         expect(select).toHaveValue('device');
         const options = Array.from(select.querySelectorAll('option')).map((option) => {
@@ -91,21 +129,30 @@ describe('SettingsPanel language', () => {
     });
 
     it.each(['en', 'pt', 'es', 'zh', 'ja'] as const)('saves right away when the language changes to "%s"', async (language) => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         fireEvent.change(screen.getByLabelText('Language'), { target: { value: language } });
         await flushPromises();
         expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
         expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, language });
     });
 
-    it('renders every section in the saved language', () => {
+    it('renders the sections of the whole app in the saved language', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'pt' } });
-        render(<SettingsPanel />);
-        ['APARÊNCIA E JANELA', 'SAÍDA', 'QUALIDADE E FORMATO', 'PLAYLISTS E LEGENDAS', 'TRANSMISSÕES AO VIVO', 'COOKIES DO NAVEGADOR', 'YT-DLP', 'ATUALIZAÇÕES DO APLICATIVO', 'AVANÇADO'].forEach((legend) => {
+        render(<SettingsPanel scope="global" />);
+        ['APARÊNCIA E JANELA', 'ATUALIZAÇÕES DO APLICATIVO'].forEach((legend) => {
             expect(screen.getByText(legend)).toBeInTheDocument();
         });
         expect(screen.getByLabelText('Idioma')).toHaveValue('pt');
         expect(screen.getByLabelText('Tema')).toBeInTheDocument();
+        expect(screen.getByText('As alterações são salvas automaticamente.')).toBeInTheDocument();
+    });
+
+    it('renders the sections of the video downloader in the saved language', () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'pt' } });
+        render(<SettingsPanel scope="downloads" />);
+        ['SAÍDA', 'QUALIDADE E FORMATO', 'PLAYLISTS E LEGENDAS', 'TRANSMISSÕES AO VIVO', 'COOKIES DO NAVEGADOR', 'YT-DLP', 'AVANÇADO'].forEach((legend) => {
+            expect(screen.getByText(legend)).toBeInTheDocument();
+        });
         expect(screen.getByText('As alterações são salvas automaticamente.')).toBeInTheDocument();
         const resolutions = Array.from(screen.getByLabelText('Qualidade do vídeo').querySelectorAll('option')).map((option) => {
             return option.textContent;
@@ -113,24 +160,37 @@ describe('SettingsPanel language', () => {
         expect(resolutions).toEqual(['A melhor disponível', 'Até 2160p', 'Até 1440p', 'Até 1080p', 'Até 720p', 'Até 480p']);
     });
 
-    it('translates the browser warning and the tray warning', async () => {
-        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'es', useBrowserCookies: true, closeToTray: true } });
+    it('translates the browser warning', async () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'es', useBrowserCookies: true } });
         mock.api.listBrowsers.mockResolvedValue([]);
-        mock.api.getTraySupport.mockResolvedValue({ available: false, reason: 'Sin bandeja.' });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(screen.getByText('No se encontró ningún navegador con cookies guardadas en este sistema.')).toBeInTheDocument();
+    });
+
+    it('translates the tray warning', async () => {
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'es', closeToTray: true } });
+        mock.api.getTraySupport.mockResolvedValue({ available: false, reason: 'Sin bandeja.' });
+        render(<SettingsPanel scope="global" />);
+        await flushPromises();
         expect(screen.getByText('Sin bandeja.')).toBeInTheDocument();
     });
 
-    it('translates the yt-dlp status and the app update summary', () => {
+    it('translates the yt-dlp status', () => {
         useAppStore.setState({
             settings: { ...DEFAULT_SETTINGS, language: 'ja' },
-            binaries: { ytdlp: { found: true, path: '/bin/yt-dlp', version: '2026.08.19', source: 'bundled' }, ffmpeg: { found: false, path: '', version: null, source: 'system' } },
+            binaries: { ytdlp: { found: true, path: '/bin/yt-dlp', version: '2026.08.19', source: 'bundled' }, ffmpeg: { found: false, path: '', version: null, source: 'system' } }
+        });
+        render(<SettingsPanel scope="downloads" />);
+        expect(screen.getByText('インストール済みのバージョン：2026.08.19')).toBeInTheDocument();
+    });
+
+    it('translates the app update summary', () => {
+        useAppStore.setState({
+            settings: { ...DEFAULT_SETTINGS, language: 'ja' },
             appUpdate: { ...INITIAL_APP_UPDATE, status: 'not-available', currentVersion: '0.4.1' }
         });
-        render(<SettingsPanel />);
-        expect(screen.getByText('インストール済みのバージョン：2026.08.19')).toBeInTheDocument();
+        render(<SettingsPanel scope="global" />);
         expect(screen.getByText('最新バージョンです（0.4.1）。')).toBeInTheDocument();
     });
 });
@@ -144,19 +204,26 @@ describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
         ['Download subtitles', 'writeSubtitles'],
         ['Include auto-generated subtitles', 'autoSubtitles'],
         ['Embed subtitles in the video', 'embedSubtitles'],
-        ['Keep running in the system tray when the window is closed', 'closeToTray'],
         ['Record live streams from the start', 'liveFromStart'],
         ['Wait for scheduled live streams to start', 'waitForLive']
     ] as const)('saves right away when "%s" is toggled', async (label, key) => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.click(screen.getByLabelText(label));
         await flushPromises();
         expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
         expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, [key]: true });
     });
 
+    it('saves right away when "Keep running in the system tray when the window is closed" is toggled', async () => {
+        render(<SettingsPanel scope="global" />);
+        fireEvent.click(screen.getByLabelText('Keep running in the system tray when the window is closed'));
+        await flushPromises();
+        expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, closeToTray: true });
+    });
+
     it('has the partial file cleanup on by default and saves right away when it is turned off', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         const toggle = screen.getByLabelText('Delete partial files when a download fails or is cancelled');
         expect(toggle).toBeChecked();
         expect(screen.getByText('Live recordings are always kept, because they can still be saved. A retry starts over once the partial file is gone.')).toBeInTheDocument();
@@ -167,7 +234,7 @@ describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
     });
 
     it('saves right away when "Check for updates on startup" is turned off', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         fireEvent.click(screen.getByLabelText('Check for updates on startup'));
         await flushPromises();
         expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, checkUpdatesOnStart: false });
@@ -178,7 +245,7 @@ describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
         ['Video container', 'webm', 'videoContainer'],
         ['Audio format', 'opus', 'audioFormat']
     ] as const)('saves right away when "%s" changes', async (label, value, key) => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.change(screen.getByLabelText(label), { target: { value } });
         await flushPromises();
         expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
@@ -186,7 +253,7 @@ describe('SettingsPanel auto-save of toggles and selects (immediate)', () => {
     });
 
     it('shows the saved status after saving', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.click(screen.getByLabelText('Audio only'));
         await flushPromises();
         expect(screen.getByText('All changes saved.')).toBeInTheDocument();
@@ -205,7 +272,7 @@ describe('SettingsPanel auto-save of text and number fields (2 s after typing)',
         ['JavaScript runtime', 'node', 'jsRuntime', 'node'],
         ['Extra yt-dlp arguments', '--no-mtime', 'extraArgs', '--no-mtime']
     ] as const)('saves "%s" only after the delay', async (label, typed, key, expected) => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         type(label, typed);
         expect(screen.getByText('Unsaved changes…')).toBeInTheDocument();
         await advance(AUTOSAVE_DELAY_MS - 1);
@@ -217,7 +284,7 @@ describe('SettingsPanel auto-save of text and number fields (2 s after typing)',
     });
 
     it('waits for the user to stop typing and saves a single time with the final value', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         type('Download folder', '/m');
         await advance(1500);
         type('Download folder', '/media');
@@ -230,7 +297,7 @@ describe('SettingsPanel auto-save of text and number fields (2 s after typing)',
 
     it('shows the sanitized value returned by the save', async () => {
         mock.api.saveSettings.mockResolvedValueOnce({ ...DEFAULT_SETTINGS, maxTitleLength: 200 });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         type('Max title length (characters)', '9999');
         expect(screen.getByLabelText('Max title length (characters)')).toHaveValue(9999);
         await advance(AUTOSAVE_DELAY_MS);
@@ -238,14 +305,14 @@ describe('SettingsPanel auto-save of text and number fields (2 s after typing)',
     });
 
     it('updates the store settings after saving', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         type('Download folder', '/media');
         await advance(AUTOSAVE_DELAY_MS);
         expect(useAppStore.getState().settings.downloadDir).toBe('/media');
     });
 
     it('saves pending edits when the panel is closed before the delay ends', () => {
-        const { unmount } = render(<SettingsPanel />);
+        const { unmount } = render(<SettingsPanel scope="downloads" />);
         type('Download folder', '/media');
         unmount();
         expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, downloadDir: '/media' });
@@ -253,14 +320,14 @@ describe('SettingsPanel auto-save of text and number fields (2 s after typing)',
 
     it('shows an error status when saving fails', async () => {
         mock.api.saveSettings.mockRejectedValueOnce(new Error('disk full'));
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.click(screen.getByLabelText('Audio only'));
         await flushPromises();
         expect(screen.getByText('Could not save the settings.')).toBeInTheDocument();
     });
 
     it('keeps every edit when several fields change in a row', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.click(screen.getByLabelText('Audio only'));
         type('Download folder', '/media');
         fireEvent.change(screen.getByLabelText('Audio format'), { target: { value: 'opus' } });
@@ -277,7 +344,7 @@ describe('SettingsPanel auto-save of text and number fields (2 s after typing)',
 describe('SettingsPanel folder chooser', () => {
     it('fills the folder from the directory chooser and saves it right away', async () => {
         mock.api.chooseDirectory.mockResolvedValueOnce('/picked/dir');
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.click(screen.getByRole('button', { name: 'BROWSE' }));
         await flushPromises();
         expect(screen.getByLabelText('Download folder')).toHaveValue('/picked/dir');
@@ -287,7 +354,7 @@ describe('SettingsPanel folder chooser', () => {
     it('keeps the folder unchanged and does not save when the chooser is cancelled', async () => {
         mock.api.chooseDirectory.mockResolvedValueOnce(null);
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, downloadDir: '/keep' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.click(screen.getByRole('button', { name: 'BROWSE' }));
         await flushPromises();
         expect(mock.api.chooseDirectory).toHaveBeenCalledTimes(1);
@@ -298,13 +365,13 @@ describe('SettingsPanel folder chooser', () => {
 
 describe('SettingsPanel app updates', () => {
     it('shows the startup update check enabled by default', () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         expect(screen.getByLabelText('Check for updates on startup')).toBeChecked();
     });
 
     it('shows the app update summary and checks for updates on demand', async () => {
         useAppStore.setState({ appUpdate: { ...APP_UPDATE_IDLE, currentVersion: '0.1.0' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         expect(screen.getByText('Current version: 0.1.0')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'CHECK FOR UPDATES' }));
         await flushPromises();
@@ -313,17 +380,59 @@ describe('SettingsPanel app updates', () => {
 
     it.each(['checking', 'downloading'] as const)('disables the check button while %s', (status) => {
         useAppStore.setState({ appUpdate: { ...APP_UPDATE_IDLE, status, version: '0.2.0' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         expect(screen.getByRole('button', { name: 'CHECK FOR UPDATES' })).toBeDisabled();
     });
 
     it('offers the update action when a new version is available', async () => {
         useAppStore.setState({ appUpdate: { ...APP_UPDATE_IDLE, status: 'available', version: '0.2.0' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         expect(screen.getByText('Version 0.2.0 is available.')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'UPDATE TO 0.2.0' }));
         await flushPromises();
         expect(mock.api.downloadAppUpdate).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('SettingsPanel scopes and what they load', () => {
+    it.each(['global', 'anime'] as const)('does not look for browsers in the %s settings', async (scope) => {
+        useAnimeStore.setState({ status: makeStatus() });
+        render(<SettingsPanel scope={scope} />);
+        await flushPromises();
+        expect(mock.api.listBrowsers).not.toHaveBeenCalled();
+    });
+
+    it.each(['downloads', 'anime'] as const)('does not check the system tray in the %s settings', async (scope) => {
+        useAnimeStore.setState({ status: makeStatus() });
+        render(<SettingsPanel scope={scope} />);
+        await flushPromises();
+        expect(mock.api.getTraySupport).not.toHaveBeenCalled();
+    });
+
+    it('shows the same saved settings in every scope', () => {
+        useAnimeStore.setState({ status: makeStatus() });
+        useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', downloadDir: '/media', animeDownloadDir: '/anime' } });
+        const global = render(<SettingsPanel scope="global" />);
+        expect(screen.getByLabelText('Theme')).toHaveValue('dark');
+        global.unmount();
+        const downloads = render(<SettingsPanel scope="downloads" />);
+        expect(screen.getByLabelText('Download folder')).toHaveValue('/media');
+        downloads.unmount();
+        render(<SettingsPanel scope="anime" />);
+        expect(screen.getByLabelText('Anime download folder')).toHaveValue('/anime');
+    });
+
+    it('keeps what was edited in one scope when another one is shown next', async () => {
+        render(<SettingsPanel scope="downloads" />).unmount();
+        const first = render(<SettingsPanel scope="downloads" />);
+        type('Download folder', '/media');
+        first.unmount();
+        expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, downloadDir: '/media' });
+        await flushPromises();
+        render(<SettingsPanel scope="global" />);
+        fireEvent.change(screen.getByLabelText('Theme'), { target: { value: 'dark' } });
+        await flushPromises();
+        expect(mock.api.saveSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, downloadDir: '/media', theme: 'dark' });
     });
 });
 
@@ -351,7 +460,7 @@ describe('SettingsPanel browser cookies', () => {
     }
 
     it('loads the detected browsers when opened', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(mock.api.listBrowsers).toHaveBeenCalledTimes(1);
         expect(mock.api.listBrowsers).toHaveBeenCalledWith(false);
@@ -359,7 +468,7 @@ describe('SettingsPanel browser cookies', () => {
 
     it('lists only the detected browsers, with a placeholder while none is chosen', async () => {
         mock.api.listBrowsers.mockResolvedValue([FIREFOX, ORIGIN]);
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(optionTexts()).toEqual(['Choose a browser…', 'Firefox', 'Brave Origin']);
         expect(screen.getByLabelText('Browser')).toHaveValue('');
@@ -368,7 +477,7 @@ describe('SettingsPanel browser cookies', () => {
     it('selects the saved browser and drops the placeholder', async () => {
         mock.api.listBrowsers.mockResolvedValue([FIREFOX, ORIGIN]);
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(optionTexts()).toEqual(['Firefox', 'Brave Origin']);
         expect(screen.getByLabelText('Browser')).toHaveValue(ORIGIN.dataDir);
@@ -377,7 +486,7 @@ describe('SettingsPanel browser cookies', () => {
 
     it('saves the engine and the folder together, right away, when a browser is chosen', async () => {
         mock.api.listBrowsers.mockResolvedValue([FIREFOX, ORIGIN]);
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         fireEvent.change(screen.getByLabelText('Browser'), { target: { value: ORIGIN.dataDir } });
         await flushPromises();
@@ -390,7 +499,7 @@ describe('SettingsPanel browser cookies', () => {
         useAppStore.setState({
             settings: { ...DEFAULT_SETTINGS, useBrowserCookies: true, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir, cookiesProfile: 'Profile 1' }
         });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         fireEvent.change(screen.getByLabelText('Browser'), { target: { value: FIREFOX.dataDir } });
         await flushPromises();
@@ -412,7 +521,7 @@ describe('SettingsPanel browser cookies', () => {
     it('shows the profiles of the chosen browser as a menu, with the names the user gave them', async () => {
         mock.api.listBrowsers.mockResolvedValue([ORIGIN]);
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(screen.getByLabelText('Browser profile (optional)').tagName).toBe('SELECT');
         expect(profileOptionTexts()).toEqual(['Automatic (most recently used)', 'Personal (Default)', 'Work (Profile 1)']);
@@ -422,7 +531,7 @@ describe('SettingsPanel browser cookies', () => {
     it('shows a profile whose name is its folder only once', async () => {
         mock.api.listBrowsers.mockResolvedValue([FIREFOX]);
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'firefox', cookiesBrowserDir: FIREFOX.dataDir } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(profileOptionTexts()).toEqual(['Automatic (most recently used)', 'abc.default-release']);
     });
@@ -430,7 +539,7 @@ describe('SettingsPanel browser cookies', () => {
     it('saves the chosen profile right away', async () => {
         mock.api.listBrowsers.mockResolvedValue([ORIGIN]);
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         fireEvent.change(screen.getByLabelText('Browser profile (optional)'), { target: { value: 'Profile 1' } });
         await flushPromises();
@@ -448,7 +557,7 @@ describe('SettingsPanel browser cookies', () => {
         useAppStore.setState({
             settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'brave', cookiesBrowserDir: ORIGIN.dataDir, cookiesProfile: 'Profile 9' }
         });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(profileOptionTexts()).toEqual(['Automatic (most recently used)', 'Personal (Default)', 'Work (Profile 1)', 'Profile 9 (not found)']);
         expect(screen.getByLabelText('Browser profile (optional)')).toHaveValue('Profile 9');
@@ -456,7 +565,7 @@ describe('SettingsPanel browser cookies', () => {
 
     it('keeps a text field for the profile while no detected browser is chosen', async () => {
         mock.api.listBrowsers.mockResolvedValue([ORIGIN]);
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(screen.getByLabelText('Browser profile (optional)').tagName).toBe('INPUT');
     });
@@ -464,7 +573,7 @@ describe('SettingsPanel browser cookies', () => {
     it('keeps a text field for the profile when the chosen browser reports no profile', async () => {
         mock.api.listBrowsers.mockResolvedValue([{ ...FIREFOX, profiles: [] }]);
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, cookiesBrowser: 'firefox', cookiesBrowserDir: FIREFOX.dataDir } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(screen.getByLabelText('Browser profile (optional)').tagName).toBe('INPUT');
     });
@@ -472,14 +581,14 @@ describe('SettingsPanel browser cookies', () => {
     it('warns that the saved browser was not found when the cookies are on', async () => {
         mock.api.listBrowsers.mockResolvedValue([FIREFOX]);
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, useBrowserCookies: true, cookiesBrowser: 'brave' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(screen.getByRole('alert')).toHaveTextContent('The saved browser (brave) was not found on this system. Choose one of the detected browsers.');
     });
 
     it('warns when no browser is found at all', async () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, useBrowserCookies: true } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(screen.getByRole('alert')).toHaveTextContent('No browser with saved cookies was found on this system.');
         expect(optionTexts()).toEqual(['Choose a browser…']);
@@ -487,14 +596,14 @@ describe('SettingsPanel browser cookies', () => {
 
     it('does not warn while the cookies are off', async () => {
         mock.api.listBrowsers.mockResolvedValue([FIREFOX]);
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
     it('scans again and shows the new browsers when RESCAN BROWSERS is clicked', async () => {
         mock.api.listBrowsers.mockResolvedValueOnce([FIREFOX]).mockResolvedValueOnce([FIREFOX, ORIGIN]);
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         await flushPromises();
         expect(optionTexts()).toEqual(['Choose a browser…', 'Firefox']);
         fireEvent.click(screen.getByRole('button', { name: 'RESCAN BROWSERS' }));
@@ -510,37 +619,37 @@ describe('SettingsPanel auto-generated subtitles warning', () => {
 
     it('warns when auto-generated subtitles are on and no language is set', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: true, subtitleLangs: '' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByRole('alert')).toHaveTextContent(WARNING);
     });
 
     it('warns when the language is "all"', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: true, subtitleLangs: 'all' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByRole('alert')).toHaveTextContent(WARNING);
     });
 
     it('does not warn when a language is set', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: true, subtitleLangs: 'ja' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
     it('does not warn when auto-generated subtitles are off', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: false, subtitleLangs: '' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
     it('does not warn when subtitles are off', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: false, autoSubtitles: true, subtitleLangs: '' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
     it('shows and hides the warning as the languages field is edited', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, writeSubtitles: true, autoSubtitles: true, subtitleLangs: '' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByRole('alert')).toHaveTextContent(WARNING);
         fireEvent.change(screen.getByLabelText('Subtitle languages'), { target: { value: 'ja' } });
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -551,19 +660,19 @@ describe('SettingsPanel system tray', () => {
     const TRAY_LABEL = 'Keep running in the system tray when the window is closed';
 
     it('is off by default and explains how to quit', () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         expect(screen.getByLabelText(TRAY_LABEL)).not.toBeChecked();
         expect(screen.getByText('Downloads keep going in the background. Right-click the tray icon to quit completely.')).toBeInTheDocument();
     });
 
     it('reflects the stored value', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, closeToTray: true } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         expect(screen.getByLabelText(TRAY_LABEL)).toBeChecked();
     });
 
     it('checks the tray support when opened and again when the option changes', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         await flushPromises();
         expect(mock.api.getTraySupport).toHaveBeenCalledTimes(1);
         fireEvent.click(screen.getByLabelText(TRAY_LABEL));
@@ -574,28 +683,28 @@ describe('SettingsPanel system tray', () => {
     it('warns when the option is on and the environment has no tray', async () => {
         mock.api.getTraySupport.mockResolvedValue({ available: false, reason: 'No system tray was detected.' });
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, closeToTray: true } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         await flushPromises();
         expect(screen.getByRole('alert')).toHaveTextContent('No system tray was detected.');
     });
 
     it('does not warn when the option is off, even without a tray', async () => {
         mock.api.getTraySupport.mockResolvedValue({ available: false, reason: 'No system tray was detected.' });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         await flushPromises();
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
     it('does not warn when a tray is available', async () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, closeToTray: true } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         await flushPromises();
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
     it('shows the warning as soon as the option is turned on', async () => {
         mock.api.getTraySupport.mockResolvedValue({ available: false, reason: 'No system tray was detected.' });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         await flushPromises();
         fireEvent.click(screen.getByLabelText(TRAY_LABEL));
         await flushPromises();
@@ -605,7 +714,7 @@ describe('SettingsPanel system tray', () => {
 
 describe('SettingsPanel live streams', () => {
     it('are off by default and explain what they do', () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByLabelText('Record live streams from the start')).not.toBeChecked();
         expect(screen.getByLabelText('Wait for scheduled live streams to start')).not.toBeChecked();
         expect(screen.getByText(/keeps the past part of the stream available \(DVR\)/)).toBeInTheDocument();
@@ -613,7 +722,7 @@ describe('SettingsPanel live streams', () => {
     });
 
     it('double-check the end of a live stream for 10 seconds by default', () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByLabelText('Double-check that a live stream really ended')).toBeChecked();
         expect(screen.getByLabelText('Seconds to keep checking')).toHaveValue(10);
         expect(screen.getByLabelText('Seconds to keep checking')).toBeEnabled();
@@ -624,7 +733,7 @@ describe('SettingsPanel live streams', () => {
     });
 
     it('saves right away when the end check is turned off and then disables its seconds', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.click(screen.getByLabelText('Double-check that a live stream really ended'));
         await flushPromises();
         expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
@@ -633,7 +742,7 @@ describe('SettingsPanel live streams', () => {
     });
 
     it('saves the seconds two seconds after typing', async () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.change(screen.getByLabelText('Seconds to keep checking'), { target: { value: '25' } });
         expect(mock.api.saveSettings).not.toHaveBeenCalled();
         await advance(AUTOSAVE_DELAY_MS);
@@ -643,7 +752,7 @@ describe('SettingsPanel live streams', () => {
 
     it('shows the stored end check values', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, verifyLiveEnd: false, verifyLiveEndSeconds: 45 } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByLabelText('Double-check that a live stream really ended')).not.toBeChecked();
         expect(screen.getByLabelText('Seconds to keep checking')).toHaveValue(45);
         expect(screen.getByLabelText('Seconds to keep checking')).toBeDisabled();
@@ -651,7 +760,7 @@ describe('SettingsPanel live streams', () => {
 
     it('reflect the stored values', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, liveFromStart: true, waitForLive: true } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByLabelText('Record live streams from the start')).toBeChecked();
         expect(screen.getByLabelText('Wait for scheduled live streams to start')).toBeChecked();
     });
@@ -659,7 +768,7 @@ describe('SettingsPanel live streams', () => {
 
 describe('SettingsPanel theme', () => {
     it('offers device, cyberpunk, dark and light, device being the default', () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         const select = screen.getByLabelText('Theme') as HTMLSelectElement;
         expect(select).toHaveValue('device');
         expect(
@@ -676,7 +785,7 @@ describe('SettingsPanel theme', () => {
     });
 
     it.each(['cyberpunk', 'dark', 'light'] as const)('saves right away when %s is chosen', async (theme) => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         fireEvent.change(screen.getByLabelText('Theme'), { target: { value: theme } });
         await flushPromises();
         expect(mock.api.saveSettings).toHaveBeenCalledTimes(1);
@@ -685,7 +794,7 @@ describe('SettingsPanel theme', () => {
 
     it('reflects the stored theme', () => {
         useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, theme: 'light' } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="global" />);
         expect(screen.getByLabelText('Theme')).toHaveValue('light');
     });
 });
@@ -698,24 +807,24 @@ describe('SettingsPanel yt-dlp update', () => {
 
     it('shows the installed version and the update button', () => {
         useAppStore.setState({ binaries: BINARIES, updating: false });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByText('Installed version: 2026.08.19')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'UPDATE YT-DLP' })).toBeEnabled();
     });
 
     it('says when the version is unknown or yt-dlp was not found', () => {
         useAppStore.setState({ binaries: { ...BINARIES, ytdlp: { ...BINARIES.ytdlp, version: null } } });
-        const { unmount } = render(<SettingsPanel />);
+        const { unmount } = render(<SettingsPanel scope="downloads" />);
         expect(screen.getByText('Installed version: unknown')).toBeInTheDocument();
         unmount();
         useAppStore.setState({ binaries: { ...BINARIES, ytdlp: { ...BINARIES.ytdlp, found: false } } });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByText('yt-dlp was not found.')).toBeInTheDocument();
     });
 
     it('updates yt-dlp when the button is clicked', async () => {
         useAppStore.setState({ binaries: BINARIES, updating: false });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         fireEvent.click(screen.getByRole('button', { name: 'UPDATE YT-DLP' }));
         await flushPromises();
         expect(mock.api.updateYtdlp).toHaveBeenCalledTimes(1);
@@ -723,7 +832,7 @@ describe('SettingsPanel yt-dlp update', () => {
 
     it('disables the button and says it is updating', () => {
         useAppStore.setState({ binaries: BINARIES, updating: true });
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="downloads" />);
         expect(screen.getByRole('button', { name: 'UPDATING…' })).toBeDisabled();
     });
 });
@@ -731,9 +840,17 @@ describe('SettingsPanel yt-dlp update', () => {
 
 describe('SettingsPanel anime section', () => {
     it('is left out where the section does not exist', () => {
-        render(<SettingsPanel />);
+        render(<SettingsPanel scope="anime" />);
         expect(screen.queryByText('ANIME')).not.toBeInTheDocument();
         expect(screen.queryByLabelText('Anime download folder')).not.toBeInTheDocument();
+    });
+
+    it.each(['global', 'downloads'] as const)('is not in the %s settings, even where it exists', (scope) => {
+        useAnimeStore.setState({ status: makeStatus() });
+        render(<SettingsPanel scope={scope} />);
+        expect(screen.queryByText('ANIME')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Anime download folder')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'UPDATE ANI-CLI' })).not.toBeInTheDocument();
     });
 
     describe('where it exists', () => {
@@ -743,7 +860,7 @@ describe('SettingsPanel anime section', () => {
 
         it('shows the stored values', () => {
             useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, animeDownloadDir: '/media/anime', animeQuality: '720p', animeAudio: 'dub' } });
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
             expect(screen.getByText('ANIME')).toBeInTheDocument();
             expect(screen.getByLabelText('Anime download folder')).toHaveValue('/media/anime');
             expect(screen.getByLabelText('Anime download folder')).toHaveAttribute('placeholder', 'Default: Downloads/Pullwave Anime');
@@ -753,7 +870,7 @@ describe('SettingsPanel anime section', () => {
         });
 
         it('lists the qualities and the audios with readable labels', () => {
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
             const options = (label: string): Array<string | null> => {
                 return Array.from(screen.getByLabelText(label).querySelectorAll('option')).map((option) => {
                     return option.textContent;
@@ -765,7 +882,7 @@ describe('SettingsPanel anime section', () => {
         });
 
         it('saves the quality and the audio at once', async () => {
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
             fireEvent.change(screen.getByLabelText('Anime quality'), { target: { value: '480p' } });
             fireEvent.change(screen.getByLabelText('Anime audio'), { target: { value: 'dub' } });
             await flushPromises();
@@ -773,19 +890,19 @@ describe('SettingsPanel anime section', () => {
         });
 
         it('shows the version of ani-cli', () => {
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
             expect(screen.getByText('ani-cli version: 5.1.4')).toBeInTheDocument();
             expect(screen.getByText(/finds the episodes/)).toBeInTheDocument();
         });
 
         it('says when the version is not known or ani-cli is missing', () => {
             useAnimeStore.setState({ status: makeStatus({ aniCli: { ...ANI_CLI_INFO, version: null } }) });
-            const { unmount } = render(<SettingsPanel />);
+            const { unmount } = render(<SettingsPanel scope="anime" />);
             expect(screen.getByText('ani-cli version: unknown')).toBeInTheDocument();
             unmount();
 
             useAnimeStore.setState({ status: makeStatus({ aniCli: { ...ANI_CLI_INFO, found: false } }) });
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
             expect(screen.getByText('ani-cli was not found.')).toBeInTheDocument();
         });
 
@@ -801,7 +918,7 @@ describe('SettingsPanel anime section', () => {
                 })
             );
             mock.api.getAnimeStatus.mockResolvedValue(makeStatus({ aniCli: { ...ANI_CLI_INFO, version: '5.2.0', source: 'updated' } }));
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
 
             fireEvent.click(screen.getByRole('button', { name: 'UPDATE ANI-CLI' }));
             await flushPromises();
@@ -815,14 +932,14 @@ describe('SettingsPanel anime section', () => {
         });
 
         it('saves the language of the subtitles at once', async () => {
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
             fireEvent.change(screen.getByLabelText('Anime subtitles'), { target: { value: 'Portuguese' } });
             await flushPromises();
             expect(mock.api.saveSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, animeSubtitles: 'Portuguese' });
         });
 
         it('saves the folder after the user stops typing', async () => {
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
             type('Anime download folder', '/media/anime');
             expect(mock.api.saveSettings).not.toHaveBeenCalled();
             await advance(AUTOSAVE_DELAY_MS);
@@ -831,25 +948,24 @@ describe('SettingsPanel anime section', () => {
 
         it('lets the user pick the folder and saves it', async () => {
             mock.api.chooseDirectory.mockResolvedValue('/picked/anime');
-            render(<SettingsPanel />);
-            const browse = screen.getAllByRole('button', { name: 'BROWSE' })[1] as HTMLElement;
-            fireEvent.click(browse);
+            render(<SettingsPanel scope="anime" />);
+            fireEvent.click(screen.getByRole('button', { name: 'BROWSE' }));
             await flushPromises();
             expect(mock.api.chooseDirectory).toHaveBeenCalledTimes(1);
             expect(mock.api.saveSettings).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, animeDownloadDir: '/picked/anime' });
         });
 
         it('has the MIGRATE FOLDER button, with what it does as a visible hint', () => {
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
             const button = screen.getByRole('button', { name: 'MIGRATE FOLDER' });
             expect(button).toBeEnabled();
             expect(screen.getByText('Choose a new folder: the app copies all the anime there, checks the copies and then removes the old files')).toHaveClass('field__hint');
         });
 
         it('leaves the folder free to edit while the library is empty', () => {
-            render(<SettingsPanel />);
+            render(<SettingsPanel scope="anime" />);
             expect(screen.getByLabelText('Anime download folder')).toBeEnabled();
-            expect(screen.getAllByRole('button', { name: 'BROWSE' })[1]).toBeEnabled();
+            expect(screen.getByRole('button', { name: 'BROWSE' })).toBeEnabled();
             expect(screen.queryByText('With anime in the library, the folder only changes through MIGRATE FOLDER, which moves the files too.')).not.toBeInTheDocument();
         });
 
@@ -860,17 +976,17 @@ describe('SettingsPanel anime section', () => {
             });
 
             it('fixes the folder: it cannot be typed nor browsed, and the hint says to use MIGRATE FOLDER', () => {
-                render(<SettingsPanel />);
+                render(<SettingsPanel scope="anime" />);
                 expect(screen.getByLabelText('Anime download folder')).toBeDisabled();
                 expect(screen.getByLabelText('Anime download folder')).toHaveValue('/media/anime');
-                expect(screen.getAllByRole('button', { name: 'BROWSE' })[1]).toBeDisabled();
+                expect(screen.getByRole('button', { name: 'BROWSE' })).toBeDisabled();
                 expect(screen.getByText('With anime in the library, the folder only changes through MIGRATE FOLDER, which moves the files too.')).toBeInTheDocument();
                 expect(screen.getByRole('button', { name: 'MIGRATE FOLDER' })).toBeEnabled();
             });
 
             it('migrates, then shows and saves the new folder', async () => {
                 mock.api.migrateAnimeFolder.mockResolvedValue({ ok: true, episodes: 1, files: 2, destination: '/new/anime' });
-                render(<SettingsPanel />);
+                render(<SettingsPanel scope="anime" />);
                 fireEvent.click(screen.getByRole('button', { name: 'MIGRATE FOLDER' }));
                 await flushPromises();
 
@@ -889,7 +1005,7 @@ describe('SettingsPanel anime section', () => {
                 ['failed', 'The migration failed. What was copied was removed and nothing changed.']
             ] as const)('keeps the folder when the migration answers %s', async (reason, message) => {
                 mock.api.migrateAnimeFolder.mockResolvedValue({ ok: false, reason });
-                render(<SettingsPanel />);
+                render(<SettingsPanel scope="anime" />);
                 fireEvent.click(screen.getByRole('button', { name: 'MIGRATE FOLDER' }));
                 await flushPromises();
                 await advance(AUTOSAVE_DELAY_MS);
@@ -911,7 +1027,7 @@ describe('SettingsPanel anime section', () => {
                 mock.api.getAnimeStatus.mockResolvedValue(makeStatus());
                 mock.api.listAnimeLibrary.mockResolvedValue([makeAnime([makeEpisode({ id: 1, status: 'done' })])]);
                 await useAnimeStore.getState().init();
-                render(<SettingsPanel />);
+                render(<SettingsPanel scope="anime" />);
                 fireEvent.click(screen.getByRole('button', { name: 'MIGRATE FOLDER' }));
                 await flushPromises();
                 expect(screen.getByRole('button', { name: 'MIGRATING 0/0…' })).toBeDisabled();
@@ -932,8 +1048,8 @@ describe('SettingsPanel anime section', () => {
         it('keeps the folder when the dialog is cancelled', async () => {
             mock.api.chooseDirectory.mockResolvedValue(null);
             useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, animeDownloadDir: '/keep' } });
-            render(<SettingsPanel />);
-            fireEvent.click(screen.getAllByRole('button', { name: 'BROWSE' })[1] as HTMLElement);
+            render(<SettingsPanel scope="anime" />);
+            fireEvent.click(screen.getByRole('button', { name: 'BROWSE' }));
             await flushPromises();
             await advance(AUTOSAVE_DELAY_MS);
             expect(screen.getByLabelText('Anime download folder')).toHaveValue('/keep');

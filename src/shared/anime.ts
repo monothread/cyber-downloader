@@ -82,6 +82,28 @@ export interface AnimeEpisodeRecord {
     fileMissing: boolean;
 }
 
+// An anime the viewer opened or watched, kept apart from the library: it covers what was only searched or streamed too. The same
+// title and audio is one entry, moved to the top each time it is opened.
+export interface AnimeHistoryEntry {
+    id: number;
+    title: string;
+    // What was searched and the position of the anime in that search: they are how ani-cli finds it again.
+    query: string;
+    searchIndex: number;
+    audio: AnimeAudio;
+    // The last episode watched; null when it was only opened.
+    episode: string | null;
+    openedAt: number;
+}
+
+export interface AnimeHistoryRequest {
+    title: string;
+    query: string;
+    index: number;
+    audio: AnimeAudio;
+    episode: string | null;
+}
+
 export interface LibraryAnime extends AnimeRecord {
     episodes: AnimeEpisodeRecord[];
 }
