@@ -73,12 +73,15 @@ The top bar has **VIDEO DOWNLOADER**, **ANIME** and a ⚙ for the settings of th
 The back and forward buttons of the mouse move through the screens you have been to (tabs, history, an anime you opened); going back from a player closes it.
 
 ## Video downloader
-![The queue with an error](docs/screenshots/cyberpunk-error.png)
+![The queue downloading](docs/screenshots/cyberpunk-downloads.png)
 
 ### Queue
 - One field per link, with **+ ADD LINK**; long links scroll inside the field. Each link also has a **FOLDER** button, to send that download to another folder, and **OPTIONS**, to choose for that download only the video quality and container, audio only and audio format, and the live-stream settings. Whatever you do not change keeps following the settings; a card downloading with custom options shows a *CUSTOM* badge.
 - Progress, speed and ETA on every card, with cancel and retry. Downloads run one at a time. When one is done you get a notice and the card goes away; it stays in the history.
 - A friendly error banner explains what went wrong, with the technical details one click away.
+
+  ![An error explained in the queue](docs/screenshots/cyberpunk-error.png)
+
 - Failed or cancelled downloads clean up their `.part` files (VIDEO DOWNLOADER > ⚙ > OUTPUT); live recordings are always kept, and each card can also clear its leftovers by hand.
 
 ### History
