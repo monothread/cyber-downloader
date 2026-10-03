@@ -395,6 +395,7 @@ export const ja: Messages = {
     'anime.player.seek': 'シーク',
     'anime.player.volume': '音量',
     'anime.player.mute': 'ミュート',
+    'anime.player.loading': '読み込み中…',
     'anime.player.unmute': 'ミュート解除',
     'anime.player.fullscreen': '全画面',
     'anime.player.subtitles': '字幕',

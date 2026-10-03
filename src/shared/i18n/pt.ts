@@ -402,6 +402,7 @@ export const pt: Messages = {
     'anime.player.seek': 'Posição',
     'anime.player.volume': 'Volume',
     'anime.player.mute': 'Silenciar',
+    'anime.player.loading': 'Carregando…',
     'anime.player.unmute': 'Ativar som',
     'anime.player.fullscreen': 'Tela cheia',
     'anime.player.subtitles': 'Legendas',

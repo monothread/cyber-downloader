@@ -402,6 +402,7 @@ export const es: Messages = {
     'anime.player.seek': 'Posición',
     'anime.player.volume': 'Volumen',
     'anime.player.mute': 'Silenciar',
+    'anime.player.loading': 'Cargando…',
     'anime.player.unmute': 'Activar sonido',
     'anime.player.fullscreen': 'Pantalla completa',
     'anime.player.subtitles': 'Subtítulos',

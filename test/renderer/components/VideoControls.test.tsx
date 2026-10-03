@@ -471,6 +471,104 @@ describe('VideoControls', () => {
         Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
     });
 
+    describe('loading after a jump', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        function emit(video: HTMLVideoElement, name: string): void {
+            act(() => {
+                video.dispatchEvent(new Event(name));
+            });
+        }
+
+        function wait(ms: number): void {
+            act(() => {
+                vi.advanceTimersByTime(ms);
+            });
+        }
+
+        it('shows a loading mark over the video when the data takes a moment, and takes it away when it arrives', () => {
+            const { video } = setup();
+            expect(screen.queryByRole('status', { name: 'Loading…' })).not.toBeInTheDocument();
+            emit(video, 'seeking');
+            emit(video, 'waiting');
+            expect(screen.queryByRole('status', { name: 'Loading…' })).not.toBeInTheDocument();
+            wait(150);
+            expect(screen.getByRole('status', { name: 'Loading…' })).toBeInTheDocument();
+            emit(video, 'playing');
+            expect(screen.queryByRole('status', { name: 'Loading…' })).not.toBeInTheDocument();
+        });
+
+        it('shows nothing when the jump is answered at once', () => {
+            const { video } = setup();
+            emit(video, 'seeking');
+            wait(100);
+            emit(video, 'seeked');
+            wait(500);
+            expect(screen.queryByRole('status', { name: 'Loading…' })).not.toBeInTheDocument();
+        });
+    });
+
+    describe('the timeline', () => {
+        function timeline(): HTMLInputElement {
+            return screen.getByRole('slider', { name: 'Seek' }) as HTMLInputElement;
+        }
+
+        function measure(bar: HTMLInputElement): void {
+            bar.getBoundingClientRect = () => {
+                return { left: 100, width: 200, right: 300, top: 0, bottom: 6, height: 6, x: 100, y: 0, toJSON: () => { return {}; } };
+            };
+            Object.defineProperty(bar, 'offsetLeft', { value: 60, configurable: true });
+        }
+
+        it('shows the time under the mouse above the timeline, following the mouse, and hides it when the mouse leaves', () => {
+            setup([], 200);
+            const bar = timeline();
+            measure(bar);
+            expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+            fireEvent.mouseMove(bar, { clientX: 150 });
+            const tooltip = screen.getByRole('tooltip');
+            expect(tooltip).toHaveTextContent('0:50');
+            expect(tooltip).toHaveStyle({ left: '110px' });
+
+            fireEvent.mouseMove(bar, { clientX: 300 });
+            expect(screen.getByRole('tooltip')).toHaveTextContent('3:20');
+            expect(screen.getByRole('tooltip')).toHaveStyle({ left: '260px' });
+
+            fireEvent.mouseLeave(bar);
+            expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        });
+
+        it('shows nothing under the mouse while the length of the video is not known', () => {
+            setup([], 0);
+            const bar = timeline();
+            measure(bar);
+            fireEvent.mouseMove(bar, { clientX: 150 });
+            expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        });
+
+        it('paints how far the video is loaded after the part already watched', () => {
+            const { video } = setup([], 200);
+            Object.defineProperty(video, 'currentTime', { value: 20, configurable: true });
+            Object.defineProperty(video, 'buffered', {
+                value: { length: 1, start: () => { return 0; }, end: () => { return 100; } },
+                configurable: true
+            });
+            act(() => {
+                video.dispatchEvent(new Event('progress'));
+                video.dispatchEvent(new Event('timeupdate'));
+            });
+            expect(timeline().style.getPropertyValue('--progress')).toBe('10%');
+            expect(timeline().style.getPropertyValue('--buffered')).toBe('50%');
+        });
+    });
+
     describe('in fullscreen', () => {
         function controls(): HTMLElement {
             return document.querySelector('.player__controls') as HTMLElement;
@@ -617,7 +715,11 @@ describe('VideoControls', () => {
         unmount();
         expect(remove.mock.calls.map((call) => {
             return call[0];
-        })).toEqual(['play', 'pause', 'timeupdate', 'durationchange', 'loadedmetadata', 'volumechange', 'seeked', 'ended', 'click', 'dblclick']);
+        })).toEqual([
+            'seeking', 'waiting', 'playing', 'seeked', 'canplay', 'emptied', 'error',
+            'progress', 'timeupdate', 'seeked', 'loadedmetadata', 'durationchange', 'emptied',
+            'play', 'pause', 'timeupdate', 'durationchange', 'loadedmetadata', 'volumechange', 'seeked', 'ended', 'click', 'dblclick'
+        ]);
         expect(add).not.toHaveBeenCalled();
     });
 });

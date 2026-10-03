@@ -61,3 +61,4 @@
 - README by area with new screenshots, and the trust of UPDATE ANI-CLI written down (D-050), 2026-10-03.
 - Settings panel in the player and color of the subtitles (D-051), 2026-10-03: ⚙ with the subtitle, size, color and background; the bar keeps the sound. Version 0.16.0.
 - Release 0.16.0, 2026-10-03: settings panel in the player and color of the subtitles (D-051). Test Windows, Release Linux and Release Windows ran green from `76e5a6f`, one draft with 8 files, published. Tag `v0.16.0` = `76e5a6f`.
+- Loading mark, time under the mouse, loaded part of the timeline and a minute of buffer for the stream (D-052), 2026-10-03: checked against the real source with MF Ghost episode 1 in the three themes. Version 0.17.0.

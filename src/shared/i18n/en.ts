@@ -418,6 +418,7 @@ export const en = {
     'anime.player.seek': 'Seek',
     'anime.player.volume': 'Volume',
     'anime.player.mute': 'Mute',
+    'anime.player.loading': 'Loading…',
     'anime.player.unmute': 'Unmute',
     'anime.player.fullscreen': 'Fullscreen',
     'anime.player.subtitles': 'Subtitles',

@@ -250,8 +250,8 @@ test('in fullscreen, in the cyberpunk theme, only the part of the timeline alrea
     };
 
     const playing = await timeline('true');
-    // The wave is a layer as wide as what was watched; the rest of the timeline is a plain track, and nothing glows around the whole bar.
-    expect(playing.backgroundSize).toBe('40% 100%, auto');
+    // The wave is a layer as wide as what was watched, then a faint layer as wide as what is loaded (none here); the rest of the timeline is a plain track, and nothing glows around the whole bar.
+    expect(playing.backgroundSize).toBe('40% 100%, 0% 100%, auto');
     expect(playing.boxShadow).toBe('none');
     expect(playing.borderColor).toBe('rgba(0, 0, 0, 0)');
     expect(playing.animationName).toBe('player-wave-phase, player-wave-glow-filter');
@@ -259,7 +259,7 @@ test('in fullscreen, in the cyberpunk theme, only the part of the timeline alrea
     expect(playing.filter).toMatch(/^drop-shadow\(/);
 
     const paused = await timeline('false');
-    expect(paused.backgroundSize).toBe('40% 100%, auto');
+    expect(paused.backgroundSize).toBe('40% 100%, 0% 100%, auto');
     expect(paused.animationPlayState).toBe('paused');
 });
 
@@ -1432,6 +1432,23 @@ test.describe('watching without downloading', () => {
         await expect.poll(async () => {
             return Number(await seek.getAttribute('max'));
         }).toBeGreaterThan(5);
+
+        // The mouse on the timeline shows the moment under it (the episode is about 8 seconds long).
+        const box = await seek.boundingBox();
+        expect(box).not.toBeNull();
+        const { x, y, width, height } = box as { x: number; y: number; width: number; height: number };
+        await page.mouse.move(x + width / 2, y + height / 2);
+        await expect(page.getByRole('dialog').getByRole('tooltip')).toHaveText(/^0:0[3-5]$/);
+        await page.mouse.move(x + width / 2, y - 200);
+        await expect(page.getByRole('dialog').getByRole('tooltip')).toHaveCount(0);
+
+        // The timeline shows how much of the episode is loaded.
+        await expect.poll(async () => {
+            return seek.evaluate((element: HTMLInputElement) => {
+                return Number.parseFloat(element.style.getPropertyValue('--buffered'));
+            });
+        }).toBeGreaterThan(0);
+
         await seek.fill('5');
         await expect.poll(() => {
             return seen.some((request) => {

@@ -393,6 +393,7 @@ export const zh: Messages = {
     'anime.player.seek': '进度',
     'anime.player.volume': '音量',
     'anime.player.mute': '静音',
+    'anime.player.loading': '加载中…',
     'anime.player.unmute': '取消静音',
     'anime.player.fullscreen': '全屏',
     'anime.player.subtitles': '字幕',

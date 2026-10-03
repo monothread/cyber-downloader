@@ -9,6 +9,10 @@ import { VideoControls, type SubtitleOption } from './VideoControls';
 // The only subtitle a stream has (the one ani-cli picked).
 const STREAM_SUBTITLE_ID = 'stream';
 
+// How much of the episode hls.js loads ahead of what is playing (its default is 30 seconds), so a jump to somewhere near is answered
+// from what is already loaded.
+export const STREAM_BUFFER_SECONDS = 60;
+
 interface StreamVideoProps {
     stream: AnimeStream;
 }
@@ -28,7 +32,7 @@ function StreamVideo({ stream }: StreamVideoProps) {
         if (!element || !supported) {
             return undefined;
         }
-        const hls = new Hls({ enableWorker: false });
+        const hls = new Hls({ enableWorker: false, maxBufferLength: STREAM_BUFFER_SECONDS });
         hls.on(Hls.Events.ERROR, (_event, data) => {
             if (data.fatal) {
                 setFailed(true);

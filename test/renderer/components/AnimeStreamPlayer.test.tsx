@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AnimeStream } from '@shared/anime';
 import { DEFAULT_SETTINGS } from '@shared/constants';
-import { AnimeStreamPlayer } from '@renderer/components/AnimeStreamPlayer';
+import { AnimeStreamPlayer, STREAM_BUFFER_SECONDS } from '@renderer/components/AnimeStreamPlayer';
 import { INITIAL_SEARCH, UNSUPPORTED_STATUS, useAnimeStore } from '@renderer/store/animeStore';
 import { useAppStore } from '@renderer/store/appStore';
 import { installMockApi, type MockApiHandle } from '../../helpers/mockApi';
@@ -123,8 +123,15 @@ describe('AnimeStreamPlayer', () => {
             expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeInTheDocument();
             expect(video).toHaveAttribute('crossorigin', 'anonymous');
             expect(hls.state.instances).toHaveLength(1);
-            expect(hls.state.instances[0]).toMatchObject({ options: { enableWorker: false }, source: STREAM.url, destroyed: false });
+            expect(hls.state.instances[0]).toMatchObject({ options: { enableWorker: false, maxBufferLength: 60 }, source: STREAM.url, destroyed: false });
             expect(hls.state.instances[0]?.media).toBe(video);
+        });
+
+        it('lets hls.js load a minute of the episode ahead of what is playing', () => {
+            expect(STREAM_BUFFER_SECONDS).toBe(60);
+            stream();
+            render(<AnimeStreamPlayer />);
+            expect(hls.state.instances[0]?.options).toEqual({ enableWorker: false, maxBufferLength: STREAM_BUFFER_SECONDS });
         });
 
         it('shows the subtitles when there are some', () => {

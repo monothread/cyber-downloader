@@ -796,7 +796,7 @@ body::after {
 .player__video { width: 100%; flex: 1; min-height: 0; background: #000; display: block; object-fit: contain; cursor: pointer; }
 .player__video::cue { color: var(--subtitle-color, var(--text)); background: var(--subtitle-background, rgba(0, 0, 0, 0.72)); font-family: var(--font); font-size: calc(var(--subtitle-scale, 1) * 100%); }
 
-.player__stage { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #000; border: 1px solid var(--line); }
+.player__stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: #000; border: 1px solid var(--line); }
 .player__stage:fullscreen { justify-content: center; }
 
 .player__controls {
@@ -874,16 +874,67 @@ body::after {
 .player__setting-label { font-size: 12px; color: var(--muted); }
 .player__settings .player__select { max-width: 180px; }
 
+/* Over the video while it waits for data (after a jump on a stream), and the time under the mouse on the timeline. */
+.player__loading {
+    position: absolute;
+    inset: 0 0 46px 0;
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+}
+
+.player__stage:fullscreen .player__loading { inset: 0; }
+
+.player__spinner {
+    width: 44px;
+    height: 44px;
+    border: 4px solid rgba(255, 255, 255, 0.25);
+    border-top-color: var(--cyan);
+    border-radius: 50%;
+    filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.8));
+    animation: player-spin 0.9s linear infinite;
+}
+
+@keyframes player-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .player__spinner { animation-duration: 3s; }
+}
+
+.player__hover {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    z-index: 5;
+    transform: translateX(-50%);
+    padding: 2px 6px;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
 .player__button:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
 
 .player__time { min-width: 44px; font-size: 12px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
 
 .player__range {
     --progress: 0%;
+    --buffered: 0%;
     appearance: none;
     height: 6px;
     margin: 0;
-    background: linear-gradient(to right, var(--cyan) var(--progress), var(--input-bg) var(--progress));
+    background: linear-gradient(
+        to right,
+        var(--cyan) var(--progress),
+        color-mix(in srgb, var(--cyan) 55%, transparent) var(--progress) var(--buffered),
+        var(--input-bg) var(--buffered)
+    );
     border: 1px solid var(--line);
     cursor: pointer;
 }
@@ -903,7 +954,12 @@ body::after {
 
 html[data-theme='cyberpunk'] .player__controls[data-playing='true'] .player__seek {
     background:
-        linear-gradient(to right, transparent var(--progress), var(--input-bg) var(--progress)),
+        linear-gradient(
+            to right,
+            transparent var(--progress),
+            color-mix(in srgb, var(--cyan) 55%, var(--input-bg)) var(--progress) var(--buffered),
+            var(--input-bg) var(--buffered)
+        ),
         repeating-linear-gradient(90deg, var(--cyan) 0, var(--magenta) 40px, var(--cyan) 80px, #ffffff 100px, var(--cyan) 120px, var(--magenta) 160px);
     background-size: 100% 100%, 160px 100%;
     animation: player-wave 1.6s linear infinite, player-wave-glow 2.4s ease-in-out infinite;
@@ -967,6 +1023,7 @@ html[data-theme='cyberpunk'] .player__stage:fullscreen .player__controls .player
             var(--magenta) calc(var(--wave-phase) + 160px)
         )
         0 0 / var(--progress) 100% no-repeat,
+        linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5)) 0 0 / var(--buffered) 100% no-repeat,
         rgba(255, 255, 255, 0.16);
     border-color: transparent;
     box-shadow: none;

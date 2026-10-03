@@ -1,7 +1,9 @@
 import { useEffect, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import { useFullscreenIdle } from '../hooks/useFullscreenIdle';
 import { useSubtitleStyle } from '../hooks/useSubtitleStyle';
+import { useVideoBuffer } from '../hooks/useVideoBuffer';
 import { useTranslator } from '../i18n/useTranslator';
+import { seekHover, type SeekHover } from './seekHover';
 import { hasPlayerSettings, PlayerSettings, type SubtitleOption } from './PlayerSettings';
 
 // Kept here, where the player's other files already import it from.
@@ -96,12 +98,18 @@ function progressStyle(percent: number): CSSProperties {
     return { '--progress': `${percent}%` } as CSSProperties;
 }
 
+function seekStyle(percent: number, bufferedPercent: number): CSSProperties {
+    return { '--progress': `${percent}%`, '--buffered': `${bufferedPercent}%` } as CSSProperties;
+}
+
 // The control bar of the player. It drives the <video> through its own API, so it looks the same in every theme.
 export function VideoControls({ video, subtitles, selectedSubtitle, onSelectSubtitle }: VideoControlsProps) {
     const t = useTranslator();
     const [state, setState] = useState<PlaybackState>(INITIAL_STATE);
     const subtitleStyle = useSubtitleStyle(video);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [hover, setHover] = useState<SeekHover | null>(null);
+    const { loading, bufferedPercent } = useVideoBuffer(video);
     // The bar stays while the settings are open: they are part of it.
     const hidden = useFullscreenIdle(video) && !settingsOpen;
 
@@ -200,6 +208,12 @@ export function VideoControls({ video, subtitles, selectedSubtitle, onSelectSubt
         }
     }
 
+    // The tooltip sits in the bar, so its position is measured from the bar: the timeline's own offset plus the mouse on it.
+    function hoverTimeline(input: HTMLInputElement, clientX: number): void {
+        const found = seekHover(clientX, input.getBoundingClientRect(), state.duration);
+        setHover(found === null ? null : { time: found.time, offset: input.offsetLeft + found.offset });
+    }
+
     function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
         if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
             return;
@@ -214,64 +228,82 @@ export function VideoControls({ video, subtitles, selectedSubtitle, onSelectSubt
     const volumePercent = silent ? 0 : state.volume * 100;
 
     return (
-        <div className="player__controls" data-playing={!state.paused} data-hidden={hidden} onKeyDown={onKeyDown}>
-            <button
-                type="button"
-                className="player__button"
-                aria-label={state.paused ? t('anime.player.play') : t('anime.player.pause')}
-                onClick={togglePlay}
-            >
-                {state.paused ? '▶' : '❚❚'}
-            </button>
-            <span className="player__time">{formatClock(state.currentTime)}</span>
-            <input
-                type="range"
-                className="player__range player__seek"
-                aria-label={t('anime.player.seek')}
-                min={0}
-                max={state.duration}
-                step={0.1}
-                value={Math.min(state.currentTime, state.duration)}
-                style={progressStyle(seekPercent)}
-                onChange={(event) => {
-                    seekTo(Number(event.target.value));
-                }}
-            />
-            <span className="player__time">{formatClock(state.duration)}</span>
-            <button
-                type="button"
-                className="player__button"
-                aria-label={silent ? t('anime.player.unmute') : t('anime.player.mute')}
-                onClick={toggleMute}
-            >
-                {silent ? '🔇' : '🔊'}
-            </button>
-            <input
-                type="range"
-                className="player__range player__volume"
-                aria-label={t('anime.player.volume')}
-                min={0}
-                max={1}
-                step={0.05}
-                value={silent ? 0 : state.volume}
-                style={progressStyle(volumePercent)}
-                onChange={(event) => {
-                    changeVolume(Number(event.target.value));
-                }}
-            />
-            {hasPlayerSettings(subtitles) && (
-                <PlayerSettings
-                    open={settingsOpen}
-                    onOpenChange={setSettingsOpen}
-                    subtitles={subtitles}
-                    selectedSubtitle={selectedSubtitle}
-                    onSelectSubtitle={onSelectSubtitle}
-                    subtitleStyle={subtitleStyle}
-                />
+        <>
+            {loading && (
+                <div className="player__loading" role="status" aria-label={t('anime.player.loading')}>
+                    <span className="player__spinner" aria-hidden="true" />
+                </div>
             )}
-            <button type="button" className="player__button" aria-label={t('anime.player.fullscreen')} onClick={toggleFullscreen}>
-                ⛶
-            </button>
-        </div>
+            <div className="player__controls" data-playing={!state.paused} data-hidden={hidden} onKeyDown={onKeyDown}>
+                <button
+                    type="button"
+                    className="player__button"
+                    aria-label={state.paused ? t('anime.player.play') : t('anime.player.pause')}
+                    onClick={togglePlay}
+                >
+                    {state.paused ? '▶' : '❚❚'}
+                </button>
+                {hover !== null && (
+                    <span className="player__hover" role="tooltip" style={{ left: hover.offset }}>
+                        {formatClock(hover.time)}
+                    </span>
+                )}
+                <span className="player__time">{formatClock(state.currentTime)}</span>
+                <input
+                    type="range"
+                    className="player__range player__seek"
+                    aria-label={t('anime.player.seek')}
+                    min={0}
+                    max={state.duration}
+                    step={0.1}
+                    value={Math.min(state.currentTime, state.duration)}
+                    style={seekStyle(seekPercent, bufferedPercent)}
+                    onMouseMove={(event) => {
+                        hoverTimeline(event.currentTarget, event.clientX);
+                    }}
+                    onMouseLeave={() => {
+                        setHover(null);
+                    }}
+                    onChange={(event) => {
+                        seekTo(Number(event.target.value));
+                    }}
+                />
+                <span className="player__time">{formatClock(state.duration)}</span>
+                <button
+                    type="button"
+                    className="player__button"
+                    aria-label={silent ? t('anime.player.unmute') : t('anime.player.mute')}
+                    onClick={toggleMute}
+                >
+                    {silent ? '🔇' : '🔊'}
+                </button>
+                <input
+                    type="range"
+                    className="player__range player__volume"
+                    aria-label={t('anime.player.volume')}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={silent ? 0 : state.volume}
+                    style={progressStyle(volumePercent)}
+                    onChange={(event) => {
+                        changeVolume(Number(event.target.value));
+                    }}
+                />
+                {hasPlayerSettings(subtitles) && (
+                    <PlayerSettings
+                        open={settingsOpen}
+                        onOpenChange={setSettingsOpen}
+                        subtitles={subtitles}
+                        selectedSubtitle={selectedSubtitle}
+                        onSelectSubtitle={onSelectSubtitle}
+                        subtitleStyle={subtitleStyle}
+                    />
+                )}
+                <button type="button" className="player__button" aria-label={t('anime.player.fullscreen')} onClick={toggleFullscreen}>
+                    ⛶
+                </button>
+            </div>
+        </>
     );
 }
